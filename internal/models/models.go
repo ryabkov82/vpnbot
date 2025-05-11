@@ -13,6 +13,14 @@ type UserBalance struct {
 	Forecast float64 `json:"forecast"`
 }
 
+type UserService struct {
+	Name      string `json:"name"`
+	Cost      string `json:"cost"`
+	Status    string `json:"status"`
+	Expire    string `json:"expire"`
+	ServiceID int    `json:"service_id"`
+}
+
 type UserRegistrationRequest struct {
 	Login    string       `json:"login"`
 	Password string       `json:"password"`

@@ -226,3 +226,36 @@ func (c *APIClient) GetUserBalance(userID int) (*models.UserBalance, error) {
 	return &userBalance, nil
 
 }
+
+func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
+
+	// Формируем URL для запроса
+	filter := fmt.Sprintf(`{"user_id": %d}`, userID)
+	url := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Выполняем GET-запрос
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Парсим ответ
+	type ServiceResponse struct {
+		Data []models.UserService `json:"data"`
+	}
+
+	var result ServiceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Data, nil
+
+}

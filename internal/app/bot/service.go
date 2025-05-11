@@ -145,7 +145,58 @@ func (s *Service) handleBalance(c telebot.Context) error {
 }
 
 func (s *Service) handleList(c telebot.Context) error {
-	return nil
+
+	/*
+		if err := c.Delete(); err != nil {
+			log.Println(err)
+		}
+	*/
+
+	services, err := s.service.GetUserServices(c.Chat().ID)
+	if err != nil {
+		log.Printf("Ошибка при получении списка услуг: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении списка услуг")
+	}
+
+	// Форматируем вывод
+	if len(services) == 0 {
+		return c.Send("У вас нет активных услуг")
+	}
+
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+
+	for _, s := range services {
+		var status string
+		switch s.Status {
+		case "ACTIVE":
+			status = "✅"
+		case "BLOCK":
+			status = "❌"
+		default:
+			status = "⏳"
+		}
+
+		rows = append(rows, menu.Row(
+			menu.Data(fmt.Sprintf("%s - %s", status, s.Name), "/service", fmt.Sprint(s.ServiceID)),
+		))
+	}
+
+	rows = append(rows,
+		menu.Row(menu.Data("🛒 Новый ключ", "/pricelist")),
+		menu.Row(menu.Data("⇦ Назад", "/menu")),
+	)
+
+	menu.Inline(rows...)
+
+	if c.Callback() != nil {
+		err := c.Edit("🗝 Ваши ключи:", menu)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return c.Send("🗝 Ваши ключи:", menu)
 }
 
 func (s *Service) handleRegister(c telebot.Context) error {

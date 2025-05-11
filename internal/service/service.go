@@ -32,3 +32,14 @@ func (s *Service) GetUserBalance(userID int64) (*models.UserBalance, error) {
 
 	return s.apiClient.GetUserBalance(user.ID)
 }
+
+func (s *Service) GetUserServices(userID int64) ([]models.UserService, error) {
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.apiClient.GetUserServices(user.ID)
+
+}
