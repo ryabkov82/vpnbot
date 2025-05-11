@@ -21,7 +21,9 @@ type Config struct {
 		URL string `json:"url"`
 	} `json:"cli"`
 	Telegram struct {
-		Token string `json:"token"`
+		Token         string `json:"token"`
+		SupportChatID int64  `json:"support_chat_id"`
+		SupportChat   string `json:"support_chat"`
 	}
 }
 

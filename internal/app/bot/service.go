@@ -86,10 +86,12 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	menu := &telebot.ReplyMarkup{}
 	btnBalance := menu.Data("💰 Баланс", "/balance")
 	btnKeys := menu.Data("🗝 Ключи", "/list")
+	btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
 	menu.Inline(
 		menu.Row(btnBalance),
 		menu.Row(btnKeys),
+		menu.Row(btnSupport),
 	)
 
 	msg := "Создавайте и управляйте своими VPN ключами"
@@ -145,12 +147,6 @@ func (s *Service) handleBalance(c telebot.Context) error {
 }
 
 func (s *Service) handleList(c telebot.Context) error {
-
-	/*
-		if err := c.Delete(); err != nil {
-			log.Println(err)
-		}
-	*/
 
 	services, err := s.service.GetUserServices(c.Chat().ID)
 	if err != nil {
