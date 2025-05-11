@@ -1,2 +1,2 @@
 .env
-configs\config.json
+configs/*.json
