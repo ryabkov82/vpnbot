@@ -259,3 +259,40 @@ func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
 	return result.Data, nil
 
 }
+
+func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error) {
+
+	// Формируем URL для запроса
+	filter := fmt.Sprintf(`{"user_service_id": %s}`, serviceID)
+	url := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Выполняем GET-запрос
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Парсим ответ
+	type ServiceResponse struct {
+		Data []models.UserService `json:"data"`
+	}
+
+	var result ServiceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Data) > 0 {
+		return &result.Data[0], nil
+	}
+
+	return nil, nil
+
+}

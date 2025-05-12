@@ -85,7 +85,7 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	btnBalance := menu.Data("💰 Баланс", "/balance")
-	btnKeys := menu.Data("🗝 Ключи", "/list")
+	btnKeys := menu.Data("🗝 Список VPN ключей", "/list")
 	btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
 	menu.Inline(
@@ -193,6 +193,98 @@ func (s *Service) handleList(c telebot.Context) error {
 	}
 
 	return c.Send("🗝 Ваши ключи:", menu)
+}
+
+func (s *Service) handleService(c telebot.Context, serviceID string) error {
+
+	us, err := s.service.GetUserService(serviceID)
+	if err != nil {
+		log.Printf("Ошибка при получении информации по услуге: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+
+	if us == nil {
+		log.Printf("Услуга не найдена: %s", serviceID)
+		return c.Send("⚠️ Услуга не найдена")
+	}
+
+	// Определяем иконку и статус
+	var icon, status string
+	switch us.Status {
+	case "ACTIVE":
+		icon = "✅"
+		status = "Работает"
+	case "BLOCK":
+		icon = "❌"
+		status = "Заблокирована"
+	case "NOT PAID":
+		icon = "💰"
+		status = "Ожидает оплаты"
+	default:
+		icon = "⏳"
+		status = "Обработка"
+	}
+
+	// Формируем текст сообщения
+	var text strings.Builder
+	text.WriteString(fmt.Sprintf("<b>Ключ</b>: %s %s", icon, us.Name))
+
+	if us.Expire != "" {
+		text.WriteString(fmt.Sprintf("\n\n<b>Оплачен до</b>: %s",
+			us.Expire))
+	}
+
+	text.WriteString(fmt.Sprintf("\n\n<b>Статус</b>: %s", status))
+
+	// Создаем inline-клавиатуру
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+
+	// Первый ряд кнопок (для активного ключа)
+	if us.Status == "ACTIVE" {
+		rows = append(rows, menu.Row(
+			menu.Data("🗝 Скачать ключ", "/download_qr", fmt.Sprint(us.ServiceID)),
+			menu.Data("👀 Показать QR код", "/show_qr", fmt.Sprint(us.ServiceID)),
+		))
+	}
+
+	// Второй ряд (для неоплаченных/заблокированных)
+	if us.Status == "NOT PAID" || us.Status == "BLOCK" {
+		rows = append(rows, menu.Row(
+			menu.Data("💰 Оплатить", "/balance", ""),
+		))
+	}
+
+	// Третий ряд (удаление для всех кроме PROGRESS)
+	if us.Status != "PROGRESS" {
+		rows = append(rows, menu.Row(
+			menu.Data("❌ Удалить ключ", "/delete", fmt.Sprint(us.ServiceID)),
+		))
+	}
+
+	// Кнопка "Назад"
+	rows = append(rows, menu.Row(
+		menu.Data("⇦ Назад", "/list", ""),
+	))
+
+	menu.Inline(rows...)
+
+	msg := text.String()
+
+	if c.Callback() != nil {
+		err := c.Edit(msg, &telebot.SendOptions{
+			ParseMode:   telebot.ModeHTML,
+			ReplyMarkup: menu,
+		})
+		if err == nil {
+			return nil
+		}
+	}
+
+	return c.Send(msg, &telebot.SendOptions{
+		ParseMode:   telebot.ModeHTML,
+		ReplyMarkup: menu,
+	})
 }
 
 func (s *Service) handleRegister(c telebot.Context) error {

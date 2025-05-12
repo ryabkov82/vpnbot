@@ -52,10 +52,18 @@ func (h *BotHandler) handleList(c telebot.Context) error {
 	return h.service.handleList(c)
 }
 
+func (h *BotHandler) handleService(c telebot.Context, serviceID string) error {
+	return h.service.handleService(c, serviceID)
+}
+
 func (h *BotHandler) handleCallbacks(c telebot.Context) error {
-	data := c.Callback().Data
-	args := strings.Fields(data)
-	cmd := args[0]
+	callbackData := c.Callback().Data
+
+	// Убираем \f (если есть) и разбиваем по |
+	cleanData := strings.TrimPrefix(callbackData, "\f")
+	parts := strings.Split(cleanData, "|")
+
+	cmd := parts[0]
 
 	switch cmd {
 	case "/register":
@@ -66,6 +74,16 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 		return h.handleMenu(c)
 	case "/list":
 		return h.handleList(c)
+	case "/service":
+		serviceIDStr := parts[1]
+		/*
+			serviceID, err := strconv.Atoi(serviceIDStr)
+			if err != nil {
+				log.Printf("Ошибка преобразования ID услуги: %v", err)
+				return c.Send("⚠️ Произошла ошибка при обработке запроса")
+			}
+		*/
+		return h.handleService(c, serviceIDStr)
 	/*
 		case "/download_qr":
 			return handleDownloadQR(c, args[1:])

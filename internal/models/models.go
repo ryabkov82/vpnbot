@@ -18,7 +18,7 @@ type UserService struct {
 	Cost      string `json:"cost"`
 	Status    string `json:"status"`
 	Expire    string `json:"expire"`
-	ServiceID int    `json:"service_id"`
+	ServiceID string `json:"user_service_id"`
 }
 
 type UserRegistrationRequest struct {

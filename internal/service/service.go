@@ -43,3 +43,9 @@ func (s *Service) GetUserServices(userID int64) ([]models.UserService, error) {
 	return s.apiClient.GetUserServices(user.ID)
 
 }
+
+func (s *Service) GetUserService(serviceID string) (*models.UserService, error) {
+
+	return s.apiClient.GetUserService(serviceID)
+
+}
