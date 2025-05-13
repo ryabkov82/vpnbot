@@ -56,6 +56,22 @@ func (h *BotHandler) handleService(c telebot.Context, serviceID string) error {
 	return h.service.handleService(c, serviceID)
 }
 
+func (h *BotHandler) handleDownloadUserKey(c telebot.Context, serviceID string) error {
+	return h.service.handleDownloadUserKey(c, serviceID)
+}
+
+func (h *BotHandler) handleShowQR(c telebot.Context, serviceID string) error {
+	return h.service.handleShowQR(c, serviceID)
+}
+
+func (h *BotHandler) handleDelete(c telebot.Context, serviceID string) error {
+	return h.service.handleDelete(c, serviceID)
+}
+
+func (h *BotHandler) handleDeleteConfirmed(c telebot.Context, serviceID string) error {
+	return h.service.handleDeleteConfirmed(c, serviceID)
+}
+
 func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	callbackData := c.Callback().Data
 
@@ -84,6 +100,18 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 			}
 		*/
 		return h.handleService(c, serviceIDStr)
+	case "/download_qr":
+		serviceIDStr := parts[1]
+		return h.handleDownloadUserKey(c, serviceIDStr)
+	case "/show_qr":
+		serviceIDStr := parts[1]
+		return h.handleShowQR(c, serviceIDStr)
+	case "/delete":
+		serviceIDStr := parts[1]
+		return h.handleDelete(c, serviceIDStr)
+	case "/delete_confirmed":
+		serviceIDStr := parts[1]
+		return h.handleDeleteConfirmed(c, serviceIDStr)
 	/*
 		case "/download_qr":
 			return handleDownloadQR(c, args[1:])

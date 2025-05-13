@@ -1,6 +1,11 @@
 package service
 
 import (
+	"bytes"
+	"image/png"
+
+	"github.com/skip2/go-qrcode"
+
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
 )
@@ -48,4 +53,55 @@ func (s *Service) GetUserService(serviceID string) (*models.UserService, error) 
 
 	return s.apiClient.GetUserService(serviceID)
 
+}
+
+func (s *Service) DownloadUserKey(userID int64, serviceID string) ([]byte, error) {
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.apiClient.DownloadUserKey(user.ID, serviceID)
+}
+
+func (s *Service) GetQRCodeUserKey(userID int64, serviceID string) ([]byte, error) {
+
+	fileBytes, err := s.DownloadUserKey(userID, serviceID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return generateQRCode(string(fileBytes))
+
+}
+
+func (s *Service) DeleteUserService(userID int64, serviceID string) error {
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return err
+	}
+
+	return s.apiClient.DeleteUserService(user.ID, serviceID)
+
+}
+
+// generateQRCode создает QR-код из текста и возвращает PNG в виде []byte
+func generateQRCode(text string) ([]byte, error) {
+	// Генерируем QR-код с высоким уровнем коррекции ошибок (High)
+	qr, err := qrcode.New(text, qrcode.High)
+	if err != nil {
+		return nil, err
+	}
+
+	// Получаем PNG-изображение
+	var buf bytes.Buffer
+	err = png.Encode(&buf, qr.Image(256)) // 256 - размер в пикселях
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"math/rand"
@@ -285,6 +286,94 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 		ParseMode:   telebot.ModeHTML,
 		ReplyMarkup: menu,
 	})
+}
+
+func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) error {
+
+	fileBytes, err := s.service.DownloadUserKey(c.Chat().ID, serviceID)
+	if err != nil {
+		log.Printf("Ошибка загрузки файла ключа: %v", err)
+		return c.Send("⚠️ Ошибка загрузки файла ключа")
+	}
+
+	file := &telebot.Document{
+		File:     telebot.FromReader(bytes.NewReader(fileBytes)),
+		FileName: fmt.Sprintf("vpn%s.conf", serviceID), // Укажите нужное имя файла
+		MIME:     "text/plain; charset=utf-8",          // Укажите правильный MIME-тип
+	}
+
+	return c.Send(file)
+
+}
+
+func (s *Service) handleShowQR(c telebot.Context, serviceID string) error {
+
+	qrBytes, err := s.service.GetQRCodeUserKey(c.Chat().ID, serviceID)
+	if err != nil {
+		log.Printf("Ошибка генерации QR-кода: %v", err)
+		return c.Send("⚠️ Не удалось создать QR-код")
+	}
+
+	// Отправляем как изображение
+	photo := &telebot.Photo{
+		File:    telebot.FromReader(bytes.NewReader(qrBytes)),
+		Caption: "Ваш QR-код",
+	}
+
+	return c.Send(photo)
+
+}
+
+func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
+
+	// Создаем inline-клавиатуру
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+	rows = append(rows, menu.Row(
+		menu.Data("🧨 ДА, УДАЛИТЬ! 🔥", "/delete_confirmed", serviceID),
+	))
+
+	// Кнопка "Назад"
+	rows = append(rows, menu.Row(
+		menu.Data("⇦ Назад", "/list", ""),
+	))
+
+	menu.Inline(rows...)
+
+	msg := "🤔 <b>Подтвердите удаление услуги. Услугу нельзя будет восстановить!</b>"
+
+	if c.Callback() != nil {
+		err := c.Edit(msg, &telebot.SendOptions{
+			ParseMode:   telebot.ModeHTML,
+			ReplyMarkup: menu,
+		})
+		if err == nil {
+			return nil
+		}
+	}
+
+	return c.Send(msg, &telebot.SendOptions{
+		ParseMode:   telebot.ModeHTML,
+		ReplyMarkup: menu,
+	})
+}
+
+func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) error {
+
+	err := s.service.DeleteUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		log.Printf("Ошибка при удалении услуги: %v", err)
+		return c.Send("⚠️ Ошибка при удалении услуги")
+	}
+
+	// 3. Удаляем сообщение с подтверждением
+	if err := c.Delete(); err != nil {
+		log.Printf("Error deleting confirmation message: %v", err)
+	}
+
+	// 4. Открываем список услуг
+	return s.handleList(c)
+
 }
 
 func (s *Service) handleRegister(c telebot.Context) error {

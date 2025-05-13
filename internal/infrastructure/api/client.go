@@ -200,7 +200,7 @@ func (c *APIClient) GetUserBalance(userID int) (*models.UserBalance, error) {
 
 	req, err := http.NewRequest(
 		"GET",
-		fmt.Sprintf("%s/shm/v1/public/my_template?format=json&uid=%d", c.ServerURL, userID),
+		fmt.Sprintf("%s/shm/v1/template/getUserBalance?format=json&uid=%d", c.ServerURL, userID),
 		nil)
 
 	if err != nil {
@@ -295,4 +295,54 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 
 	return nil, nil
 
+}
+
+func (c *APIClient) DownloadUserKey(userID int, serviceID string) ([]byte, error) {
+
+	req, err := http.NewRequest(
+		"GET",
+		fmt.Sprintf("%s/shm/v1/template/uploadDocumentFromStorage?uid=%d&name=vpn%s", c.ServerURL, userID, serviceID),
+		nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
+
+	req, err := http.NewRequest(
+		"DELETE",
+		fmt.Sprintf("%s/shm/v1/admin/user/service?user_id=%d&user_service_id=%s", c.ServerURL, userID, serviceID),
+		nil)
+
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Проверяем статус код
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
 }
