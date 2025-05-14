@@ -196,6 +196,54 @@ func (s *Service) handleList(c telebot.Context) error {
 	return c.Send("🗝 Ваши ключи:", menu)
 }
 
+func (s *Service) handlePricelist(c telebot.Context) error {
+
+	menu := &telebot.ReplyMarkup{}
+	btnBack := menu.Data("⇦ Назад", "/menu")
+
+	services, err := s.service.GetServices()
+
+	if err != nil {
+		log.Printf("Не удалось загрузить список услуг: %v", err)
+		return c.Send("⚠️ Не удалось загрузить список услуг. Попробуйте позже.")
+	}
+
+	var rows []telebot.Row
+	for _, s := range services {
+		// Форматируем цену в зависимости от периода
+		price := formatPrice(s.Cost, s.Period)
+		rows = append(rows, menu.Row(
+			menu.Data(fmt.Sprintf("🛒 %s - %s", s.Name, price), "/serviceorder", fmt.Sprint(s.ServiceID)),
+		))
+	}
+	rows = append(rows, menu.Row(btnBack))
+	menu.Inline(rows...)
+
+	msg := "☷ Выберите услугу для заказа:"
+	if c.Callback() != nil {
+		err := c.Edit(msg, menu)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return c.Send(msg, menu)
+
+}
+
+func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error {
+
+	_, err := s.service.ServiceOrder(c.Chat().ID, serviceID)
+
+	if err != nil {
+		log.Printf("Ошибка при заказе услуги: %v", err)
+		return c.Send("⚠️ Произошла ошибка при заказе услуги")
+	}
+
+	return s.handleList(c)
+
+}
+
 func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	us, err := s.service.GetUserService(serviceID)
@@ -423,4 +471,13 @@ func generatePassword() string {
 		b[i] = charset[rand.Intn(len(charset))]
 	}
 	return string(b)
+}
+
+func formatPrice(cost int, period int) string {
+	if period == 1 {
+		return fmt.Sprintf("%d руб./мес", cost)
+	} else if period == 12 {
+		return fmt.Sprintf("%d руб./год", cost)
+	}
+	return fmt.Sprintf("%d$/%d мес", cost, period)
 }

@@ -43,3 +43,11 @@ type TelegramInfo struct {
 	ChatID       int64                  `json:"chat_id"`
 	Profile      map[string]interface{} `json:"telegram_bot"`
 }
+
+type Service struct {
+	ServiceID    int    `json:"service_id"`
+	Name         string `json:"name"`
+	Cost         int    `json:"cost"`
+	Period       int    `json:"period"`
+	AllowToOrder int    `json:"allow_to_order"`
+}

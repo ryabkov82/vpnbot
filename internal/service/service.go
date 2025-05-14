@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"image/png"
+	"strconv"
 
 	"github.com/skip2/go-qrcode"
 
@@ -104,4 +105,26 @@ func generateQRCode(text string) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (s *Service) GetServices() ([]models.Service, error) {
+
+	return s.apiClient.GetServices()
+
+}
+
+func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserService, error) {
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	srvID, err := strconv.Atoi(serviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.apiClient.ServiceOrder(user.ID, srvID)
+
 }

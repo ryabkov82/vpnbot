@@ -346,3 +346,89 @@ func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
 
 	return nil
 }
+
+func (c *APIClient) GetServices() ([]models.Service, error) {
+
+	// Формируем URL для запроса
+	filter := fmt.Sprintf(`{"allow_to_order": %d}`, 1)
+	url := fmt.Sprintf("%s/shm/v1/admin/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Выполняем GET-запрос
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Парсим ответ
+	type ServiceResponse struct {
+		Data []models.Service `json:"data"`
+	}
+
+	var result ServiceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Data, nil
+
+}
+
+func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService, error) {
+
+	// Подготовка данных
+	filter := map[string]interface{}{
+		"service_id":          serviceID,
+		"user_id":             userID,
+		"check_exists_unpaid": 1,
+	}
+
+	// Сериализация и кодирование
+	jsonData, _ := json.Marshal(filter)
+
+	req, err := http.NewRequest(
+		"PUT",
+		fmt.Sprintf("%s/shm/v1/admin/service/order", c.ServerURL),
+		bytes.NewBuffer(jsonData),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Устанавливаем заголовки
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API вернул статус %d", resp.StatusCode)
+	}
+
+	// Парсим ответ
+	type ServiceResponse struct {
+		Data []models.UserService `json:"data"`
+	}
+
+	var result ServiceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Data) > 0 {
+		return &result.Data[0], nil
+	}
+
+	return nil, nil
+
+}

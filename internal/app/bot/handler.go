@@ -72,6 +72,14 @@ func (h *BotHandler) handleDeleteConfirmed(c telebot.Context, serviceID string) 
 	return h.service.handleDeleteConfirmed(c, serviceID)
 }
 
+func (h *BotHandler) handlePricelist(c telebot.Context) error {
+	return h.service.handlePricelist(c)
+}
+
+func (h *BotHandler) handleServiceOrder(c telebot.Context, serviceID string) error {
+	return h.service.handleServiceOrder(c, serviceID)
+}
+
 func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	callbackData := c.Callback().Data
 
@@ -112,13 +120,11 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	case "/delete_confirmed":
 		serviceIDStr := parts[1]
 		return h.handleDeleteConfirmed(c, serviceIDStr)
-	/*
-		case "/download_qr":
-			return handleDownloadQR(c, args[1:])
-		//case "/delete_confirmed":
-		//	return handleDeleteConfirmed(c, args[1:])
-		// ... другие обработчики
-	*/
+	case "/pricelist":
+		return h.handlePricelist(c)
+	case "/serviceorder":
+		serviceIDStr := parts[1]
+		return h.handleServiceOrder(c, serviceIDStr)
 	default:
 		return c.Respond(&telebot.CallbackResponse{
 			Text: "Неизвестная команда",
