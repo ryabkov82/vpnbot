@@ -432,3 +432,38 @@ func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService
 	return nil, nil
 
 }
+
+func (c *APIClient) GetUserPays(userID int) ([]models.UserPay, error) {
+
+	// Формируем URL для запроса
+	filter := fmt.Sprintf(`{"user_id": %d}`, userID)
+	url := fmt.Sprintf("%s/shm/v1/admin/user/pay?filter=%s", c.ServerURL, url.QueryEscape(filter))
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status: %d", resp.StatusCode)
+	}
+
+	// Парсим ответ
+	type PaysResponse struct {
+		Data []models.UserPay `json:"data"`
+	}
+
+	var result PaysResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Data, nil
+}

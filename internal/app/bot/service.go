@@ -56,13 +56,16 @@ func (s *Service) showRegistrationMenu(c telebot.Context) error {
 		username = "не указан"
 	}
 
-	msg := fmt.Sprintf(
-		"Для работы с Telegram ботом укажите _Telegram логин_ в профиле личного кабинета.\n\n"+
-			"*Telegram логин*: %s\n\n"+
-			"*Кабинет пользователя*: %s",
-		username,
-		s.config.Cli.URL,
-	)
+	msg := "Для начала работы с Telegram ботом, пожалуйста, зарегистрируйтесь"
+	/*
+		msg := fmt.Sprintf(
+			"Для работы с Telegram ботом укажите _Telegram логин_ в профиле личного кабинета.\n\n"+
+				"*Telegram логин*: %s\n\n"+
+				"*Кабинет пользователя*: %s",
+			username,
+			s.config.Cli.URL,
+		)
+	*/
 
 	menu.Inline(menu.Row(btnRegister))
 	err := c.Send(msg, menu, telebot.ModeMarkdown)
@@ -84,32 +87,49 @@ func (s *Service) showRegistrationMenu(c telebot.Context) error {
 // showMainMenu показывает основное меню
 func (s *Service) showMainMenu(c telebot.Context) error {
 
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
+
 	menu := &telebot.ReplyMarkup{}
 	btnBalance := menu.Data("💰 Баланс", "/balance")
 	btnKeys := menu.Data("🗝 Список VPN ключей", "/list")
-	btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
+	btnHelp := menu.Data("🗓 Помощь", "/help")
+	//btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
 	menu.Inline(
 		menu.Row(btnBalance),
 		menu.Row(btnKeys),
-		menu.Row(btnSupport),
+		menu.Row(btnHelp),
 	)
 
 	msg := "Создавайте и управляйте своими VPN ключами"
-	if c.Callback() != nil {
-		err := c.Edit(
-			msg,
-			menu,
-		)
-		if err == nil {
-			return nil
+	/*
+		if c.Callback() != nil {
+			err := c.Edit(
+				msg,
+				menu,
+			)
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send(msg, menu)
 }
 
 func (s *Service) handleBalance(c telebot.Context) error {
+
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
 
 	userBalance, err := s.service.GetUserBalance(c.Chat().ID)
 	if err != nil {
@@ -121,24 +141,31 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{
 		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%s&profile=telegram_test_bot", s.config.API.BaseURL, userBalance.ID),
 	})
+
+	btnPays := menu.Data("☰ История платежей", "/pays")
+
 	btnBack := menu.Data("⇦ Назад", "/menu")
 
 	menu.Inline(
 		menu.Row(btnPay),
+		menu.Row(btnPays),
 		menu.Row(btnBack),
 	)
 
 	msg := fmt.Sprintf("💰 *Баланс*: %.2f\n\nНеобходимо оплатить: *%.2f*", userBalance.Balance, userBalance.Forecast)
-	if c.Callback() != nil {
-		err := c.Edit(
-			msg,
-			menu,
-			telebot.ModeMarkdown,
-		)
-		if err == nil {
-			return nil
+
+	/*
+		if c.Callback() != nil {
+			err := c.Edit(
+				msg,
+				menu,
+				telebot.ModeMarkdown,
+			)
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send(
 		msg,
@@ -148,6 +175,13 @@ func (s *Service) handleBalance(c telebot.Context) error {
 }
 
 func (s *Service) handleList(c telebot.Context) error {
+
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
 
 	services, err := s.service.GetUserServices(c.Chat().ID)
 	if err != nil {
@@ -186,17 +220,26 @@ func (s *Service) handleList(c telebot.Context) error {
 
 	menu.Inline(rows...)
 
-	if c.Callback() != nil {
-		err := c.Edit("🗝 Ваши ключи:", menu)
-		if err == nil {
-			return nil
+	/*
+		if c.Callback() != nil {
+			err := c.Edit("🗝 Ваши ключи:", menu)
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send("🗝 Ваши ключи:", menu)
 }
 
 func (s *Service) handlePricelist(c telebot.Context) error {
+
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
 
 	menu := &telebot.ReplyMarkup{}
 	btnBack := menu.Data("⇦ Назад", "/menu")
@@ -220,12 +263,14 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	menu.Inline(rows...)
 
 	msg := "☷ Выберите услугу для заказа:"
-	if c.Callback() != nil {
-		err := c.Edit(msg, menu)
-		if err == nil {
-			return nil
+	/*
+		if c.Callback() != nil {
+			err := c.Edit(msg, menu)
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send(msg, menu)
 
@@ -245,6 +290,13 @@ func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error 
 }
 
 func (s *Service) handleService(c telebot.Context, serviceID string) error {
+
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
 
 	us, err := s.service.GetUserService(serviceID)
 	if err != nil {
@@ -320,15 +372,17 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	msg := text.String()
 
-	if c.Callback() != nil {
-		err := c.Edit(msg, &telebot.SendOptions{
-			ParseMode:   telebot.ModeHTML,
-			ReplyMarkup: menu,
-		})
-		if err == nil {
-			return nil
+	/*
+		if c.Callback() != nil {
+			err := c.Edit(msg, &telebot.SendOptions{
+				ParseMode:   telebot.ModeHTML,
+				ReplyMarkup: menu,
+			})
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send(msg, &telebot.SendOptions{
 		ParseMode:   telebot.ModeHTML,
@@ -374,6 +428,13 @@ func (s *Service) handleShowQR(c telebot.Context, serviceID string) error {
 
 func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
+
 	// Создаем inline-клавиатуру
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
@@ -390,15 +451,17 @@ func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 
 	msg := "🤔 <b>Подтвердите удаление услуги. Услугу нельзя будет восстановить!</b>"
 
-	if c.Callback() != nil {
-		err := c.Edit(msg, &telebot.SendOptions{
-			ParseMode:   telebot.ModeHTML,
-			ReplyMarkup: menu,
-		})
-		if err == nil {
-			return nil
+	/*
+		if c.Callback() != nil {
+			err := c.Edit(msg, &telebot.SendOptions{
+				ParseMode:   telebot.ModeHTML,
+				ReplyMarkup: menu,
+			})
+			if err == nil {
+				return nil
+			}
 		}
-	}
+	*/
 
 	return c.Send(msg, &telebot.SendOptions{
 		ParseMode:   telebot.ModeHTML,
@@ -461,6 +524,106 @@ func (s *Service) handleRegister(c telebot.Context) error {
 	}
 
 	return s.showMainMenu(c)
+
+}
+
+func (s *Service) handleHelp(c telebot.Context) error {
+
+	if err := c.Delete(); err != nil {
+		log.Printf("Failed to delete message: %v", err)
+	}
+
+	/*
+			// Создаем кнопки для inline клавиатуры
+		    supportBtn := telebot.InlineButton{
+		        Text: "Чат поддержки",
+		        URL:  "https://t.me/shm_billing",
+		    }
+	*/
+
+	backBtn := telebot.InlineButton{
+		Text: "⇦ Назад",
+		Data: "/menu",
+	}
+
+	// Создаем inline клавиатуру
+	inlineKeys := [][]telebot.InlineButton{
+		{backBtn},
+	}
+
+	// Формируем текст с HTML разметкой
+	caption := `1️⃣ Скачайте и установите приложение WireGuard к себе на устройство. Скачать для <a href="https://apps.apple.com/us/app/wireguard/id1441195209">iPhone</a>, <a href="https://play.google.com/store/apps/details?id=com.wireguard.android">Android</a>, <a href="https://apps.apple.com/us/app/wireguard/id1451685025">Mac</a>.
+
+2️⃣ В разделе "Ключи" нажмите "Новый ключ" и выберите нужный вам.
+
+3️⃣ После оплаты скачайте файл настроек для приложения WireGuard. Находясь в меню "Ключи" выберите нужный ключ, кликнув по нему. Далее скачайте файл ключа и добавьте его в приложение WireGuard.`
+
+	// Отправляем фото с подписью и клавиатурой
+	_, err := c.Bot().Send(
+		c.Chat(),
+		&telebot.Photo{
+			File:    telebot.FromURL("https://media.tenor.com/5KHjsG1Aw1YAAAAi/photos-google-photos.gif"),
+			Caption: caption,
+		},
+		&telebot.SendOptions{
+			ParseMode: telebot.ModeHTML, // В v3+ может потребоваться просто "HTML"
+			//Protected: true,             // В v3+ protect_content заменен на Protected
+			ReplyMarkup: &telebot.ReplyMarkup{
+				InlineKeyboard: inlineKeys,
+			},
+		},
+	)
+
+	return err
+}
+
+func (s *Service) handlePays(c telebot.Context) error {
+
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
+
+	// Получаем ID пользователя из контекста
+	userID := c.Sender().ID
+
+	// Делаем запрос к API для получения платежей
+	pays, err := s.service.GetUserPays(userID)
+	if err != nil {
+		log.Printf("Не удалось получить данные о платежах: %v", err)
+		return c.Send("⚠️ Не удалось получить данные о платежах")
+	}
+
+	// Создаем inline клавиатуру
+	var inlineKeys [][]telebot.InlineButton
+
+	// Добавляем кнопки для каждого платежа
+	for _, pay := range pays {
+		btn := telebot.InlineButton{
+			Text: fmt.Sprintf("Дата: %s, Сумма: %d руб.", pay.Date, pay.Money),
+			Data: "/menu", // В v3+ используется Data вместо CallbackData
+		}
+		inlineKeys = append(inlineKeys, []telebot.InlineButton{btn})
+	}
+
+	// Добавляем кнопку "Назад"
+	backBtn := telebot.InlineButton{
+		Text: "⇦ Назад",
+		Data: "/menu",
+	}
+	inlineKeys = append(inlineKeys, []telebot.InlineButton{backBtn})
+
+	// Отправляем сообщение с клавиатурой
+	return c.Send(
+		"Платежи",
+		&telebot.SendOptions{
+			ReplyMarkup: &telebot.ReplyMarkup{
+				InlineKeyboard: inlineKeys,
+			},
+		},
+	)
 
 }
 

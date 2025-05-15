@@ -80,6 +80,14 @@ func (h *BotHandler) handleServiceOrder(c telebot.Context, serviceID string) err
 	return h.service.handleServiceOrder(c, serviceID)
 }
 
+func (h *BotHandler) handleHelp(c telebot.Context) error {
+	return h.service.handleHelp(c)
+}
+
+func (h *BotHandler) handlePays(c telebot.Context) error {
+	return h.service.handlePays(c)
+}
+
 func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	callbackData := c.Callback().Data
 
@@ -100,13 +108,6 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 		return h.handleList(c)
 	case "/service":
 		serviceIDStr := parts[1]
-		/*
-			serviceID, err := strconv.Atoi(serviceIDStr)
-			if err != nil {
-				log.Printf("Ошибка преобразования ID услуги: %v", err)
-				return c.Send("⚠️ Произошла ошибка при обработке запроса")
-			}
-		*/
 		return h.handleService(c, serviceIDStr)
 	case "/download_qr":
 		serviceIDStr := parts[1]
@@ -125,6 +126,10 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	case "/serviceorder":
 		serviceIDStr := parts[1]
 		return h.handleServiceOrder(c, serviceIDStr)
+	case "/help":
+		return h.handleHelp(c)
+	case "/pays":
+		return h.handlePays(c)
 	default:
 		return c.Respond(&telebot.CallbackResponse{
 			Text: "Неизвестная команда",

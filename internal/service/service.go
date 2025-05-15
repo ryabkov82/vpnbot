@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image/png"
 	"strconv"
+	"sync"
 
 	"github.com/skip2/go-qrcode"
 
@@ -13,11 +14,14 @@ import (
 
 type Service struct {
 	apiClient *api.APIClient
+	paysCache map[int64][]models.UserPay // userID -> pays
+	cacheMux  sync.Mutex
 }
 
 func NewService(apiClient *api.APIClient) *Service {
 	return &Service{
 		apiClient: apiClient,
+		paysCache: make(map[int64][]models.UserPay),
 	}
 }
 
@@ -127,4 +131,29 @@ func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserServ
 
 	return s.apiClient.ServiceOrder(user.ID, srvID)
 
+}
+
+func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
+
+	s.cacheMux.Lock()
+	defer s.cacheMux.Unlock()
+
+	if cached, exists := s.paysCache[userID]; exists {
+		return cached, nil
+	}
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	pays, err := s.apiClient.GetUserPays(user.ID)
+
+	if err != nil {
+		return pays, err
+	}
+
+	s.paysCache[userID] = pays
+
+	return pays, err
 }

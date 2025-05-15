@@ -51,3 +51,8 @@ type Service struct {
 	Period       int    `json:"period"`
 	AllowToOrder int    `json:"allow_to_order"`
 }
+
+type UserPay struct {
+	Date  string `json:"date"`
+	Money int    `json:"money"`
+}
