@@ -14,11 +14,14 @@ type UserBalance struct {
 }
 
 type UserService struct {
-	Name      string `json:"name"`
-	Cost      string `json:"cost"`
-	Status    string `json:"status"`
-	Expire    string `json:"expire"`
-	ServiceID string `json:"user_service_id"`
+	Name       string `json:"name"`
+	UserID     int    `json:"user_id"`
+	Cost       string `json:"cost"`
+	Status     string `json:"status"`
+	Expire     string `json:"expire"`
+	ServiceID  string `json:"user_service_id"`
+	Category   string `json:"category"`
+	KeyMarzban UserKeyMarzban
 }
 
 type UserRegistrationRequest struct {
@@ -55,4 +58,9 @@ type Service struct {
 type UserPay struct {
 	Date  string `json:"date"`
 	Money int    `json:"money"`
+}
+
+type UserKeyMarzban struct {
+	SubscriptionURL string   `json:"subscription_url"`
+	Links           []string `json:"links"`
 }

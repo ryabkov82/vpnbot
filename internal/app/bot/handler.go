@@ -19,6 +19,8 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 	// Команды
 	bot.Handle("/start", h.handleStart)
 	bot.Handle("/register", h.handleRegister)
+	// Обработчик кнопки "📋 Меню"
+	bot.Handle("📋 Меню", h.handleMenu)
 	// Callback-кнопки
 	bot.Handle(telebot.OnCallback, h.handleCallbacks)
 	/*
@@ -88,7 +90,17 @@ func (h *BotHandler) handlePays(c telebot.Context) error {
 	return h.service.handlePays(c)
 }
 
+func (h *BotHandler) handleShowMZ(c telebot.Context, serviceID string) error {
+	return h.service.handleShowMZ(c, serviceID)
+}
+
 func (h *BotHandler) handleCallbacks(c telebot.Context) error {
+
+	// 1. Всегда отвечаем на callback
+	if err := c.Respond(); err != nil {
+		return err
+	}
+
 	callbackData := c.Callback().Data
 
 	// Убираем \f (если есть) и разбиваем по |
@@ -130,6 +142,9 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 		return h.handleHelp(c)
 	case "/pays":
 		return h.handlePays(c)
+	case "/show_mz_keys":
+		serviceIDStr := parts[1]
+		return h.handleShowMZ(c, serviceIDStr)
 	default:
 		return c.Respond(&telebot.CallbackResponse{
 			Text: "Неизвестная команда",

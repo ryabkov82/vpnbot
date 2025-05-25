@@ -87,39 +87,67 @@ func (s *Service) showRegistrationMenu(c telebot.Context) error {
 // showMainMenu показывает основное меню
 func (s *Service) showMainMenu(c telebot.Context) error {
 
-	if c.Callback() != nil {
-		// Для callback-запросов
-		if err := c.Bot().Delete(c.Callback().Message); err != nil {
-			log.Printf("Delete callback message error: %v", err)
+	if c.Message() != nil {
+		if err := c.Bot().Delete(c.Message()); err != nil {
+			log.Printf("Ошибка удаления сообщения: %v", err)
 		}
 	}
 
-	menu := &telebot.ReplyMarkup{}
-	btnBalance := menu.Data("💰 Баланс", "/balance")
-	btnKeys := menu.Data("🗝 Список VPN ключей", "/list")
-	btnHelp := menu.Data("🗓 Помощь", "/help")
-	//btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
-
-	menu.Inline(
-		menu.Row(btnBalance),
-		menu.Row(btnKeys),
-		menu.Row(btnHelp),
-	)
-
-	msg := "Создавайте и управляйте своими VPN ключами"
 	/*
 		if c.Callback() != nil {
-			err := c.Edit(
-				msg,
-				menu,
-			)
-			if err == nil {
-				return nil
+			// Для callback-запросов
+			if err := c.Bot().Delete(c.Callback().Message); err != nil {
+				log.Printf("Delete callback message error: %v", err)
 			}
 		}
-	*/
 
-	return c.Send(msg, menu)
+
+			return c.Send(
+				"Все кнопки удалены",
+				&telebot.SendOptions{
+					ReplyMarkup: &telebot.ReplyMarkup{
+						RemoveKeyboard: true, // Удаляем Reply-клавиатуру
+						InlineKeyboard: nil,  // Удаляем инлайн-кнопки
+					},
+				},
+			)
+	*/
+	// 1. Создаем Reply-клавиатуру (кнопки под полем ввода)
+	replyMarkup := &telebot.ReplyMarkup{
+		ResizeKeyboard:  true,
+		OneTimeKeyboard: false,
+		Selective:       true, // Важно для корректной работы
+	}
+	btnMenu := replyMarkup.Text("📋 Меню")
+	replyMarkup.Reply(replyMarkup.Row(btnMenu))
+
+	err := c.Send("Меню",
+		&telebot.SendOptions{
+			ParseMode:   "HTML",
+			ReplyMarkup: replyMarkup, // Reply-клавиатура
+		})
+
+	if err != nil {
+		return err
+	}
+
+	msg := "Создавайте и управляйте своими VPN ключами"
+
+	// 2. Создаем инлайн-меню (кнопки внутри сообщения)
+	inlineMenu := &telebot.ReplyMarkup{}
+	btnBalance := inlineMenu.Data("💰 Баланс", "/balance")
+	btnKeys := inlineMenu.Data("🗝 Список VPN ключей", "/list")
+	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
+	//btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
+
+	inlineMenu.Inline(
+		inlineMenu.Row(btnBalance),
+		inlineMenu.Row(btnKeys),
+		inlineMenu.Row(btnHelp),
+	)
+
+	return c.Send(msg, inlineMenu)
+
 }
 
 func (s *Service) handleBalance(c telebot.Context) error {
@@ -153,19 +181,6 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	)
 
 	msg := fmt.Sprintf("💰 *Баланс*: %.2f\n\nНеобходимо оплатить: *%.2f*", userBalance.Balance, userBalance.Forecast)
-
-	/*
-		if c.Callback() != nil {
-			err := c.Edit(
-				msg,
-				menu,
-				telebot.ModeMarkdown,
-			)
-			if err == nil {
-				return nil
-			}
-		}
-	*/
 
 	return c.Send(
 		msg,
@@ -220,15 +235,6 @@ func (s *Service) handleList(c telebot.Context) error {
 
 	menu.Inline(rows...)
 
-	/*
-		if c.Callback() != nil {
-			err := c.Edit("🗝 Ваши ключи:", menu)
-			if err == nil {
-				return nil
-			}
-		}
-	*/
-
 	return c.Send("🗝 Ваши ключи:", menu)
 }
 
@@ -263,15 +269,6 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	menu.Inline(rows...)
 
 	msg := "☷ Выберите услугу для заказа:"
-	/*
-		if c.Callback() != nil {
-			err := c.Edit(msg, menu)
-			if err == nil {
-				return nil
-			}
-		}
-	*/
-
 	return c.Send(msg, menu)
 
 }
@@ -343,10 +340,21 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	// Первый ряд кнопок (для активного ключа)
 	if us.Status == "ACTIVE" {
-		rows = append(rows, menu.Row(
-			menu.Data("🗝 Скачать ключ", "/download_qr", fmt.Sprint(us.ServiceID)),
-			menu.Data("👀 Показать QR код", "/show_qr", fmt.Sprint(us.ServiceID)),
-		))
+		if strings.HasPrefix(us.Category, "vpn-mz-") {
+
+			rows = append(rows, menu.Row(
+				menu.WebApp("Показать данные для подключения", &telebot.WebApp{
+					URL: us.KeyMarzban.SubscriptionURL,
+				}),
+				menu.Data("Показать ссылку подписки", "/show_mz_keys", fmt.Sprint(us.ServiceID)),
+			))
+
+		} else {
+			rows = append(rows, menu.Row(
+				menu.Data("🗝 Скачать ключ", "/download_qr", fmt.Sprint(us.ServiceID)),
+				menu.Data("👀 Показать QR код", "/show_qr", fmt.Sprint(us.ServiceID)),
+			))
+		}
 	}
 
 	// Второй ряд (для неоплаченных/заблокированных)
@@ -372,18 +380,6 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	msg := text.String()
 
-	/*
-		if c.Callback() != nil {
-			err := c.Edit(msg, &telebot.SendOptions{
-				ParseMode:   telebot.ModeHTML,
-				ReplyMarkup: menu,
-			})
-			if err == nil {
-				return nil
-			}
-		}
-	*/
-
 	return c.Send(msg, &telebot.SendOptions{
 		ParseMode:   telebot.ModeHTML,
 		ReplyMarkup: menu,
@@ -405,6 +401,61 @@ func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) err
 	}
 
 	return c.Send(file)
+
+}
+
+func (s *Service) handleShowMZ(c telebot.Context, serviceID string) error {
+
+	userKey, err := s.service.GetUserKeyMarzban(c.Chat().ID, serviceID)
+	if err != nil {
+		log.Printf("Ошибка при получении информации по услуге: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+
+	qrBytes, err := service.GenerateQRCode(userKey.SubscriptionURL)
+
+	if err != nil {
+		log.Printf("Ошибка генерации QR-кода: %v", err)
+		return c.Send("⚠️ Не удалось создать QR-код")
+	}
+
+	// Отправляем как изображение
+	photo := &telebot.Photo{
+		File:    telebot.FromReader(bytes.NewReader(qrBytes)),
+		Caption: fmt.Sprintf("<b>Subscription URL:</b>\n<code>%s</code>", userKey.SubscriptionURL),
+	}
+
+	err = c.Send(photo, &telebot.SendOptions{
+		ParseMode: telebot.ModeHTML,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	link := userKey.Links[0]
+
+	qrBytes, err = service.GenerateQRCode(userKey.SubscriptionURL)
+	if err != nil {
+		log.Printf("Ошибка генерации QR-кода: %v", err)
+		return c.Send("⚠️ Не удалось создать QR-код")
+	}
+
+	caption := ""
+	if strings.HasPrefix(link, "ss") {
+		caption = fmt.Sprintf("<b>ShadowSocks:</b>\n<code>%s</code>", link)
+	} else {
+		caption = fmt.Sprintf("<b>VLESS TCP:</b>\n<code>%s</code>", link)
+	}
+
+	photo = &telebot.Photo{
+		File:    telebot.FromReader(bytes.NewReader(qrBytes)),
+		Caption: caption,
+	}
+
+	return c.Send(photo, &telebot.SendOptions{
+		ParseMode: telebot.ModeHTML,
+	})
 
 }
 

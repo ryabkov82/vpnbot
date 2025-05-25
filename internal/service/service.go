@@ -78,7 +78,18 @@ func (s *Service) GetQRCodeUserKey(userID int64, serviceID string) ([]byte, erro
 		return nil, err
 	}
 
-	return generateQRCode(string(fileBytes))
+	return GenerateQRCode(string(fileBytes))
+
+}
+
+func (s *Service) GetUserKeyMarzban(userID int64, serviceID string) (*models.UserKeyMarzban, error) {
+
+	user, err := s.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.apiClient.GetUserKeyMarzban(user.ID, serviceID)
 
 }
 
@@ -94,7 +105,7 @@ func (s *Service) DeleteUserService(userID int64, serviceID string) error {
 }
 
 // generateQRCode создает QR-код из текста и возвращает PNG в виде []byte
-func generateQRCode(text string) ([]byte, error) {
+func GenerateQRCode(text string) ([]byte, error) {
 	// Генерируем QR-код с высоким уровнем коррекции ошибок (High)
 	qr, err := qrcode.New(text, qrcode.High)
 	if err != nil {

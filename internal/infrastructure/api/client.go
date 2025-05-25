@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -290,11 +291,47 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 	}
 
 	if len(result.Data) > 0 {
-		return &result.Data[0], nil
+		us := result.Data[0]
+		if strings.HasPrefix(us.Category, "vpn-mz-") && us.Status == "ACTIVE" {
+			userKey, err := c.GetUserKeyMarzban(us.UserID, us.ServiceID)
+			if err != nil {
+				return nil, err
+			}
+			us.KeyMarzban = *userKey
+		}
+		return &us, nil
 	}
 
 	return nil, nil
 
+}
+
+func (c *APIClient) GetUserKeyMarzban(userID int, serviceID string) (*models.UserKeyMarzban, error) {
+
+	// Формируем URL для запроса
+	url := fmt.Sprintf("%s/shm/v1/storage/manage/vpn_mrzb_%s?user_id=%d", c.ServerURL, serviceID, userID)
+
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Выполняем GET-запрос
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Парсим ответ
+
+	var result models.UserKeyMarzban
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 func (c *APIClient) DownloadUserKey(userID int, serviceID string) ([]byte, error) {
