@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -412,6 +413,10 @@ func (c *APIClient) GetServices() ([]models.Service, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
+
+	sort.Slice(result.Data, func(i, j int) bool {
+		return result.Data[i].Period < result.Data[j].Period // по возрастанию
+	})
 
 	return result.Data, nil
 

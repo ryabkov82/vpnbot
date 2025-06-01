@@ -11,7 +11,10 @@ import (
 
 // Конфигурация
 type Config struct {
-	API struct {
+	Env        string `json:"app_env"`
+	WebhookURL string `json:"webhook_url"`
+	Port       string `json:"port"`
+	API        struct {
 		BaseURL  string `json:"base_url"`
 		APILogin string `json:"api_login"`
 		APIPass  string `json:"api_pass"`

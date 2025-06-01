@@ -138,12 +138,13 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	btnBalance := inlineMenu.Data("💰 Баланс", "/balance")
 	btnKeys := inlineMenu.Data("🗝 Список VPN ключей", "/list")
 	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
-	//btnSupport := menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
+	btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
 	inlineMenu.Inline(
 		inlineMenu.Row(btnBalance),
 		inlineMenu.Row(btnKeys),
 		inlineMenu.Row(btnHelp),
+		inlineMenu.Row(btnSupport),
 	)
 
 	return c.Send(msg, inlineMenu)
@@ -167,7 +168,7 @@ func (s *Service) handleBalance(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{
-		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%s&profile=telegram_test_bot", s.config.API.BaseURL, userBalance.ID),
+		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%s&profile=telegram_bot", s.config.API.BaseURL, userBalance.ID),
 	})
 
 	btnPays := menu.Data("☰ История платежей", "/pays")
@@ -205,9 +206,9 @@ func (s *Service) handleList(c telebot.Context) error {
 	}
 
 	// Форматируем вывод
-	if len(services) == 0 {
-		return c.Send("У вас нет активных услуг")
-	}
+	//if len(services) == 0 {
+	//	return c.Send("У вас нет активных услуг")
+	//}
 
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
@@ -260,9 +261,9 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	var rows []telebot.Row
 	for _, s := range services {
 		// Форматируем цену в зависимости от периода
-		price := formatPrice(s.Cost, s.Period)
+		//price := formatPrice(s.Cost, s.Period)
 		rows = append(rows, menu.Row(
-			menu.Data(fmt.Sprintf("🛒 %s - %s", s.Name, price), "/serviceorder", fmt.Sprint(s.ServiceID)),
+			menu.Data(fmt.Sprintf("🛒 %s - %d руб.", s.Name, s.Cost), "/serviceorder", fmt.Sprint(s.ServiceID)),
 		))
 	}
 	rows = append(rows, menu.Row(btnBack))
@@ -344,7 +345,7 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 			rows = append(rows, menu.Row(
 				menu.WebApp("Показать данные для подключения", &telebot.WebApp{
-					URL: us.KeyMarzban.SubscriptionURL,
+					URL: fmt.Sprintf("%s?telegram=true", us.KeyMarzban.SubscriptionURL),
 				}),
 				menu.Data("Показать ссылку подписки", "/show_mz_keys", fmt.Sprint(us.ServiceID)),
 			))
@@ -502,18 +503,6 @@ func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 
 	msg := "🤔 <b>Подтвердите удаление услуги. Услугу нельзя будет восстановить!</b>"
 
-	/*
-		if c.Callback() != nil {
-			err := c.Edit(msg, &telebot.SendOptions{
-				ParseMode:   telebot.ModeHTML,
-				ReplyMarkup: menu,
-			})
-			if err == nil {
-				return nil
-			}
-		}
-	*/
-
 	return c.Send(msg, &telebot.SendOptions{
 		ParseMode:   telebot.ModeHTML,
 		ReplyMarkup: menu,
@@ -584,13 +573,11 @@ func (s *Service) handleHelp(c telebot.Context) error {
 		log.Printf("Failed to delete message: %v", err)
 	}
 
-	/*
-			// Создаем кнопки для inline клавиатуры
-		    supportBtn := telebot.InlineButton{
-		        Text: "Чат поддержки",
-		        URL:  "https://t.me/shm_billing",
-		    }
-	*/
+	// Создаем кнопки для inline клавиатуры
+	supportBtn := telebot.InlineButton{
+		Text: "Чат поддержки",
+		URL:  s.config.Telegram.SupportChat,
+	}
 
 	backBtn := telebot.InlineButton{
 		Text: "⇦ Назад",
@@ -599,23 +586,25 @@ func (s *Service) handleHelp(c telebot.Context) error {
 
 	// Создаем inline клавиатуру
 	inlineKeys := [][]telebot.InlineButton{
+		{supportBtn},
 		{backBtn},
 	}
 
 	// Формируем текст с HTML разметкой
-	caption := `1️⃣ Скачайте и установите приложение WireGuard к себе на устройство. Скачать для <a href="https://apps.apple.com/us/app/wireguard/id1441195209">iPhone</a>, <a href="https://play.google.com/store/apps/details?id=com.wireguard.android">Android</a>, <a href="https://apps.apple.com/us/app/wireguard/id1451685025">Mac</a>.
+	//caption := `1️⃣ Скачайте и установите приложение WireGuard к себе на устройство. Скачать для <a href="https://apps.apple.com/us/app/wireguard/id1441195209">iPhone</a>, <a href="https://play.google.com/store/apps/details?id=com.wireguard.android">Android</a>, <a href="https://apps.apple.com/us/app/wireguard/id1451685025">Mac</a>.
+	caption := `1️⃣ В разделе <b>"Список VPN ключей"</b> создайте новый ключ, выбрав подходящий тариф.
 
-2️⃣ В разделе "Ключи" нажмите "Новый ключ" и выберите нужный вам.
+2️⃣ После оплаты в том же разделе выберите созданный ключ и нажмите <b>"Показать данные для подключения"</b>.
 
-3️⃣ После оплаты скачайте файл настроек для приложения WireGuard. Находясь в меню "Ключи" выберите нужный ключ, кликнув по нему. Далее скачайте файл ключа и добавьте его в приложение WireGuard.`
-
+3️⃣ Следуйте инструкциям в открывшемся окне.
+`
 	// Отправляем фото с подписью и клавиатурой
-	_, err := c.Bot().Send(
-		c.Chat(),
-		&telebot.Photo{
-			File:    telebot.FromURL("https://media.tenor.com/5KHjsG1Aw1YAAAAi/photos-google-photos.gif"),
-			Caption: caption,
-		},
+	err := c.Send(
+		caption,
+		//&telebot.Photo{
+		//	//	File:    telebot.FromURL("https://media.tenor.com/5KHjsG1Aw1YAAAAi/photos-google-photos.gif"),
+		//	Caption: caption,
+		//},
 		&telebot.SendOptions{
 			ParseMode: telebot.ModeHTML, // В v3+ может потребоваться просто "HTML"
 			//Protected: true,             // В v3+ protect_content заменен на Protected

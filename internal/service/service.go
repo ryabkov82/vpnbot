@@ -149,9 +149,11 @@ func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 	s.cacheMux.Lock()
 	defer s.cacheMux.Unlock()
 
-	if cached, exists := s.paysCache[userID]; exists {
-		return cached, nil
-	}
+	/*
+		if cached, exists := s.paysCache[userID]; exists {
+			return cached, nil
+		}
+	*/
 
 	user, err := s.GetUser(userID)
 	if err != nil {
@@ -164,7 +166,7 @@ func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 		return pays, err
 	}
 
-	s.paysCache[userID] = pays
+	//s.paysCache[userID] = pays
 
 	return pays, err
 }

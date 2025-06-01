@@ -42,12 +42,27 @@ func main() {
 	botHandler := bot.NewBotHandler(botService)
 
 	// 6. Настройка Telegram бота
-	b, err := telebot.NewBot(telebot.Settings{
-		Token:  botToken,
-		Poller: &telebot.LongPoller{Timeout: 5 * time.Second},
-	})
+	settings := telebot.Settings{
+		Token: botToken,
+	}
+
+	// Режим разработки (LongPoller)
+	if cfg.Env == "development" {
+		settings.Poller = &telebot.LongPoller{Timeout: 5 * time.Second}
+	} else {
+		// Продуктовый режим (Webhook)
+		webhookURL := cfg.WebhookURL // Например, "https://yourdomain.com/bot-webhook"
+		settings.Poller = &telebot.Webhook{
+			Listen: ":" + cfg.Port, // Порт сервера (например, "8080")
+			Endpoint: &telebot.WebhookEndpoint{
+				PublicURL: webhookURL,
+			},
+		}
+	}
+
+	b, err := telebot.NewBot(settings)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	// 7. Регистрация обработчиков
