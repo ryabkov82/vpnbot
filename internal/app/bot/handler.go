@@ -20,7 +20,11 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 	bot.Handle("/start", h.handleStart)
 	bot.Handle("/register", h.handleRegister)
 	// Обработчик кнопки "📋 Меню"
-	bot.Handle("📋 Меню", h.handleMenu)
+	bot.Handle("/menu", h.handleMenu)
+	bot.Handle("/help", h.handleHelp)
+	bot.Handle("/list", h.handleList)
+	bot.Handle("/pricelist", h.handlePricelist)
+	bot.Handle("/balance", h.handleBalance)
 	// Callback-кнопки
 	bot.Handle(telebot.OnCallback, h.handleCallbacks)
 	/*
@@ -32,6 +36,36 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 		// Другие события
 		bot.Handle(telebot.OnPhoto, h.handlePhotoUpload)
 	*/
+}
+
+// Устанавливаем список команд для бота
+func (h *BotHandler) SetBotCommands(bot *telebot.Bot) error {
+	commands := []telebot.Command{
+		{
+			Text:        "/menu",
+			Description: "Начало работы с ботом",
+		},
+		{
+			Text:        "/balance",
+			Description: "Баланс",
+		},
+		{
+			Text:        "/list",
+			Description: "Список VPN ключей",
+		},
+		{
+			Text:        "/pricelist",
+			Description: "Новый ключ",
+		},
+		{
+			Text:        "/help",
+			Description: "Помощь по использованию бота",
+		},
+
+		// Добавьте другие команды по необходимости
+	}
+
+	return bot.SetCommands(commands)
 }
 
 func (h *BotHandler) handleMenu(c telebot.Context) error {

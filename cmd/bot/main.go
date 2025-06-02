@@ -65,6 +65,10 @@ func main() {
 		panic(err)
 	}
 
+	// Установка команд меню
+	if err := botHandler.SetBotCommands(b); err != nil {
+		panic(err)
+	}
 	// 7. Регистрация обработчиков
 	botHandler.RegisterHandlers(b)
 

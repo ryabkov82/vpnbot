@@ -112,24 +112,26 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 				},
 			)
 	*/
-	// 1. Создаем Reply-клавиатуру (кнопки под полем ввода)
-	replyMarkup := &telebot.ReplyMarkup{
-		ResizeKeyboard:  true,
-		OneTimeKeyboard: false,
-		Selective:       true, // Важно для корректной работы
-	}
-	btnMenu := replyMarkup.Text("📋 Меню")
-	replyMarkup.Reply(replyMarkup.Row(btnMenu))
+	/*
+		// 1. Создаем Reply-клавиатуру (кнопки под полем ввода)
+		replyMarkup := &telebot.ReplyMarkup{
+			ResizeKeyboard:  true,
+			OneTimeKeyboard: false,
+			Selective:       true, // Важно для корректной работы
+		}
+		btnMenu := replyMarkup.Text("📋 Меню")
+		replyMarkup.Reply(replyMarkup.Row(btnMenu))
 
-	err := c.Send("Меню",
-		&telebot.SendOptions{
-			ParseMode:   "HTML",
-			ReplyMarkup: replyMarkup, // Reply-клавиатура
-		})
+		err := c.Send("Меню",
+			&telebot.SendOptions{
+				ParseMode:   "HTML",
+				ReplyMarkup: replyMarkup, // Reply-клавиатура
+			})
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
+	*/
 
 	msg := "Создавайте и управляйте своими VPN ключами"
 
@@ -569,8 +571,11 @@ func (s *Service) handleRegister(c telebot.Context) error {
 
 func (s *Service) handleHelp(c telebot.Context) error {
 
-	if err := c.Delete(); err != nil {
-		log.Printf("Failed to delete message: %v", err)
+	if c.Callback() != nil {
+		// Для callback-запросов
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
 	}
 
 	// Создаем кнопки для inline клавиатуры
