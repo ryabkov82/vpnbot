@@ -48,11 +48,11 @@ type TelegramInfo struct {
 }
 
 type Service struct {
-	ServiceID    int    `json:"service_id"`
-	Name         string `json:"name"`
-	Cost         int    `json:"cost"`
-	Period       int    `json:"period"`
-	AllowToOrder int    `json:"allow_to_order"`
+	ServiceID    int     `json:"service_id"`
+	Name         string  `json:"name"`
+	Cost         float32 `json:"cost"`
+	Period       int     `json:"period"`
+	AllowToOrder int     `json:"allow_to_order"`
 }
 
 type UserPay struct {

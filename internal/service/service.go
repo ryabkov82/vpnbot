@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"image/png"
 	"strconv"
 	"sync"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
+)
+
+var (
+	ErrUserNotFound = errors.New("user not found")
 )
 
 type Service struct {
@@ -39,6 +44,9 @@ func (s *Service) GetUserBalance(userID int64) (*models.UserBalance, error) {
 	if err != nil {
 		return nil, err
 	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
 
 	return s.apiClient.GetUserBalance(user.ID)
 }
@@ -48,6 +56,9 @@ func (s *Service) GetUserServices(userID int64) ([]models.UserService, error) {
 	user, err := s.GetUser(userID)
 	if err != nil {
 		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
 	}
 
 	return s.apiClient.GetUserServices(user.ID)
@@ -133,6 +144,10 @@ func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserServ
 	user, err := s.GetUser(userID)
 	if err != nil {
 		return nil, err
+	}
+
+	if user == nil {
+		return nil, ErrUserNotFound
 	}
 
 	srvID, err := strconv.Atoi(serviceID)

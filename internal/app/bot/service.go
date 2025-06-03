@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -164,6 +165,9 @@ func (s *Service) handleBalance(c telebot.Context) error {
 
 	userBalance, err := s.service.GetUserBalance(c.Chat().ID)
 	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
 		log.Println("Ошибка проверки баланса пользователя:", err)
 		return c.Send("Ошибка системы, попробуйте позже")
 	}
@@ -203,6 +207,9 @@ func (s *Service) handleList(c telebot.Context) error {
 
 	services, err := s.service.GetUserServices(c.Chat().ID)
 	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
 		log.Printf("Ошибка при получении списка услуг: %v", err)
 		return c.Send("⚠️ Произошла ошибка при получении списка услуг")
 	}
@@ -248,6 +255,16 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 		if err := c.Bot().Delete(c.Callback().Message); err != nil {
 			log.Printf("Delete callback message error: %v", err)
 		}
+	} else {
+		// если это команда, то проверим, что пользователь зарегистрирован
+		user, err := s.service.GetUser(c.Chat().ID)
+		if err != nil {
+			log.Printf("Не удалось загрузить список услуг: %v", err)
+			return c.Send("⚠️ Не удалось загрузить список услуг. Попробуйте позже.")
+		}
+		if user == nil {
+			return s.showRegistrationMenu(c)
+		}
 	}
 
 	menu := &telebot.ReplyMarkup{}
@@ -265,7 +282,7 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 		// Форматируем цену в зависимости от периода
 		//price := formatPrice(s.Cost, s.Period)
 		rows = append(rows, menu.Row(
-			menu.Data(fmt.Sprintf("🛒 %s - %d руб.", s.Name, s.Cost), "/serviceorder", fmt.Sprint(s.ServiceID)),
+			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", s.Name, s.Cost), "/serviceorder", fmt.Sprint(s.ServiceID)),
 		))
 	}
 	rows = append(rows, menu.Row(btnBack))
@@ -281,6 +298,9 @@ func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error 
 	_, err := s.service.ServiceOrder(c.Chat().ID, serviceID)
 
 	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
 		log.Printf("Ошибка при заказе услуги: %v", err)
 		return c.Send("⚠️ Произошла ошибка при заказе услуги")
 	}
@@ -576,6 +596,16 @@ func (s *Service) handleHelp(c telebot.Context) error {
 		if err := c.Bot().Delete(c.Callback().Message); err != nil {
 			log.Printf("Delete callback message error: %v", err)
 		}
+	} else {
+		// если это команда, то проверим, что пользователь зарегистрирован
+		user, err := s.service.GetUser(c.Chat().ID)
+		if err != nil {
+			log.Printf("Ошибка получения информации о пользователе: %v", err)
+			return c.Send("⚠️ Ошибка получения информации о пользователе. Попробуйте позже.")
+		}
+		if user == nil {
+			return s.showRegistrationMenu(c)
+		}
 	}
 
 	// Создаем кнопки для inline клавиатуры
@@ -597,9 +627,9 @@ func (s *Service) handleHelp(c telebot.Context) error {
 
 	// Формируем текст с HTML разметкой
 	//caption := `1️⃣ Скачайте и установите приложение WireGuard к себе на устройство. Скачать для <a href="https://apps.apple.com/us/app/wireguard/id1441195209">iPhone</a>, <a href="https://play.google.com/store/apps/details?id=com.wireguard.android">Android</a>, <a href="https://apps.apple.com/us/app/wireguard/id1451685025">Mac</a>.
-	caption := `1️⃣ В разделе <b>"Список VPN ключей"</b> создайте новый ключ, выбрав подходящий тариф.
+	caption := `1️⃣ В разделе <b>"Список VPN ключей"</b> закажите новый ключ, выбрав подходящий тариф.
 
-2️⃣ После оплаты в том же разделе выберите созданный ключ и нажмите <b>"Показать данные для подключения"</b>.
+2️⃣ После оплаты (пункт меню <b>"Баланс" - "✚ Пополнить баланс"</b>) в том же разделе выберите созданный ключ и нажмите <b>"Показать данные для подключения"</b>.
 
 3️⃣ Следуйте инструкциям в открывшемся окне.
 `

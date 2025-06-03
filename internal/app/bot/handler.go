@@ -42,7 +42,7 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 func (h *BotHandler) SetBotCommands(bot *telebot.Bot) error {
 	commands := []telebot.Command{
 		{
-			Text:        "/menu",
+			Text:        "/start",
 			Description: "Начало работы с ботом",
 		},
 		{
