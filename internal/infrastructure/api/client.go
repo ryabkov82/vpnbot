@@ -385,6 +385,36 @@ func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
 	return nil
 }
 
+func (c *APIClient) GetServiceByID(serviceID int) (*models.Service, error) {
+	req, err := http.NewRequest(
+		"GET",
+		fmt.Sprintf("%s/shm/v1/admin/service?service_id=%d&limit=1", c.ServerURL, serviceID),
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	type SvcResp struct {
+		Data []models.Service `json:"data"`
+	}
+	var out SvcResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Data) == 0 {
+		return nil, fmt.Errorf("service %d not found", serviceID)
+	}
+	return &out.Data[0], nil
+}
+
 func (c *APIClient) GetServices() ([]models.Service, error) {
 
 	// Формируем URL для запроса
@@ -424,19 +454,40 @@ func (c *APIClient) GetServices() ([]models.Service, error) {
 
 func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService, error) {
 
-	// Подготовка данных
-	filter := map[string]interface{}{
-		"service_id":          serviceID,
-		"user_id":             userID,
-		"check_exists_unpaid": 1,
+	svc, err := c.GetServiceByID(serviceID)
+	if err != nil {
+		return nil, err
 	}
 
+	months := int(svc.Period)
+	if months <= 0 {
+		months = 1
+	}
+
+	body := map[string]any{
+		"user_id":             userID,
+		"service_id":          serviceID,
+		"check_exists_unpaid": 1,
+		"cost":                svc.Cost, // обязательно
+		"months":              months,   // обязателен для срока
+		"settings":            nil,      // если нужно — передавайте свои
+	}
+
+	/*
+		// Подготовка данных
+		filter := map[string]interface{}{
+			"service_id":          serviceID,
+			"user_id":             userID,
+			"check_exists_unpaid": 1,
+		}
+	*/
+
 	// Сериализация и кодирование
-	jsonData, _ := json.Marshal(filter)
+	jsonData, _ := json.Marshal(body)
 
 	req, err := http.NewRequest(
 		"PUT",
-		fmt.Sprintf("%s/shm/v1/admin/user/service", c.ServerURL),
+		fmt.Sprintf("%s/shm/v1/admin/service/order", c.ServerURL),
 		bytes.NewBuffer(jsonData),
 	)
 	if err != nil {
