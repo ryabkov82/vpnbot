@@ -8,7 +8,7 @@ type User struct {
 }
 
 type UserBalance struct {
-	ID       string  `json:"user_id"`
+	ID       int     `json:"user_id"`
 	Balance  float64 `json:"balance"`
 	Forecast float64 `json:"forecast"`
 }
@@ -19,7 +19,7 @@ type UserService struct {
 	Cost       string `json:"cost"`
 	Status     string `json:"status"`
 	Expire     string `json:"expire"`
-	ServiceID  string `json:"user_service_id"`
+	ServiceID  int    `json:"user_service_id"`
 	Category   string `json:"category"`
 	KeyMarzban UserKeyMarzban
 }
@@ -51,7 +51,7 @@ type Service struct {
 	ServiceID    int     `json:"service_id"`
 	Name         string  `json:"name"`
 	Cost         float32 `json:"cost"`
-	Period       int     `json:"period"`
+	Period       float32 `json:"period"`
 	AllowToOrder int     `json:"allow_to_order"`
 }
 

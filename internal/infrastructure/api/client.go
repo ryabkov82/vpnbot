@@ -307,10 +307,10 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 
 }
 
-func (c *APIClient) GetUserKeyMarzban(userID int, serviceID string) (*models.UserKeyMarzban, error) {
+func (c *APIClient) GetUserKeyMarzban(userID int, serviceID int) (*models.UserKeyMarzban, error) {
 
 	// Формируем URL для запроса
-	url := fmt.Sprintf("%s/shm/v1/storage/manage/vpn_mrzb_%s?user_id=%d", c.ServerURL, serviceID, userID)
+	url := fmt.Sprintf("%s/shm/v1/storage/manage/vpn_mrzb_%d?user_id=%d", c.ServerURL, serviceID, userID)
 
 	req, err := http.NewRequest("GET", url, nil)
 
@@ -436,7 +436,7 @@ func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService
 
 	req, err := http.NewRequest(
 		"PUT",
-		fmt.Sprintf("%s/shm/v1/admin/service/order", c.ServerURL),
+		fmt.Sprintf("%s/shm/v1/admin/user/service", c.ServerURL),
 		bytes.NewBuffer(jsonData),
 	)
 	if err != nil {

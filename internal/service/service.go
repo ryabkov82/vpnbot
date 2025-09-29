@@ -100,7 +100,13 @@ func (s *Service) GetUserKeyMarzban(userID int64, serviceID string) (*models.Use
 		return nil, err
 	}
 
-	return s.apiClient.GetUserKeyMarzban(user.ID, serviceID)
+	// Преобразование строки в int
+	srvID, err := strconv.Atoi(serviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.apiClient.GetUserKeyMarzban(user.ID, srvID)
 
 }
 

@@ -150,7 +150,11 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 		inlineMenu.Row(btnSupport),
 	)
 
-	return c.Send(msg, inlineMenu)
+	return c.Send(&telebot.Photo{
+		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+		Caption: msg,
+	},
+		inlineMenu)
 
 }
 
@@ -174,7 +178,7 @@ func (s *Service) handleBalance(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{
-		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%s&profile=telegram_bot", s.config.API.BaseURL, userBalance.ID),
+		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%d&profile=telegram_bot", s.config.API.BaseURL, userBalance.ID),
 	})
 
 	btnPays := menu.Data("☰ История платежей", "/pays")
@@ -190,7 +194,10 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	msg := fmt.Sprintf("💰 *Баланс*: %.2f\n\nНеобходимо оплатить: *%.2f*", userBalance.Balance, userBalance.Forecast)
 
 	return c.Send(
-		msg,
+		&telebot.Photo{
+			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+			Caption: msg,
+		},
 		menu,
 		telebot.ModeMarkdown,
 	)
@@ -245,7 +252,11 @@ func (s *Service) handleList(c telebot.Context) error {
 
 	menu.Inline(rows...)
 
-	return c.Send("🗝 Ваши ключи:", menu)
+	return c.Send(&telebot.Photo{
+		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+		Caption: "🗝 Ваши ключи:",
+	},
+		menu)
 }
 
 func (s *Service) handlePricelist(c telebot.Context) error {
@@ -289,7 +300,10 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	menu.Inline(rows...)
 
 	msg := "☷ Выберите услугу для заказа:"
-	return c.Send(msg, menu)
+	return c.Send(&telebot.Photo{
+		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+		Caption: msg,
+	}, menu)
 
 }
 
@@ -403,7 +417,10 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	msg := text.String()
 
-	return c.Send(msg, &telebot.SendOptions{
+	return c.Send(&telebot.Photo{
+		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+		Caption: msg,
+	}, &telebot.SendOptions{
 		ParseMode:   telebot.ModeHTML,
 		ReplyMarkup: menu,
 	})
@@ -635,11 +652,10 @@ func (s *Service) handleHelp(c telebot.Context) error {
 `
 	// Отправляем фото с подписью и клавиатурой
 	err := c.Send(
-		caption,
-		//&telebot.Photo{
-		//	//	File:    telebot.FromURL("https://media.tenor.com/5KHjsG1Aw1YAAAAi/photos-google-photos.gif"),
-		//	Caption: caption,
-		//},
+		&telebot.Photo{
+			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+			Caption: caption,
+		},
 		&telebot.SendOptions{
 			ParseMode: telebot.ModeHTML, // В v3+ может потребоваться просто "HTML"
 			//Protected: true,             // В v3+ protect_content заменен на Protected
@@ -692,7 +708,10 @@ func (s *Service) handlePays(c telebot.Context) error {
 
 	// Отправляем сообщение с клавиатурой
 	return c.Send(
-		"Платежи",
+		&telebot.Photo{
+			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
+			Caption: "Платежи",
+		},
 		&telebot.SendOptions{
 			ReplyMarkup: &telebot.ReplyMarkup{
 				InlineKeyboard: inlineKeys,
