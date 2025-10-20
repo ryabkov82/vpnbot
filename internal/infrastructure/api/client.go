@@ -454,6 +454,7 @@ func (c *APIClient) GetServices() ([]models.Service, error) {
 
 func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService, error) {
 
+	/*
 	svc, err := c.GetServiceByID(serviceID)
 	if err != nil {
 		return nil, err
@@ -472,15 +473,15 @@ func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService
 		"months":              months,   // обязателен для срока
 		"settings":            nil,      // если нужно — передавайте свои
 	}
-
-	/*
-		// Подготовка данных
-		filter := map[string]interface{}{
-			"service_id":          serviceID,
-			"user_id":             userID,
-			"check_exists_unpaid": 1,
-		}
 	*/
+
+	
+	// Подготовка данных
+	body := map[string]interface{}{
+		"service_id":          serviceID,
+		"user_id":             userID,
+		"check_exists_unpaid": 1,
+	}
 
 	// Сериализация и кодирование
 	jsonData, _ := json.Marshal(body)

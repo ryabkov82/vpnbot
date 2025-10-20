@@ -152,6 +152,8 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 		return h.handleMenu(c)
 	case "/list":
 		return h.handleList(c)
+	case "/trial":
+		return h.service.handleTrial(c)
 	case "/service":
 		serviceIDStr := parts[1]
 		return h.handleService(c, serviceIDStr)

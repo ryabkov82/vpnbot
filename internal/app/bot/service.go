@@ -1,18 +1,19 @@
 package bot
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
-	"log"
-	"math/rand"
-	"strings"
+    "bytes"
+    "errors"
+    "fmt"
+    "log"
+    "math/rand"
+    "strings"
+    "strconv"
 
-	"github.com/ryabkov82/vpnbot/internal/config"
-	"github.com/ryabkov82/vpnbot/internal/models"
-	"github.com/ryabkov82/vpnbot/internal/service"
+    "github.com/ryabkov82/vpnbot/internal/config"
+    "github.com/ryabkov82/vpnbot/internal/models"
+    "github.com/ryabkov82/vpnbot/internal/service"
 
-	"gopkg.in/telebot.v3"
+    "gopkg.in/telebot.v3"
 )
 
 // Service содержит бизнес-логику обработки команд
@@ -137,18 +138,40 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	msg := "Создавайте и управляйте своими VPN ключами"
 
 	// 2. Создаем инлайн-меню (кнопки внутри сообщения)
-	inlineMenu := &telebot.ReplyMarkup{}
-	btnBalance := inlineMenu.Data("💰 Баланс", "/balance")
-	btnKeys := inlineMenu.Data("🗝 Список VPN ключей", "/list")
-	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
-	btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
+    inlineMenu := &telebot.ReplyMarkup{}
+    btnBalance := inlineMenu.Data("💰 Баланс", "/balance")
+    btnKeys := inlineMenu.Data("🗝 Список VPN ключей", "/list")
+    btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
+    btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
-	inlineMenu.Inline(
-		inlineMenu.Row(btnBalance),
-		inlineMenu.Row(btnKeys),
-		inlineMenu.Row(btnHelp),
-		inlineMenu.Row(btnSupport),
-	)
+    // Проверим, использовал ли пользователь тест ранее (по service_id = 8)
+    showTrial := true
+    userServices, err := s.service.GetUserServices(c.Chat().ID)
+    if err == nil {
+        for _, us := range userServices {
+            if us.BaseServiceID == 8 {
+                showTrial = false
+                break
+            }
+        }
+    }
+
+    if showTrial {
+        inlineMenu.Inline(
+            inlineMenu.Row(btnBalance),
+            inlineMenu.Row(btnKeys),
+            inlineMenu.Row(inlineMenu.Data("🎁 Тест на 7 дней", "/trial")),
+            inlineMenu.Row(btnHelp),
+            inlineMenu.Row(btnSupport),
+        )
+    } else {
+        inlineMenu.Inline(
+            inlineMenu.Row(btnBalance),
+            inlineMenu.Row(btnKeys),
+            inlineMenu.Row(btnHelp),
+            inlineMenu.Row(btnSupport),
+        )
+    }
 
 	return c.Send(&telebot.Photo{
 		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
@@ -288,8 +311,21 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 		return c.Send("⚠️ Не удалось загрузить список услуг. Попробуйте позже.")
 	}
 
-	var rows []telebot.Row
-	for _, s := range services {
+    var rows []telebot.Row
+    // Список услуг пользователя для скрытия "Тест" при наличии
+    userServices, _ := s.service.GetUserServices(c.Chat().ID)
+    hasTrial := false
+    for _, us := range userServices {
+        if us.BaseServiceID == 8 {
+            hasTrial = true
+            break
+        }
+    }
+
+    for _, s := range services {
+        if hasTrial && s.ServiceID == 8 {
+            continue
+        }
 		// Форматируем цену в зависимости от периода
 		//price := formatPrice(s.Cost, s.Period)
 		rows = append(rows, menu.Row(
@@ -321,6 +357,66 @@ func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error 
 
 	return s.handleList(c)
 
+}
+
+func (s *Service) handleTrial(c telebot.Context) error {
+
+    if c.Callback() != nil {
+        if err := c.Bot().Delete(c.Callback().Message); err != nil {
+            log.Printf("Delete callback message error: %v", err)
+        }
+    }
+
+    // Проверим регистрацию пользователя
+    user, err := s.service.GetUser(c.Chat().ID)
+    if err != nil {
+        log.Printf("Не удалось проверить пользователя для теста: %v", err)
+        return c.Send("⚠️ Не удалось выдать тест. Попробуйте позже.")
+    }
+    if user == nil {
+        return s.showRegistrationMenu(c)
+    }
+
+    // Проверим, не заказывал ли пользователь ранее тест (service_id = 8)
+    existing, err := s.service.GetUserServices(c.Chat().ID)
+    if err == nil {
+        for _, us := range existing {
+            if us.BaseServiceID == 8 {
+                return c.Send("ℹ️ Услуга 'Тест на 7 дней' уже была заказана ранее")
+            }
+        }
+    }
+
+    // Найдём услугу по базовому идентификатору service_id = 8 среди доступных к заказу
+    services, err := s.service.GetServices()
+    if err != nil {
+        log.Printf("Не удалось загрузить список услуг: %v", err)
+        return c.Send("⚠️ Не удалось выдать тест. Попробуйте позже.")
+    }
+
+    var testServiceID string
+    for _, srv := range services {
+        if srv.ServiceID == 8 { // базовый service_id
+            testServiceID = strconv.Itoa(srv.ServiceID)
+            break
+        }
+    }
+
+    if testServiceID == "" {
+        return c.Send("⚠️ Услуга 'Тест на 7 дней' временно недоступна")
+    }
+
+    // Оформим заказ услуги "Тест"
+    if _, err := s.service.ServiceOrder(c.Chat().ID, testServiceID); err != nil {
+        if errors.Is(err, service.ErrUserNotFound) {
+            return s.showRegistrationMenu(c)
+        }
+        log.Printf("Ошибка при выдаче тестовой услуги: %v", err)
+        return c.Send("⚠️ Не удалось выдать тестовую услугу")
+    }
+
+    // Покажем список услуг после выдачи
+    return s.handleList(c)
 }
 
 func (s *Service) handleService(c telebot.Context, serviceID string) error {

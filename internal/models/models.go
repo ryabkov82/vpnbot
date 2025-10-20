@@ -20,6 +20,7 @@ type UserService struct {
 	Status     string `json:"status"`
 	Expire     string `json:"expire"`
 	ServiceID  int    `json:"user_service_id"`
+    BaseServiceID int `json:"service_id"`
 	Category   string `json:"category"`
 	KeyMarzban UserKeyMarzban
 }
