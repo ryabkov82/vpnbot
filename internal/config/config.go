@@ -27,6 +27,7 @@ type Config struct {
 		Token         string `json:"token"`
 		SupportChatID int64  `json:"support_chat_id"`
 		SupportChat   string `json:"support_chat"`
+		NewsChannel   string `json:"news_channel"`
 	}
 }
 
