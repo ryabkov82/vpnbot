@@ -144,61 +144,46 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
 	btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
-	// Новое: кнопка «Новости», если ссылка задана
+	// Кнопка «Новости», если задана ссылка
 	var btnNews *telebot.Btn
 	if s.config.Telegram.NewsChannel != "" {
-		btn := inlineMenu.URL("📣 Новости", s.config.Telegram.NewsChannel)
-		btnNews = &btn
-	}
-	// Проверим, использовал ли пользователь тест ранее (по service_id = 8)
-	showTrial := true
-	userServices, err := s.service.GetUserServices(c.Chat().ID)
-	if err == nil {
-		for _, us := range userServices {
-			if us.BaseServiceID == 8 {
-				showTrial = false
-				break
-			}
-		}
+		b := inlineMenu.URL("📣 Новости", s.config.Telegram.NewsChannel)
+		btnNews = &b
 	}
 
-	if showTrial {
-		if btnNews != nil {
-			inlineMenu.Inline(
-				inlineMenu.Row(btnBalance),
-				inlineMenu.Row(btnKeys),
-				inlineMenu.Row(inlineMenu.Data("🎁 Тест на 7 дней", "/trial")),
-				inlineMenu.Row(btnHelp),
-				inlineMenu.Row(*btnNews), // <— Новости
-				inlineMenu.Row(btnSupport),
-			)
-		} else {
-			inlineMenu.Inline(
-				inlineMenu.Row(btnBalance),
-				inlineMenu.Row(btnKeys),
-				inlineMenu.Row(inlineMenu.Data("🎁 Тест на 7 дней", "/trial")),
-				inlineMenu.Row(btnHelp),
-				inlineMenu.Row(btnSupport),
-			)
-		}
-	} else {
-		if btnNews != nil {
-			inlineMenu.Inline(
-				inlineMenu.Row(btnBalance),
-				inlineMenu.Row(btnKeys),
-				inlineMenu.Row(btnHelp),
-				inlineMenu.Row(*btnNews), // <— Новости
-				inlineMenu.Row(btnSupport),
-			)
-		} else {
-			inlineMenu.Inline(
-				inlineMenu.Row(btnBalance),
-				inlineMenu.Row(btnKeys),
-				inlineMenu.Row(btnHelp),
-				inlineMenu.Row(btnSupport),
-			)
-		}
+	// === Управление тестом из конфига ===
+	trialCfg := s.config.Features.Trial
+	trialBtnText := trialCfg.ButtonText
+	if trialBtnText == "" {
+		trialBtnText = "🎁 Тест на 7 дней"
 	}
+
+	showTrial := false
+	if trialCfg.Enabled && trialCfg.BaseServiceID > 0 {
+		hasTrial, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
+		if err != nil {
+			if errors.Is(err, service.ErrUserNotFound) {
+				return s.showRegistrationMenu(c)
+			}
+			log.Printf("Ошибка при проверке тестовой услуги: %v", err)
+			return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
+		}
+		showTrial = !hasTrial
+	}
+
+	// Компоновка клавиатуры
+	var rows []telebot.Row
+	rows = append(rows, inlineMenu.Row(btnBalance))
+	rows = append(rows, inlineMenu.Row(btnKeys))
+	if showTrial {
+		rows = append(rows, inlineMenu.Row(inlineMenu.Data(trialBtnText, "/trial")))
+	}
+	rows = append(rows, inlineMenu.Row(btnHelp))
+	if btnNews != nil {
+		rows = append(rows, inlineMenu.Row(*btnNews))
+	}
+	rows = append(rows, inlineMenu.Row(btnSupport))
+	inlineMenu.Inline(rows...)
 
 	return c.Send(&telebot.Photo{
 		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
@@ -339,19 +324,30 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	}
 
 	var rows []telebot.Row
-	// Список услуг пользователя для скрытия "Тест" при наличии
-	userServices, _ := s.service.GetUserServices(c.Chat().ID)
+	// === Читаем конфиг фич ===
+	trialCfg := s.config.Features.Trial // enabled/base_service_id/button_text
+
+	// Проверим, брал ли пользователь тестовую услугу (по base_service_id из конфига)
+
 	hasTrial := false
-	for _, us := range userServices {
-		if us.BaseServiceID == 8 {
-			hasTrial = true
-			break
+	if trialCfg.BaseServiceID > 0 && trialCfg.Enabled {
+		v, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
+		if err != nil {
+			if errors.Is(err, service.ErrUserNotFound) {
+				return s.showRegistrationMenu(c)
+			}
+			log.Printf("Ошибка при проверке тестовой услуги (pricelist): %v", err)
+			return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
 		}
+		hasTrial = v
 	}
 
 	for _, s := range services {
-		if hasTrial && s.ServiceID == 8 {
-			continue
+		// если это тестовая услуга — применяем правила из конфига и предварительный флаг
+		if trialCfg.BaseServiceID > 0 && s.ServiceID == trialCfg.BaseServiceID {
+			if !trialCfg.Enabled || hasTrial {
+				continue
+			}
 		}
 		// Форматируем цену в зависимости от периода
 		//price := formatPrice(s.Cost, s.Period)

@@ -14,15 +14,15 @@ type UserBalance struct {
 }
 
 type UserService struct {
-	Name       string `json:"name"`
-	UserID     int    `json:"user_id"`
-	Cost       string `json:"cost"`
-	Status     string `json:"status"`
-	Expire     string `json:"expire"`
-	ServiceID  int    `json:"user_service_id"`
-    BaseServiceID int `json:"service_id"`
-	Category   string `json:"category"`
-	KeyMarzban UserKeyMarzban
+	Name          string `json:"name"`
+	UserID        int    `json:"user_id"`
+	Cost          string `json:"cost"`
+	Status        string `json:"status"`
+	Expire        string `json:"expire"`
+	ServiceID     int    `json:"user_service_id"`
+	BaseServiceID int    `json:"service_id"`
+	Category      string `json:"category"`
+	KeyMarzban    UserKeyMarzban
 }
 
 type UserRegistrationRequest struct {
@@ -64,4 +64,21 @@ type UserPay struct {
 type UserKeyMarzban struct {
 	SubscriptionURL string   `json:"subscription_url"`
 	Links           []string `json:"links"`
+}
+
+type WithdrawItem struct {
+	Bonus         float64 `json:"bonus"`
+	Cost          float64 `json:"cost"`
+	CreateDate    string  `json:"create_date"`
+	Discount      float64 `json:"discount"`
+	EndDate       string  `json:"end_date"`
+	Months        float64 `json:"months"`
+	Name          string  `json:"name"`
+	Qnt           int     `json:"qnt"`
+	ServiceID     int     `json:"service_id"`
+	Total         float64 `json:"total"`
+	UserID        int64   `json:"user_id"`
+	UserServiceID int64   `json:"user_service_id"`
+	WithdrawDate  string  `json:"withdraw_date"`
+	WithdrawID    int64   `json:"withdraw_id"`
 }

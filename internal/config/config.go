@@ -9,6 +9,15 @@ import (
 	"runtime"
 )
 
+type TrialFeature struct {
+	Enabled       bool   `json:"enabled"`
+	BaseServiceID int    `json:"base_service_id"`
+	ButtonText    string `json:"button_text"`
+}
+type Features struct {
+	Trial TrialFeature `json:"trial"`
+}
+
 // Конфигурация
 type Config struct {
 	Env        string `json:"app_env"`
@@ -29,6 +38,7 @@ type Config struct {
 		SupportChat   string `json:"support_chat"`
 		NewsChannel   string `json:"news_channel"`
 	}
+	Features Features `json:"features"`
 }
 
 func Load() *Config {

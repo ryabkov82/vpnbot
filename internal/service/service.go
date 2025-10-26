@@ -191,3 +191,20 @@ func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 
 	return pays, err
 }
+
+// UserHasTrialService возвращает true, если у пользователя уже было СПИСАНИЕ по тестовой услуге.
+// Теперь мы считаем “брал тест” по факту withdraw, а не просто наличию UserService.
+func (s *Service) UserHasTrialService(chatID int64, baseServiceID int) (bool, error) {
+	// Нужно получить user_id из биллинга по chatID.
+	user, err := s.GetUser(chatID)
+	if err != nil {
+		return false, err
+	}
+
+	// дергаем API-клиент на списания
+	has, err := s.apiClient.HasUserServiceWithdrawals(user.ID, baseServiceID)
+	if err != nil {
+		return false, err
+	}
+	return has, nil
+}

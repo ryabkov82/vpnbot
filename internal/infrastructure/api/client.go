@@ -455,27 +455,26 @@ func (c *APIClient) GetServices() ([]models.Service, error) {
 func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService, error) {
 
 	/*
-	svc, err := c.GetServiceByID(serviceID)
-	if err != nil {
-		return nil, err
-	}
+		svc, err := c.GetServiceByID(serviceID)
+		if err != nil {
+			return nil, err
+		}
 
-	months := int(svc.Period)
-	if months <= 0 {
-		months = 1
-	}
+		months := int(svc.Period)
+		if months <= 0 {
+			months = 1
+		}
 
-	body := map[string]any{
-		"user_id":             userID,
-		"service_id":          serviceID,
-		"check_exists_unpaid": 1,
-		"cost":                svc.Cost, // обязательно
-		"months":              months,   // обязателен для срока
-		"settings":            nil,      // если нужно — передавайте свои
-	}
+		body := map[string]any{
+			"user_id":             userID,
+			"service_id":          serviceID,
+			"check_exists_unpaid": 1,
+			"cost":                svc.Cost, // обязательно
+			"months":              months,   // обязателен для срока
+			"settings":            nil,      // если нужно — передавайте свои
+		}
 	*/
 
-	
 	// Подготовка данных
 	body := map[string]interface{}{
 		"service_id":          serviceID,
@@ -560,4 +559,54 @@ func (c *APIClient) GetUserPays(userID int) ([]models.UserPay, error) {
 	}
 
 	return result.Data, nil
+}
+
+// HasUserServiceWithdrawals возвращает true, если у пользователя есть хотя бы одно списание по услуге.
+func (c *APIClient) HasUserServiceWithdrawals(userID int, serviceID int) (bool, error) {
+	// Собираем filter={"user_id":19,"service_id":8} как query string
+	filter := struct {
+		UserID    int `json:"user_id"`
+		ServiceID int `json:"service_id"`
+	}{
+		UserID: userID, ServiceID: serviceID,
+	}
+	fb, err := json.Marshal(filter)
+	if err != nil {
+		return false, fmt.Errorf("marshal filter: %w", err)
+	}
+
+	q := url.Values{}
+	q.Set("filter", string(fb))
+
+	// Пример: /shm/v1/admin/user/service/withdraw?filter={...}
+	endpoint := "/shm/v1/admin/user/service/withdraw"
+	fullURL := c.ServerURL + endpoint + "?" + q.Encode()
+
+	req, err := http.NewRequest("GET", fullURL, nil)
+
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("API returned status: %d", resp.StatusCode)
+	}
+
+	// Парсим ответ
+	type WithdrawalsResponse struct {
+		Data []models.WithdrawItem `json:"data"`
+	}
+
+	var result WithdrawalsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("decode: %w", err)
+	}
+
+	return len(result.Data) > 0, nil
 }
