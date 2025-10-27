@@ -51,7 +51,7 @@ func (h *BotHandler) SetBotCommands(bot *telebot.Bot) error {
 		},
 		{
 			Text:        "/list",
-			Description: "Список VPN ключей",
+			Description: "Список ключей доступа",
 		},
 		{
 			Text:        "/pricelist",

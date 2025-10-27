@@ -18,6 +18,18 @@ type Features struct {
 	Trial TrialFeature `json:"trial"`
 }
 
+type ServicesCfg struct {
+	Category string `json:"category"`
+}
+
+type Assets struct {
+	LogoURL string `json:"logo_url"`
+}
+
+type Payments struct {
+	Profile string `json:"profile"`
+}
+
 // Конфигурация
 type Config struct {
 	Env        string `json:"app_env"`
@@ -38,7 +50,10 @@ type Config struct {
 		SupportChat   string `json:"support_chat"`
 		NewsChannel   string `json:"news_channel"`
 	}
-	Features Features `json:"features"`
+	Features Features    `json:"features"`
+	Services ServicesCfg `json:"services"`
+	Assets   Assets      `json:"assets"`
+	Payments Payments    `json:"payments"`
 }
 
 func Load() *Config {

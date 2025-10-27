@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 
 	"gopkg.in/telebot.v3"
 )
+
+const defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"
 
 // Service содержит бизнес-логику обработки команд
 type Service struct {
@@ -26,6 +29,17 @@ func NewService(service *service.Service, cfg *config.Config) *Service {
 	return &Service{
 		service: service,
 		config:  cfg,
+	}
+}
+
+func (s *Service) logoPhoto(caption string) *telebot.Photo {
+	url := s.config.Assets.LogoURL
+	if url == "" {
+		url = defaultLogoURL
+	}
+	return &telebot.Photo{
+		File:    telebot.FromURL(url),
+		Caption: caption,
 	}
 }
 
@@ -135,12 +149,12 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 		}
 	*/
 
-	msg := "Создавайте и управляйте своими VPN ключами"
+	msg := "Создавайте и управляйте своими ключами доступа"
 
 	// 2. Создаем инлайн-меню (кнопки внутри сообщения)
 	inlineMenu := &telebot.ReplyMarkup{}
 	btnBalance := inlineMenu.Data("💰 Баланс", "/balance")
-	btnKeys := inlineMenu.Data("🗝 Список VPN ключей", "/list")
+	btnKeys := inlineMenu.Data("🗝 Список ключей доступа", "/list")
 	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
 	btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
@@ -185,12 +199,8 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	rows = append(rows, inlineMenu.Row(btnSupport))
 	inlineMenu.Inline(rows...)
 
-	return c.Send(&telebot.Photo{
-		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-		Caption: msg,
-	},
+	return c.Send(s.logoPhoto(msg),
 		inlineMenu)
-
 }
 
 func (s *Service) handleBalance(c telebot.Context) error {
@@ -211,9 +221,20 @@ func (s *Service) handleBalance(c telebot.Context) error {
 		return c.Send("Ошибка системы, попробуйте позже")
 	}
 
+	// профиль оплаты из конфига (дефолт — telegram_bot)
+	paymentProfile := s.config.Payments.Profile
+	if paymentProfile == "" {
+		paymentProfile = "telegram_bot"
+	}
+
 	menu := &telebot.ReplyMarkup{}
 	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{
-		URL: fmt.Sprintf("%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%d&profile=telegram_bot", s.config.API.BaseURL, userBalance.ID),
+		URL: fmt.Sprintf(
+			"%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%d&profile=%s",
+			s.config.API.BaseURL,
+			userBalance.ID,
+			url.QueryEscape(paymentProfile),
+		),
 	})
 
 	btnPays := menu.Data("☰ История платежей", "/pays")
@@ -229,10 +250,7 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	msg := fmt.Sprintf("💰 *Баланс*: %.2f\n\nНеобходимо оплатить: *%.2f*", userBalance.Balance, userBalance.Forecast)
 
 	return c.Send(
-		&telebot.Photo{
-			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-			Caption: msg,
-		},
+		s.logoPhoto(msg),
 		menu,
 		telebot.ModeMarkdown,
 	)
@@ -287,22 +305,16 @@ func (s *Service) handleList(c telebot.Context) error {
 
 	menu.Inline(rows...)
 
-	return c.Send(&telebot.Photo{
-		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-		Caption: "🗝 Ваши ключи:",
-	},
+	return c.Send(s.logoPhoto("🗝 Ваши ключи:"),
 		menu)
 }
 
 func (s *Service) handlePricelist(c telebot.Context) error {
-
 	if c.Callback() != nil {
-		// Для callback-запросов
 		if err := c.Bot().Delete(c.Callback().Message); err != nil {
 			log.Printf("Delete callback message error: %v", err)
 		}
 	} else {
-		// если это команда, то проверим, что пользователь зарегистрирован
 		user, err := s.service.GetUser(c.Chat().ID)
 		if err != nil {
 			log.Printf("Не удалось загрузить список услуг: %v", err)
@@ -317,18 +329,17 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 	btnBack := menu.Data("⇦ Назад", "/menu")
 
 	services, err := s.service.GetServices()
-
 	if err != nil {
 		log.Printf("Не удалось загрузить список услуг: %v", err)
 		return c.Send("⚠️ Не удалось загрузить список услуг. Попробуйте позже.")
 	}
 
 	var rows []telebot.Row
-	// === Читаем конфиг фич ===
-	trialCfg := s.config.Features.Trial // enabled/base_service_id/button_text
 
-	// Проверим, брал ли пользователь тестовую услугу (по base_service_id из конфига)
+	// === Конфигурация trial ===
+	trialCfg := s.config.Features.Trial
 
+	// Проверим, использовал ли пользователь тестовую услугу
 	hasTrial := false
 	if trialCfg.BaseServiceID > 0 && trialCfg.Enabled {
 		v, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
@@ -342,28 +353,35 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 		hasTrial = v
 	}
 
-	for _, s := range services {
-		// если это тестовая услуга — применяем правила из конфига и предварительный флаг
-		if trialCfg.BaseServiceID > 0 && s.ServiceID == trialCfg.BaseServiceID {
+	for _, svc := range services {
+		// Если это тестовая услуга — применяем правила показа
+		if trialCfg.BaseServiceID > 0 && svc.ServiceID == trialCfg.BaseServiceID {
 			if !trialCfg.Enabled || hasTrial {
 				continue
 			}
 		}
-		// Форматируем цену в зависимости от периода
-		//price := formatPrice(s.Cost, s.Period)
+
+		// Определяем название на кнопке
+		displayName := svc.Name
+		if trialCfg.BaseServiceID > 0 && svc.ServiceID == trialCfg.BaseServiceID {
+			if trialCfg.ButtonText != "" {
+				displayName = trialCfg.ButtonText
+			} else {
+				displayName = svc.Name // fallback, если ButtonText не задан
+			}
+		}
+
 		rows = append(rows, menu.Row(
-			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", s.Name, s.Cost), "/serviceorder", fmt.Sprint(s.ServiceID)),
+			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", displayName, svc.Cost),
+				"/serviceorder", fmt.Sprint(svc.ServiceID)),
 		))
 	}
+
 	rows = append(rows, menu.Row(btnBack))
 	menu.Inline(rows...)
 
 	msg := "☷ Выберите услугу для заказа:"
-	return c.Send(&telebot.Photo{
-		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-		Caption: msg,
-	}, menu)
-
+	return c.Send(s.logoPhoto(msg), menu)
 }
 
 func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error {
@@ -383,7 +401,6 @@ func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error 
 }
 
 func (s *Service) handleTrial(c telebot.Context) error {
-
 	if c.Callback() != nil {
 		if err := c.Bot().Delete(c.Callback().Message); err != nil {
 			log.Printf("Delete callback message error: %v", err)
@@ -400,17 +417,30 @@ func (s *Service) handleTrial(c telebot.Context) error {
 		return s.showRegistrationMenu(c)
 	}
 
-	// Проверим, не заказывал ли пользователь ранее тест (service_id = 8)
-	existing, err := s.service.GetUserServices(c.Chat().ID)
-	if err == nil {
-		for _, us := range existing {
-			if us.BaseServiceID == 8 {
-				return c.Send("ℹ️ Услуга 'Тест на 7 дней' уже была заказана ранее")
-			}
-		}
+	// Настройки тестовой услуги из конфига
+	trialCfg := s.config.Features.Trial
+	if !trialCfg.Enabled || trialCfg.BaseServiceID <= 0 {
+		return c.Send("⚠️ Тестовая услуга временно недоступна")
+	}
+	trialName := trialCfg.ButtonText
+	if trialName == "" {
+		trialName = "Тест на 7 дней"
 	}
 
-	// Найдём услугу по базовому идентификатору service_id = 8 среди доступных к заказу
+	// Уже брал тест? (проверка по списаниям)
+	hasTrial, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		log.Printf("Ошибка при проверке тестовой услуги: %v", err)
+		return c.Send("⚠️ Не удалось выдать тест. Попробуйте позже.")
+	}
+	if hasTrial {
+		return c.Send("ℹ️ Услуга '" + trialName + "' уже была заказана ранее")
+	}
+
+	// Найдём тестовую услугу среди доступных к заказу
 	services, err := s.service.GetServices()
 	if err != nil {
 		log.Printf("Не удалось загрузить список услуг: %v", err)
@@ -418,18 +448,17 @@ func (s *Service) handleTrial(c telebot.Context) error {
 	}
 
 	var testServiceID string
-	for _, srv := range services {
-		if srv.ServiceID == 8 { // базовый service_id
-			testServiceID = strconv.Itoa(srv.ServiceID)
+	for _, svc := range services {
+		if svc.ServiceID == trialCfg.BaseServiceID {
+			testServiceID = strconv.Itoa(svc.ServiceID)
 			break
 		}
 	}
-
 	if testServiceID == "" {
-		return c.Send("⚠️ Услуга 'Тест на 7 дней' временно недоступна")
+		return c.Send("⚠️ Услуга '" + trialName + "' временно недоступна")
 	}
 
-	// Оформим заказ услуги "Тест"
+	// Оформим заказ тестовой услуги
 	if _, err := s.service.ServiceOrder(c.Chat().ID, testServiceID); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
@@ -536,13 +565,11 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	msg := text.String()
 
-	return c.Send(&telebot.Photo{
-		File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-		Caption: msg,
-	}, &telebot.SendOptions{
-		ParseMode:   telebot.ModeHTML,
-		ReplyMarkup: menu,
-	})
+	return c.Send(s.logoPhoto(msg),
+		&telebot.SendOptions{
+			ParseMode:   telebot.ModeHTML,
+			ReplyMarkup: menu,
+		})
 }
 
 func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) error {
@@ -763,7 +790,7 @@ func (s *Service) handleHelp(c telebot.Context) error {
 
 	// Формируем текст с HTML разметкой
 	//caption := `1️⃣ Скачайте и установите приложение WireGuard к себе на устройство. Скачать для <a href="https://apps.apple.com/us/app/wireguard/id1441195209">iPhone</a>, <a href="https://play.google.com/store/apps/details?id=com.wireguard.android">Android</a>, <a href="https://apps.apple.com/us/app/wireguard/id1451685025">Mac</a>.
-	caption := `1️⃣ В разделе <b>"Список VPN ключей"</b> закажите новый ключ, выбрав подходящий тариф.
+	caption := `1️⃣ В разделе <b>"Список ключей доступа"</b> закажите новый ключ, выбрав подходящий тариф.
 
 2️⃣ После оплаты (пункт меню <b>"Баланс" - "✚ Пополнить баланс"</b>) в том же разделе выберите созданный ключ и нажмите <b>"Показать данные для подключения"</b>.
 
@@ -771,10 +798,7 @@ func (s *Service) handleHelp(c telebot.Context) error {
 `
 	// Отправляем фото с подписью и клавиатурой
 	err := c.Send(
-		&telebot.Photo{
-			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-			Caption: caption,
-		},
+		s.logoPhoto(caption),
 		&telebot.SendOptions{
 			ParseMode: telebot.ModeHTML, // В v3+ может потребоваться просто "HTML"
 			//Protected: true,             // В v3+ protect_content заменен на Protected
@@ -827,10 +851,7 @@ func (s *Service) handlePays(c telebot.Context) error {
 
 	// Отправляем сообщение с клавиатурой
 	return c.Send(
-		&telebot.Photo{
-			File:    telebot.FromURL("https://vpn-for-friends.com/logobot.jpg"),
-			Caption: "Платежи",
-		},
+		s.logoPhoto("Платежи"),
 		&telebot.SendOptions{
 			ReplyMarkup: &telebot.ReplyMarkup{
 				InlineKeyboard: inlineKeys,

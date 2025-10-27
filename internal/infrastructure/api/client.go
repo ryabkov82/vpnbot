@@ -231,16 +231,29 @@ func (c *APIClient) GetUserBalance(userID int) (*models.UserBalance, error) {
 
 func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
 
-	// Формируем URL для запроса
-	filter := fmt.Sprintf(`{"user_id": %d}`, userID)
-	url := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+	// Собираем filter как JSON:
+	// {"user_id": <id>, "category": "<cat>"} — category добавляем только если задана
+	f := map[string]any{
+		"user_id": userID,
+	}
+	category := c.config.Services.Category
+	if category != "" {
+		f["category"] = category
+	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	fb, err := json.Marshal(f)
+	if err != nil {
+		return nil, fmt.Errorf("marshal filter: %w", err)
+	}
 
+	fullURL := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s",
+		c.ServerURL, url.QueryEscape(string(fb)),
+	)
+
+	req, err := http.NewRequest(http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, err
 	}
-
 	// Выполняем GET-запрос
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -264,12 +277,21 @@ func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
 
 func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error) {
 
-	// Формируем URL для запроса
-	filter := fmt.Sprintf(`{"user_service_id": %s}`, serviceID)
-	url := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+	// Собираем filter как JSON:
+	// {"user_service_id": <serviceID>, "category": "<category>"} — category добавляем, если задана
+	f := map[string]any{
+		"user_service_id": serviceID,
+	}
+	fb, err := json.Marshal(f)
+	if err != nil {
+		return nil, fmt.Errorf("marshal filter: %w", err)
+	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	fullURL := fmt.Sprintf("%s/shm/v1/admin/user/service?filter=%s",
+		c.ServerURL, url.QueryEscape(string(fb)),
+	)
 
+	req, err := http.NewRequest(http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -417,39 +439,48 @@ func (c *APIClient) GetServiceByID(serviceID int) (*models.Service, error) {
 
 func (c *APIClient) GetServices() ([]models.Service, error) {
 
-	// Формируем URL для запроса
-	filter := fmt.Sprintf(`{"allow_to_order": %d}`, 1)
-	url := fmt.Sprintf("%s/shm/v1/admin/service?filter=%s", c.ServerURL, url.QueryEscape(filter))
+	// Собираем filter как JSON
+	// {"allow_to_order":1, "category":"..."}   // category добавляем только если задана
+	f := map[string]any{
+		"allow_to_order": 1,
+	}
+	category := c.config.Services.Category
+	if category != "" {
+		f["category"] = category
+	}
+	fb, err := json.Marshal(f)
+	if err != nil {
+		return nil, fmt.Errorf("marshal filter: %w", err)
+	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	u := fmt.Sprintf("%s/shm/v1/admin/service?filter=%s",
+		c.ServerURL, url.QueryEscape(string(fb)),
+	)
 
+	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Выполняем GET-запрос
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Парсим ответ
 	type ServiceResponse struct {
 		Data []models.Service `json:"data"`
 	}
-
 	var result ServiceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
 	sort.Slice(result.Data, func(i, j int) bool {
-		return result.Data[i].Period < result.Data[j].Period // по возрастанию
+		return result.Data[i].Period < result.Data[j].Period
 	})
 
 	return result.Data, nil
-
 }
 
 func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService, error) {
