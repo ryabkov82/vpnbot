@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
@@ -44,17 +45,43 @@ func (s *Service) logoPhoto(caption string) *telebot.Photo {
 }
 
 func (s *Service) handleStart(c telebot.Context) error {
+	// 1) Сначала читаем payload из /start <payload> и выдаём "допуск", если он валиден
+	payload := ""
+	if c.Message() != nil {
+		payload = strings.TrimSpace(c.Message().Payload)
+	}
 
+	trialCfg := s.config.Features.Trial
+	if trialCfg.Enabled && trialCfg.RequireStartParam && payload != "" {
+		allowed := false
+		for _, p := range trialCfg.AllowedStartParams {
+			if payload == p {
+				allowed = true
+				break
+			}
+		}
+		if allowed {
+			ttl := time.Duration(trialCfg.EligibilityTTLHours)
+			if ttl <= 0 {
+				ttl = 24 // дефолт 24 часа
+			}
+			// даём допуск до регистрации, чтобы он сохранился на время онбординга
+			s.service.SetTrialEligible(c.Chat().ID, time.Now().Add(ttl*time.Hour))
+		}
+	}
+
+	// 2) Проверяем пользователя
 	user, err := s.service.GetUser(c.Chat().ID)
 	if err != nil {
 		log.Println("Ошибка проверки пользователя:", err)
 		return c.Send("Ошибка системы, попробуйте позже")
 	}
-
 	if user == nil {
+		// регистрация; после неё при показе меню eligibility уже будет учтён
 		return s.showRegistrationMenu(c)
 	}
 
+	// 3) Показываем главное меню
 	return s.showMainMenu(c)
 }
 
@@ -109,46 +136,6 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 		}
 	}
 
-	/*
-		if c.Callback() != nil {
-			// Для callback-запросов
-			if err := c.Bot().Delete(c.Callback().Message); err != nil {
-				log.Printf("Delete callback message error: %v", err)
-			}
-		}
-
-
-			return c.Send(
-				"Все кнопки удалены",
-				&telebot.SendOptions{
-					ReplyMarkup: &telebot.ReplyMarkup{
-						RemoveKeyboard: true, // Удаляем Reply-клавиатуру
-						InlineKeyboard: nil,  // Удаляем инлайн-кнопки
-					},
-				},
-			)
-	*/
-	/*
-		// 1. Создаем Reply-клавиатуру (кнопки под полем ввода)
-		replyMarkup := &telebot.ReplyMarkup{
-			ResizeKeyboard:  true,
-			OneTimeKeyboard: false,
-			Selective:       true, // Важно для корректной работы
-		}
-		btnMenu := replyMarkup.Text("📋 Меню")
-		replyMarkup.Reply(replyMarkup.Row(btnMenu))
-
-		err := c.Send("Меню",
-			&telebot.SendOptions{
-				ParseMode:   "HTML",
-				ReplyMarkup: replyMarkup, // Reply-клавиатура
-			})
-
-		if err != nil {
-			return err
-		}
-	*/
-
 	msg := "Создавайте и управляйте своими ключами доступа"
 
 	// 2. Создаем инлайн-меню (кнопки внутри сообщения)
@@ -165,33 +152,21 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 		btnNews = &b
 	}
 
-	// === Управление тестом из конфига ===
-	trialCfg := s.config.Features.Trial
-	trialBtnText := trialCfg.ButtonText
-	if trialBtnText == "" {
-		trialBtnText = "🎁 Тест на 7 дней"
-	}
-
-	showTrial := false
-	if trialCfg.Enabled && trialCfg.BaseServiceID > 0 {
-		hasTrial, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
-		if err != nil {
-			if errors.Is(err, service.ErrUserNotFound) {
-				return s.showRegistrationMenu(c)
-			}
-			log.Printf("Ошибка при проверке тестовой услуги: %v", err)
-			return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
-		}
-		showTrial = !hasTrial
-	}
-
 	// Компоновка клавиатуры
 	var rows []telebot.Row
 	rows = append(rows, inlineMenu.Row(btnBalance))
 	rows = append(rows, inlineMenu.Row(btnKeys))
-	if showTrial {
-		rows = append(rows, inlineMenu.Row(inlineMenu.Data(trialBtnText, "/trial")))
+
+	if trialRow, ok, err := s.buildTrialRow(c, inlineMenu); err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		log.Printf("Ошибка при формировании кнопки теста (menu): %v", err)
+		return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
+	} else if ok {
+		rows = append(rows, trialRow)
 	}
+
 	rows = append(rows, inlineMenu.Row(btnHelp))
 	if btnNews != nil {
 		rows = append(rows, inlineMenu.Row(*btnNews))
@@ -336,43 +311,27 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 
 	var rows []telebot.Row
 
-	// === Конфигурация trial ===
-	trialCfg := s.config.Features.Trial
-
-	// Проверим, использовал ли пользователь тестовую услугу
-	hasTrial := false
-	if trialCfg.BaseServiceID > 0 && trialCfg.Enabled {
-		v, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
-		if err != nil {
-			if errors.Is(err, service.ErrUserNotFound) {
-				return s.showRegistrationMenu(c)
-			}
-			log.Printf("Ошибка при проверке тестовой услуги (pricelist): %v", err)
-			return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
+	// ——— Вставляем тестовую кнопку (если нужна) в начале списка ———
+	if trialRow, ok, err := s.buildTrialRow(c, menu); err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
 		}
-		hasTrial = v
+		log.Printf("Ошибка при формировании кнопки теста (pricelist): %v", err)
+		return c.Send("⚠️ Произошла ошибка при проверке тестового периода. Попробуйте позже.")
+	} else if ok {
+		rows = append(rows, trialRow)
 	}
 
+	// ——— Далее все прочие услуги ———
+	trialID := s.config.Features.Trial.BaseServiceID
 	for _, svc := range services {
-		// Если это тестовая услуга — применяем правила показа
-		if trialCfg.BaseServiceID > 0 && svc.ServiceID == trialCfg.BaseServiceID {
-			if !trialCfg.Enabled || hasTrial {
-				continue
-			}
-		}
-
-		// Определяем название на кнопке
-		displayName := svc.Name
-		if trialCfg.BaseServiceID > 0 && svc.ServiceID == trialCfg.BaseServiceID {
-			if trialCfg.ButtonText != "" {
-				displayName = trialCfg.ButtonText
-			} else {
-				displayName = svc.Name // fallback, если ButtonText не задан
-			}
+		// не дублируем тестовую услугу, если мы её уже добавили через хелпер
+		if trialID > 0 && svc.ServiceID == trialID {
+			continue
 		}
 
 		rows = append(rows, menu.Row(
-			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", displayName, svc.Cost),
+			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", svc.Name, svc.Cost),
 				"/serviceorder", fmt.Sprint(svc.ServiceID)),
 		))
 	}
@@ -422,9 +381,10 @@ func (s *Service) handleTrial(c telebot.Context) error {
 	if !trialCfg.Enabled || trialCfg.BaseServiceID <= 0 {
 		return c.Send("⚠️ Тестовая услуга временно недоступна")
 	}
-	trialName := trialCfg.ButtonText
-	if trialName == "" {
-		trialName = "Тест на 7 дней"
+
+	// Если требуется старт с параметром — проверяем допуск
+	if trialCfg.RequireStartParam && !s.service.IsTrialEligible(c.Chat().ID) {
+		return c.Send("ℹ️ Тест доступен по специальной ссылке приглашения. Откройте бота по промо-ссылке и попробуйте снова.")
 	}
 
 	// Уже брал тест? (проверка по списаниям)
@@ -437,28 +397,22 @@ func (s *Service) handleTrial(c telebot.Context) error {
 		return c.Send("⚠️ Не удалось выдать тест. Попробуйте позже.")
 	}
 	if hasTrial {
-		return c.Send("ℹ️ Услуга '" + trialName + "' уже была заказана ранее")
-	}
-
-	// Найдём тестовую услугу среди доступных к заказу
-	services, err := s.service.GetServices()
-	if err != nil {
-		log.Printf("Не удалось загрузить список услуг: %v", err)
-		return c.Send("⚠️ Не удалось выдать тест. Попробуйте позже.")
-	}
-
-	var testServiceID string
-	for _, svc := range services {
-		if svc.ServiceID == trialCfg.BaseServiceID {
-			testServiceID = strconv.Itoa(svc.ServiceID)
-			break
+		// Узнаем человекочитаемое имя услуги, если возможно
+		if svc, e := s.service.GetServiceByID(trialCfg.BaseServiceID); e == nil && svc != nil && svc.Name != "" {
+			return c.Send("ℹ️ Услуга '" + svc.Name + "' уже была заказана ранее")
 		}
+		return c.Send("ℹ️ Тестовая услуга уже была заказана ранее")
 	}
-	if testServiceID == "" {
-		return c.Send("⚠️ Услуга '" + trialName + "' временно недоступна")
+
+	// Найдём тестовую услугу по ID (через сервисный слой; внутри APIClient — filter allow_to_order=1)
+	svc, err := s.service.GetServiceByID(trialCfg.BaseServiceID)
+	if err != nil || svc == nil {
+		log.Printf("Не удалось получить тестовую услугу %d: %v", trialCfg.BaseServiceID, err)
+		return c.Send("⚠️ Тестовая услуга временно недоступна")
 	}
 
 	// Оформим заказ тестовой услуги
+	testServiceID := strconv.Itoa(svc.ServiceID)
 	if _, err := s.service.ServiceOrder(c.Chat().ID, testServiceID); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
@@ -707,6 +661,9 @@ func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) err
 		log.Printf("Error deleting confirmation message: %v", err)
 	}
 
+	// Небольшая пауза, чтобы SHM успел обновить состояние
+	time.Sleep(2 * time.Second)
+
 	// 4. Открываем список услуг
 	return s.handleList(c)
 
@@ -870,11 +827,40 @@ func generatePassword() string {
 	return string(b)
 }
 
-func formatPrice(cost int, period int) string {
-	if period == 1 {
-		return fmt.Sprintf("%d руб./мес", cost)
-	} else if period == 12 {
-		return fmt.Sprintf("%d руб./год", cost)
+// buildTrialRow решает, нужно ли показывать кнопку теста,
+// и если да — возвращает готовую строку для Inline-клавиатуры.
+// Возвращает (row, ok, err): ok=false, если кнопку показывать не надо.
+func (s *Service) buildTrialRow(c telebot.Context, m *telebot.ReplyMarkup) (telebot.Row, bool, error) {
+	trialCfg := s.config.Features.Trial
+	if !trialCfg.Enabled || trialCfg.BaseServiceID <= 0 {
+		return telebot.Row{}, false, nil
 	}
-	return fmt.Sprintf("%d$/%d мес", cost, period)
+
+	// 1) Требование deeplink-параметра (если включено)
+	if trialCfg.RequireStartParam && !s.service.IsTrialEligible(c.Chat().ID) {
+		return telebot.Row{}, false, nil
+	}
+
+	// 2) Уже брал тест? (кэшируема внутрь UserHasTrialService)
+	hasTrial, err := s.service.UserHasTrialService(c.Chat().ID, trialCfg.BaseServiceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			// наружу, чтобы вызывающая функция могла показать регистрацию
+			return telebot.Row{}, false, service.ErrUserNotFound
+		}
+		return telebot.Row{}, false, fmt.Errorf("check trial: %w", err)
+	}
+	if hasTrial {
+		return telebot.Row{}, false, nil
+	}
+
+	// 3) Получаем услугу (с allow_to_order=1 внутри API)
+	svc, err := s.service.GetServiceByID(trialCfg.BaseServiceID)
+	if err != nil || svc == nil || svc.Name == "" {
+		return telebot.Row{}, false, nil // услуги нет/недоступна — тихо не показываем
+	}
+
+	// 4) Готовим кнопку
+	btn := m.Data(svc.Name, "/trial")
+	return m.Row(btn), true, nil
 }

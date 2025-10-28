@@ -407,12 +407,27 @@ func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
 	return nil
 }
 
+// internal/infrastructure/api/client.go
 func (c *APIClient) GetServiceByID(serviceID int) (*models.Service, error) {
-	req, err := http.NewRequest(
-		"GET",
-		fmt.Sprintf("%s/shm/v1/admin/service?service_id=%d&limit=1", c.ServerURL, serviceID),
-		nil,
+	// Формируем filter: {"service_id": <id>, "allow_to_order": 1}
+	f := map[string]any{
+		"service_id":     serviceID,
+		"allow_to_order": 1,
+		// при необходимости можно добавить:
+		// "category": s.config.Services.Category,
+	}
+	fb, err := json.Marshal(f)
+	if err != nil {
+		return nil, fmt.Errorf("marshal filter: %w", err)
+	}
+
+	u := fmt.Sprintf(
+		"%s/shm/v1/admin/service?&filter=%s",
+		c.ServerURL,
+		url.QueryEscape(string(fb)),
 	)
+
+	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}

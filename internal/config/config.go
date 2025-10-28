@@ -10,10 +10,13 @@ import (
 )
 
 type TrialFeature struct {
-	Enabled       bool   `json:"enabled"`
-	BaseServiceID int    `json:"base_service_id"`
-	ButtonText    string `json:"button_text"`
+	Enabled             bool     `json:"enabled"`
+	BaseServiceID       int      `json:"base_service_id"`
+	RequireStartParam   bool     `json:"require_start_param"`
+	AllowedStartParams  []string `json:"allowed_start_params"`
+	EligibilityTTLHours int      `json:"eligibility_ttl_hours"`
 }
+
 type Features struct {
 	Trial TrialFeature `json:"trial"`
 }

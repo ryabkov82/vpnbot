@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/skip2/go-qrcode"
 
@@ -18,16 +19,46 @@ var (
 )
 
 type Service struct {
-	apiClient *api.APIClient
-	paysCache map[int64][]models.UserPay // userID -> pays
-	cacheMux  sync.Mutex
+	apiClient          *api.APIClient
+	trialTakenCache    map[int64]bool
+	trialCacheMu       sync.RWMutex
+	trialEligibleUntil map[int64]time.Time
+	trialMu            sync.RWMutex
 }
 
 func NewService(apiClient *api.APIClient) *Service {
 	return &Service{
-		apiClient: apiClient,
-		paysCache: make(map[int64][]models.UserPay),
+		apiClient:          apiClient,
+		trialTakenCache:    make(map[int64]bool),
+		trialEligibleUntil: make(map[int64]time.Time),
 	}
+}
+
+// --- внутренние хелперы для кэша (private) ---
+func (s *Service) getTrialTakenCached(chatID int64) (bool, bool) {
+	s.trialCacheMu.RLock()
+	v, ok := s.trialTakenCache[chatID]
+	s.trialCacheMu.RUnlock()
+	return v, ok
+}
+
+func (s *Service) setTrialTakenCached(chatID int64) {
+	s.trialCacheMu.Lock()
+	s.trialTakenCache[chatID] = true
+	s.trialCacheMu.Unlock()
+}
+
+func (s *Service) SetTrialEligible(chatID int64, until time.Time) {
+	s.trialMu.Lock()
+	defer s.trialMu.Unlock()
+	s.trialEligibleUntil[chatID] = until
+}
+
+func (s *Service) IsTrialEligible(chatID int64) bool {
+	s.trialMu.RLock()
+	defer s.trialMu.RUnlock()
+	until, ok := s.trialEligibleUntil[chatID]
+	return ok && time.Now().Before(until)
 }
 
 func (s *Service) GetUser(chatID int64) (*models.User, error) {
@@ -167,15 +198,6 @@ func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserServ
 
 func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 
-	s.cacheMux.Lock()
-	defer s.cacheMux.Unlock()
-
-	/*
-		if cached, exists := s.paysCache[userID]; exists {
-			return cached, nil
-		}
-	*/
-
 	user, err := s.GetUser(userID)
 	if err != nil {
 		return nil, err
@@ -187,24 +209,39 @@ func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 		return pays, err
 	}
 
-	//s.paysCache[userID] = pays
-
 	return pays, err
 }
 
 // UserHasTrialService возвращает true, если у пользователя уже было СПИСАНИЕ по тестовой услуге.
 // Теперь мы считаем “брал тест” по факту withdraw, а не просто наличию UserService.
 func (s *Service) UserHasTrialService(chatID int64, baseServiceID int) (bool, error) {
-	// Нужно получить user_id из биллинга по chatID.
+	// 1️ Проверяем кэш
+	if v, ok := s.getTrialTakenCached(chatID); ok && v {
+		return true, nil
+	}
+
+	// 2️ Проверяем по API
 	user, err := s.GetUser(chatID)
 	if err != nil {
 		return false, err
 	}
+	if user == nil {
+		return false, ErrUserNotFound
+	}
 
-	// дергаем API-клиент на списания
 	has, err := s.apiClient.HasUserServiceWithdrawals(user.ID, baseServiceID)
 	if err != nil {
 		return false, err
 	}
+
+	// 3️ Если найдено — добавляем в кэш
+	if has {
+		s.setTrialTakenCached(chatID)
+	}
+
 	return has, nil
+}
+
+func (s *Service) GetServiceByID(serviceID int) (*models.Service, error) {
+	return s.apiClient.GetServiceByID(serviceID)
 }
