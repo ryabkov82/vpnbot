@@ -48,12 +48,31 @@ type TelegramInfo struct {
 	Profile      map[string]interface{} `json:"telegram_bot"`
 }
 
+// ServiceBotConfig — service.config.remnawave.bot (SHM API).
+type ServiceBotConfig struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// ServiceRemnawaveConfig — service.config.remnawave.
+type ServiceRemnawaveConfig struct {
+	InternalSquadName string           `json:"internal_squad_name"`
+	Bot               ServiceBotConfig `json:"bot"`
+}
+
+// ServiceConfig — service.config из ответа /shm/v1/admin/service.
+type ServiceConfig struct {
+	Remnawave ServiceRemnawaveConfig `json:"remnawave"`
+}
+
 type Service struct {
-	ServiceID    int     `json:"service_id"`
-	Name         string  `json:"name"`
-	Cost         float32 `json:"cost"`
-	Period       float32 `json:"period"`
-	AllowToOrder int     `json:"allow_to_order"`
+	ServiceID    int            `json:"service_id"`
+	Name         string         `json:"name"`
+	Descr        string         `json:"descr"`
+	Cost         float64        `json:"cost"`
+	Period       float32        `json:"period"`
+	AllowToOrder int            `json:"allow_to_order"`
+	Config       *ServiceConfig `json:"config"`
 }
 
 type UserPay struct {

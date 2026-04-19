@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
@@ -24,12 +25,16 @@ const defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"
 type Service struct {
 	service *service.Service
 	config  *config.Config
+
+	serviceBuyMu       sync.Mutex
+	serviceBuyInFlight map[string]struct{}
 }
 
 func NewService(service *service.Service, cfg *config.Config) *Service {
 	return &Service{
-		service: service,
-		config:  cfg,
+		service:            service,
+		config:             cfg,
+		serviceBuyInFlight: make(map[string]struct{}),
 	}
 }
 
@@ -332,7 +337,7 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 
 		rows = append(rows, menu.Row(
 			menu.Data(fmt.Sprintf("🛒 %s - %.2f руб.", svc.Name, svc.Cost),
-				"/serviceorder", fmt.Sprint(svc.ServiceID)),
+				"service_preview", fmt.Sprint(svc.ServiceID)),
 		))
 	}
 
@@ -341,6 +346,66 @@ func (s *Service) handlePricelist(c telebot.Context) error {
 
 	msg := "☷ Выберите услугу для заказа:"
 	return c.Send(s.logoPhoto(msg), menu)
+}
+
+func (s *Service) handleServicePreview(c telebot.Context, serviceID string) error {
+	if c.Callback() != nil {
+		if err := c.Bot().Delete(c.Callback().Message); err != nil {
+			log.Printf("Delete callback message error: %v", err)
+		}
+	}
+
+	user, err := s.service.GetUser(c.Chat().ID)
+	if err != nil {
+		log.Printf("handleServicePreview: %v", err)
+		return c.Send("⚠️ Не удалось загрузить данные. Попробуйте позже.")
+	}
+	if user == nil {
+		return s.showRegistrationMenu(c)
+	}
+
+	sid, err := strconv.Atoi(serviceID)
+	if err != nil {
+		return c.Send("⚠️ Некорректная услуга")
+	}
+
+	svc, err := s.service.GetServiceByID(sid)
+	if err != nil || svc == nil {
+		log.Printf("GetServiceByID %s: %v", serviceID, err)
+		return c.Send("⚠️ Услуга не найдена")
+	}
+
+	preview := models.BuildServicePreview(svc)
+	caption := fmt.Sprintf("%s\n\n%s\n\n💰 Цена: %.0f ₽", preview.Title, preview.Description, preview.Cost)
+
+	menu := &telebot.ReplyMarkup{}
+	menu.Inline(
+		menu.Row(
+			menu.Data("Купить", "service_buy", fmt.Sprint(svc.ServiceID)),
+			menu.Data("⇦ Назад", "/pricelist"),
+		),
+	)
+
+	return c.Send(s.logoPhoto(caption), menu)
+}
+
+// handleServiceBuy вызывает существующую логику заказа; защищает от повторного нажатия «Купить».
+func (s *Service) handleServiceBuy(c telebot.Context, serviceID string) error {
+	key := fmt.Sprintf("%d:%s", c.Chat().ID, serviceID)
+	s.serviceBuyMu.Lock()
+	if _, busy := s.serviceBuyInFlight[key]; busy {
+		s.serviceBuyMu.Unlock()
+		return nil
+	}
+	s.serviceBuyInFlight[key] = struct{}{}
+	s.serviceBuyMu.Unlock()
+	defer func() {
+		s.serviceBuyMu.Lock()
+		delete(s.serviceBuyInFlight, key)
+		s.serviceBuyMu.Unlock()
+	}()
+
+	return s.handleServiceOrder(c, serviceID)
 }
 
 func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error {

@@ -116,6 +116,14 @@ func (h *BotHandler) handleServiceOrder(c telebot.Context, serviceID string) err
 	return h.service.handleServiceOrder(c, serviceID)
 }
 
+func (h *BotHandler) handleServicePreview(c telebot.Context, serviceID string) error {
+	return h.service.handleServicePreview(c, serviceID)
+}
+
+func (h *BotHandler) handleServiceBuy(c telebot.Context, serviceID string) error {
+	return h.service.handleServiceBuy(c, serviceID)
+}
+
 func (h *BotHandler) handleHelp(c telebot.Context) error {
 	return h.service.handleHelp(c)
 }
@@ -172,8 +180,21 @@ func (h *BotHandler) handleCallbacks(c telebot.Context) error {
 	case "/pricelist":
 		return h.handlePricelist(c)
 	case "/serviceorder":
-		serviceIDStr := parts[1]
-		return h.handleServiceOrder(c, serviceIDStr)
+		// Старые inline-кнопки: ведём на preview, а не на мгновенный заказ
+		if len(parts) < 2 {
+			return nil
+		}
+		return h.handleServicePreview(c, parts[1])
+	case "service_preview":
+		if len(parts) < 2 {
+			return nil
+		}
+		return h.handleServicePreview(c, parts[1])
+	case "service_buy":
+		if len(parts) < 2 {
+			return nil
+		}
+		return h.handleServiceBuy(c, parts[1])
 	case "/help":
 		return h.handleHelp(c)
 	case "/pays":
