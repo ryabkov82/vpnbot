@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="theme-color" content="#282a36">
+	<title>Премиум AntiBlock VPN — Happ</title>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+	<style>
+		[data-bs-theme='dark'] {
+			--bs-body-bg: #282a36;
+			--bs-secondary-bg: #35384b;
+			--bs-my-btn-bg: #2383e2;
+			--bs-my-btn-bg-rgb: 35, 131, 226;
+			--bs-my-btn-accent-bg-rgb: 255, 255, 255;
+		}
+
+		.my-block {
+			padding: 1rem;
+			padding-top: 0.75rem;
+			padding-bottom: 1.25rem;
+			border-radius: var(--bs-border-radius-xl);
+			background-color: var(--bs-secondary-bg);
+		}
+
+		.my-btn {
+			--bs-btn-bg: rgba(var(--bs-my-btn-bg-rgb), .15);
+			--bs-btn-color: var(--bs-my-btn-bg);
+			--bs-btn-hover-bg: rgba(var(--bs-my-btn-bg-rgb), .2);
+			--bs-btn-hover-color: var(--bs-my-btn-bg);
+			--bs-btn-active-bg: rgba(var(--bs-my-btn-bg-rgb), .25);
+			--bs-btn-active-color: var(--bs-my-btn-bg);
+			--bs-btn-focus-shadow-rgb: var(--bs-my-btn-bg-rgb);
+			--bs-btn-hover-border-color: transparent;
+			--bs-btn-active-border-color: transparent;
+			--bs-btn-border-radius: var(--bs-border-radius-xl);
+			--bs-btn-font-weight: 600;
+		}
+
+		.my-btn-accent {
+			--bs-btn-bg: rgba(var(--bs-my-btn-accent-bg-rgb), 0.85);
+			--bs-btn-color: var(--bs-body-bg);
+			--bs-btn-hover-bg: rgba(var(--bs-my-btn-accent-bg-rgb), 1.0);
+			--bs-btn-hover-color: var(--bs-body-bg);
+			--bs-btn-active-bg: rgba(var(--bs-my-btn-accent-bg-rgb), 1.0);
+			--bs-btn-active-color: var(--bs-body-bg);
+			--bs-btn-focus-shadow-rgb: var(--bs-my-btn-accent-bg-rgb);
+		}
+
+		.page-wrap {
+			max-width: 28rem;
+		}
+
+		.step-num {
+			width: 1.75rem;
+			height: 1.75rem;
+			border-radius: 50%;
+			background: rgba(var(--bs-my-btn-bg-rgb), .25);
+			color: var(--bs-my-btn-bg);
+			font-weight: 700;
+			font-size: 0.9rem;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			flex-shrink: 0;
+		}
+
+		.diag-footer {
+			font-size: 0.75rem;
+			color: rgba(255, 255, 255, 0.45);
+			word-break: break-all;
+		}
+	</style>
+</head>
+<body class="pb-4">
+	<div class="container page-wrap py-3 px-2">
+		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="service-id-warning" role="alert">
+			service_id не передан
+		</div>
+
+		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="service-load-error" role="alert">
+			Не удалось загрузить данные услуги
+		</div>
+
+		<h1 class="h4 fw-bold text-center mb-2">Премиум AntiBlock VPN</h1>
+		<p class="text-secondary text-center small mb-4">
+			Подключение через клиент Happ для мобильных и ограниченных сетей РФ.
+		</p>
+
+		<div class="my-block mb-3 d-none" id="service-card">
+			<div class="fw-semibold mb-2">Ваша услуга</div>
+			<dl class="small text-secondary mb-0">
+				<dt class="d-inline fw-semibold text-body">Тариф:</dt>
+				<dd class="d-inline ms-1 mb-0" id="svc-name">—</dd>
+				<br>
+				<dt class="d-inline fw-semibold text-body">Статус:</dt>
+				<dd class="d-inline ms-1 mb-0" id="svc-status">—</dd>
+				<br>
+				<dt class="d-inline fw-semibold text-body">Оплачено до:</dt>
+				<dd class="d-inline ms-1 mb-0" id="svc-expire">—</dd>
+				<br>
+				<dt class="d-inline fw-semibold text-body">Трафик:</dt>
+				<dd class="d-inline ms-1 mb-0" id="svc-traffic">—</dd>
+				<br>
+				<dt class="d-inline fw-semibold text-body">Устройства:</dt>
+				<dd class="d-inline ms-1 mb-0" id="svc-devices">—</dd>
+			</dl>
+			<div class="mt-2" id="svc-usage-section">
+				<p class="small text-secondary mb-2 d-none" id="svc-usage-line"></p>
+				<div class="progress d-none mb-1" id="svc-usage-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="height: 1.15rem;">
+					<div class="progress-bar" id="svc-usage-bar" style="width: 0%;"></div>
+				</div>
+				<p class="small text-secondary mb-0 d-none" id="svc-usage-pct"></p>
+				<p class="small text-secondary mb-0" id="svc-usage-unavail">Использованный трафик временно недоступен</p>
+			</div>
+		</div>
+
+		<div class="my-block mb-3">
+			<div class="d-flex align-items-center gap-2 mb-3">
+				<span class="step-num">1</span>
+				<span class="fw-semibold">Установите Happ</span>
+			</div>
+			<div class="btn-group w-100 mb-3" role="group" aria-label="Выбор платформы">
+				<button type="button" class="btn my-btn" data-platform-tab="android">Android</button>
+				<button type="button" class="btn my-btn" data-platform-tab="ios">iOS</button>
+				<button type="button" class="btn my-btn" data-platform-tab="windows">Windows</button>
+			</div>
+			<p class="small text-secondary mb-3">Выберите устройство, на которое устанавливаете Happ.</p>
+			<div data-platform-panel="android" class="d-none">
+				<div class="d-grid gap-2">
+					<a class="btn my-btn my-btn-accent w-100" href="https://play.google.com/store/apps/details?id=com.happproxy" target="_blank" rel="noopener noreferrer"><i class="bi bi-google-play me-2"></i>Android: Google Play</a>
+					<a class="btn my-btn w-100" href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk" target="_blank" rel="noopener noreferrer"><i class="bi bi-download me-2"></i>Android: Скачать APK</a>
+				</div>
+			</div>
+			<div data-platform-panel="ios" class="d-none">
+				<div class="d-grid gap-2">
+					<a class="btn my-btn my-btn-accent w-100" href="https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973" target="_blank" rel="noopener noreferrer"><i class="bi bi-apple me-2"></i>iOS: App Store RU</a>
+					<a class="btn my-btn w-100" href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215" target="_blank" rel="noopener noreferrer"><i class="bi bi-apple me-2"></i>iOS: App Store EU</a>
+				</div>
+			</div>
+			<div data-platform-panel="windows" class="d-none">
+				<div class="d-grid gap-2">
+					<a class="btn my-btn my-btn-accent w-100" href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" target="_blank" rel="noopener noreferrer"><i class="bi bi-download me-2"></i>Windows: Скачать</a>
+				</div>
+			</div>
+		</div>
+
+		<div class="my-block mb-3">
+			<div class="d-flex align-items-center gap-2 mb-3">
+				<span class="step-num">2</span>
+				<span class="fw-semibold">Добавьте конфигурацию</span>
+			</div>
+			<a class="btn my-btn my-btn-accent w-100 disabled"
+				href="#"
+				id="href-add-config"
+				role="button"
+				aria-disabled="true">Открыть в Happ</a>
+			<button type="button" class="btn my-btn w-100 mt-2 d-none" id="btn-copy-happ-link" disabled>Скопировать ссылку для Happ</button>
+			<p class="small text-secondary mt-2 d-none" id="svc-happ-copy-status" role="status"></p>
+			<p class="small text-secondary mt-2 mb-0" id="svc-add-config-note">Ссылка подключения будет добавлена на следующем этапе.</p>
+			<p class="small text-secondary mt-2 mb-0 d-none" id="svc-happ-open-hint">Если приложение не открылось, убедитесь, что Happ установлен, и нажмите кнопку ещё раз.</p>
+			<p class="small text-danger mt-2 mb-0 d-none" id="svc-happ-error" role="alert"></p>
+		</div>
+
+		<div class="my-block mb-3">
+			<div class="d-flex align-items-center gap-2 mb-2">
+				<span class="step-num">3</span>
+				<span class="fw-semibold">Подключитесь к VPN</span>
+			</div>
+			<p class="small text-secondary mb-0">
+				Откройте Happ, выберите добавленный профиль и нажмите кнопку подключения.
+			</p>
+		</div>
+
+		<div class="my-block mb-4">
+			<div class="fw-semibold mb-2">Поддержка</div>
+			<a class="btn my-btn w-100" href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer"><i class="bi bi-telegram me-2"></i>Написать в поддержку</a>
+		</div>
+
+		<p class="diag-footer mb-0 text-center" id="service-id-footer"></p>
+	</div>
+
+	<script>
+	(function () {
+		function detectPlatform() {
+			const ua = navigator.userAgent || navigator.vendor || window.opera || '';
+
+			if (/android/i.test(ua)) return 'android';
+
+			if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
+
+			if (/Macintosh/.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1) return 'ios';
+
+			if (/win/i.test(ua)) return 'windows';
+
+			return 'android';
+		}
+
+		function setPlatform(platform) {
+			var p = platform;
+			if (p !== 'android' && p !== 'ios' && p !== 'windows') {
+				p = 'android';
+			}
+			try {
+				localStorage.setItem('premiumConnectPlatform', p);
+			} catch (e) {
+			}
+
+			document.querySelectorAll('[data-platform-panel]').forEach(function (el) {
+				el.classList.add('d-none');
+			});
+			var panel = document.querySelector('[data-platform-panel="' + p + '"]');
+			if (panel) {
+				panel.classList.remove('d-none');
+			}
+
+			document.querySelectorAll('[data-platform-tab]').forEach(function (btn) {
+				btn.classList.remove('active', 'my-btn-accent');
+			});
+			var tab = document.querySelector('[data-platform-tab="' + p + '"]');
+			if (tab) {
+				tab.classList.add('active', 'my-btn-accent');
+			}
+		}
+
+		function initPlatformTabs() {
+			var stored = null;
+			try {
+				stored = localStorage.getItem('premiumConnectPlatform');
+			} catch (e) {
+			}
+			var initial = stored;
+			if (initial !== 'android' && initial !== 'ios' && initial !== 'windows') {
+				initial = detectPlatform();
+			}
+			setPlatform(initial);
+
+			document.querySelectorAll('[data-platform-tab]').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					setPlatform(btn.dataset.platformTab);
+				});
+			});
+		}
+
+		initPlatformTabs();
+
+		function strategyRu(code) {
+			var m = { MONTH: 'месяц', YEAR: 'год', WEEK: 'неделя', TOTAL: 'всего', LIFETIME: 'бессрочно' };
+			var c = (code || '').trim().toUpperCase();
+			return m[c] || (code && code.trim() ? code.trim() : '—');
+		}
+
+		function statusRu(status) {
+			var s = { ACTIVE: 'Активна', BLOCK: 'Заблокирована', 'NOT PAID': 'Ожидает оплаты' };
+			return s[status] || status || '—';
+		}
+
+		var params = new URLSearchParams(window.location.search);
+		var sid = params.get('service_id');
+		var warn = document.getElementById('service-id-warning');
+		var errBox = document.getElementById('service-load-error');
+		var foot = document.getElementById('service-id-footer');
+		var card = document.getElementById('service-card');
+
+		if (sid) {
+			foot.textContent = 'service_id: ' + sid;
+			warn.classList.add('d-none');
+		} else {
+			foot.textContent = '';
+			warn.classList.remove('d-none');
+		}
+
+		if (!sid || !sid.trim()) {
+			return;
+		}
+
+		const redirectBase = 'https://vpn-for-friends.com/redirect.html';
+
+		function copyTextToClipboard(text) {
+			if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+				return navigator.clipboard.writeText(text).then(function () {
+					return true;
+				}).catch(function () {
+					return fallbackExecCopy(text);
+				});
+			}
+			return Promise.resolve(fallbackExecCopy(text));
+		}
+
+		function fallbackExecCopy(text) {
+			try {
+				var ta = document.createElement('textarea');
+				ta.value = text;
+				ta.setAttribute('readonly', '');
+				ta.style.position = 'fixed';
+				ta.style.left = '-9999px';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.focus();
+				ta.select();
+				var ok = document.execCommand('copy');
+				document.body.removeChild(ta);
+				return ok;
+			} catch (e) {
+				return false;
+			}
+		}
+
+		var addConfigBtn = document.getElementById('href-add-config');
+		addConfigBtn.addEventListener('click', function (e) {
+			var link = addConfigBtn.dataset.happLink || addConfigBtn.getAttribute('href');
+			if (!link || link === '#') {
+				e.preventDefault();
+				return;
+			}
+			if (link.indexOf('happ://') === 0) {
+				e.preventDefault();
+				var hint = document.getElementById('svc-happ-open-hint');
+				if (hint) {
+					hint.classList.add('d-none');
+				}
+				try {
+					var redirectUrl = redirectBase + '?url=' + encodeURIComponent(link);
+					window.open(redirectUrl, '_blank');
+				} catch (err) {
+				}
+				setTimeout(function () {
+					var hintEl = document.getElementById('svc-happ-open-hint');
+					if (hintEl) {
+						hintEl.classList.remove('d-none');
+					}
+				}, 1200);
+			}
+		});
+
+		var copyBtn = document.getElementById('btn-copy-happ-link');
+		var copyStatus = document.getElementById('svc-happ-copy-status');
+		copyBtn.addEventListener('click', function () {
+			var link = copyBtn.dataset.happLink;
+			if (!link) {
+				return;
+			}
+			copyStatus.classList.add('d-none');
+			copyTextToClipboard(link).then(function (ok) {
+				if (ok) {
+					copyStatus.textContent = 'Ссылка скопирована. Откройте Happ и добавьте конфигурацию из буфера обмена.';
+					copyStatus.className = 'small text-secondary mt-2';
+					copyStatus.classList.remove('d-none');
+				} else {
+					copyStatus.textContent = 'Не удалось скопировать ссылку автоматически. Откройте страницу во внешнем браузере или обратитесь в поддержку.';
+					copyStatus.className = 'small text-danger mt-2';
+					copyStatus.classList.remove('d-none');
+				}
+			});
+		});
+
+		fetch('/api/premium/service?service_id=' + encodeURIComponent(sid.trim()))
+			.then(function (res) {
+				if (!res.ok) {
+					throw new Error('bad status');
+				}
+				return res.json();
+			})
+			.then(function (data) {
+				errBox.classList.add('d-none');
+				card.classList.remove('d-none');
+
+				document.getElementById('svc-name').textContent = data.name || '—';
+				document.getElementById('svc-status').textContent = statusRu(data.status);
+				document.getElementById('svc-expire').textContent = data.expire || '—';
+
+				var human = data.traffic_limit_human || '';
+				var strat = strategyRu(data.traffic_limit_strategy);
+				var trafficLine = human ? (human + ' / ' + strat) : strat;
+				document.getElementById('svc-traffic').textContent = trafficLine;
+
+				var dev = data.hwid_device_limit;
+				document.getElementById('svc-devices').textContent =
+					(typeof dev === 'number' && dev > 0) ? ('до ' + dev) : '—';
+
+				var unavail = document.getElementById('svc-usage-unavail');
+				var uline = document.getElementById('svc-usage-line');
+				var pwrap = document.getElementById('svc-usage-progress-wrap');
+				var pbar = document.getElementById('svc-usage-bar');
+				var ppct = document.getElementById('svc-usage-pct');
+
+				if (data.traffic_usage_available) {
+					unavail.classList.add('d-none');
+					uline.classList.remove('d-none');
+					var limH = data.traffic_limit_human || '—';
+					var usedH = data.traffic_used_human || '0 Б';
+					if (data.traffic_limit_bytes > 0) {
+						uline.textContent = 'Использовано: ' + usedH + ' из ' + limH;
+					} else {
+						uline.textContent = 'Использовано: ' + usedH;
+					}
+					if (data.traffic_limit_bytes > 0) {
+						pwrap.classList.remove('d-none');
+						ppct.classList.remove('d-none');
+						var pct = typeof data.traffic_used_percent === 'number' ? data.traffic_used_percent : 0;
+						var w = Math.min(100, Math.max(0, pct));
+						pbar.style.width = w + '%';
+						pwrap.setAttribute('aria-valuenow', String(pct));
+						ppct.textContent = pct + '%';
+					} else {
+						pwrap.classList.add('d-none');
+						ppct.classList.add('d-none');
+					}
+				} else {
+					unavail.classList.remove('d-none');
+					uline.classList.add('d-none');
+					pwrap.classList.add('d-none');
+					ppct.classList.add('d-none');
+				}
+
+				return fetch('/api/premium/happ-link?service_id=' + encodeURIComponent(sid.trim()))
+					.then(function (res) {
+						return res.json().then(function (hj) {
+							return { ok: res.ok, j: hj };
+						});
+					})
+					.catch(function () {
+						return { ok: false, j: {} };
+					});
+			})
+			.then(function (happ) {
+				var btn = document.getElementById('href-add-config');
+				var note = document.getElementById('svc-add-config-note');
+				var happErr = document.getElementById('svc-happ-error');
+				var openHint = document.getElementById('svc-happ-open-hint');
+				var copyBtnEl = document.getElementById('btn-copy-happ-link');
+				var copyStatusEl = document.getElementById('svc-happ-copy-status');
+				if (happ.ok && happ.j && happ.j.happ_link_available && happ.j.happ_link) {
+					btn.dataset.happLink = happ.j.happ_link;
+					btn.href = happ.j.happ_link;
+					btn.classList.remove('disabled');
+					btn.setAttribute('aria-disabled', 'false');
+					if (copyBtnEl) {
+						copyBtnEl.dataset.happLink = happ.j.happ_link;
+						copyBtnEl.classList.remove('d-none');
+						copyBtnEl.disabled = false;
+					}
+					if (copyStatusEl) {
+						copyStatusEl.classList.add('d-none');
+						copyStatusEl.textContent = '';
+					}
+					note.textContent = 'Нажмите кнопку, чтобы добавить защищённую конфигурацию в Happ.';
+					happErr.classList.add('d-none');
+					happErr.textContent = '';
+					if (openHint) {
+						openHint.classList.add('d-none');
+					}
+				} else {
+					if (openHint) {
+						openHint.classList.add('d-none');
+					}
+					if (copyBtnEl) {
+						copyBtnEl.dataset.happLink = '';
+						copyBtnEl.classList.add('d-none');
+						copyBtnEl.disabled = true;
+					}
+					if (copyStatusEl) {
+						copyStatusEl.classList.add('d-none');
+						copyStatusEl.textContent = '';
+					}
+					happErr.classList.remove('d-none');
+					happErr.textContent = 'Не удалось подготовить ссылку для Happ. Напишите в поддержку.';
+				}
+			})
+			.catch(function () {
+				errBox.classList.remove('d-none');
+			});
+	})();
+	</script>
+</body>
+</html>

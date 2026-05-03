@@ -2,13 +2,16 @@ package main
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"gopkg.in/telebot.v3"
 
 	"github.com/ryabkov82/vpnbot/internal/app/bot"
+	"github.com/ryabkov82/vpnbot/internal/app/web"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
+	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
 	"github.com/ryabkov82/vpnbot/internal/service"
 )
 
@@ -74,6 +77,12 @@ func main() {
 
 	// 8. Запуск периодического обновления session_id
 	go apiClient.StartSessionRefresher()
+
+	var rwClient *remnawave.Client
+	if strings.TrimSpace(cfg.RemnawaveAPIURL) != "" && strings.TrimSpace(cfg.RemnawaveAPIToken) != "" {
+		rwClient = remnawave.NewClient(cfg.RemnawaveAPIURL, cfg.RemnawaveAPIToken)
+	}
+	web.Start(cfg, service, rwClient)
 
 	log.Println("Бот запущен и готов к работе...")
 	b.Start()

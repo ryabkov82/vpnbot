@@ -38,6 +38,7 @@ type Config struct {
 	Env        string `json:"app_env"`
 	WebhookURL string `json:"webhook_url"`
 	Port       string `json:"port"`
+	WebPort    string `json:"web_port"`
 	API        struct {
 		BaseURL  string `json:"base_url"`
 		APILogin string `json:"api_login"`
@@ -57,6 +58,12 @@ type Config struct {
 	Services ServicesCfg `json:"services"`
 	Assets   Assets      `json:"assets"`
 	Payments Payments    `json:"payments"`
+
+	PremiumSquadName      string `json:"premium_squad_name"`
+	PremiumConnectBaseURL string `json:"premium_connect_base_url"`
+
+	RemnawaveAPIURL   string `json:"remnawave_api_url"`
+	RemnawaveAPIToken string `json:"remnawave_api_token"`
 }
 
 func Load() *Config {

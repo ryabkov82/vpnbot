@@ -19,9 +19,11 @@ type UserService struct {
 	Cost          string `json:"cost"`
 	Status        string `json:"status"`
 	Expire        string `json:"expire"`
+	Period        string `json:"period"`
 	ServiceID     int    `json:"user_service_id"`
 	BaseServiceID int    `json:"service_id"`
 	Category      string `json:"category"`
+	ConfigRaw     string `json:"config"`
 	KeyMarzban    UserKeyMarzban
 }
 

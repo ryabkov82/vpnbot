@@ -490,6 +490,25 @@ func (s *Service) handleTrial(c telebot.Context) error {
 	return s.handleList(c)
 }
 
+func (s *Service) isPremiumAntiBlock(us *models.UserService) bool {
+	return models.IsPremiumAntiBlockUserService(us, s.config.PremiumSquadName)
+}
+
+func (s *Service) buildPremiumConnectURL(userServiceID int) string {
+	base := strings.TrimSpace(s.config.PremiumConnectBaseURL)
+	if base == "" {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	q.Set("service_id", strconv.Itoa(userServiceID))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	if c.Callback() != nil {
@@ -545,13 +564,24 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 	// Первый ряд кнопок (для активного ключа)
 	if us.Status == "ACTIVE" {
 		if strings.HasPrefix(us.Category, "vpn-mz-") {
-
-			rows = append(rows, menu.Row(
-				menu.WebApp("Показать данные для подключения", &telebot.WebApp{
-					URL: fmt.Sprintf("%s?telegram=true", us.KeyMarzban.SubscriptionURL),
-				}),
-				menu.Data("Показать ссылку подписки", "/show_mz_keys", fmt.Sprint(us.ServiceID)),
-			))
+			premiumURL := ""
+			if s.isPremiumAntiBlock(us) {
+				premiumURL = s.buildPremiumConnectURL(us.ServiceID)
+			}
+			if premiumURL != "" {
+				rows = append(rows, menu.Row(
+					menu.WebApp("Показать данные для подключения", &telebot.WebApp{
+						URL: premiumURL,
+					}),
+				))
+			} else {
+				rows = append(rows, menu.Row(
+					menu.WebApp("Показать данные для подключения", &telebot.WebApp{
+						URL: fmt.Sprintf("%s?telegram=true", us.KeyMarzban.SubscriptionURL),
+					}),
+					menu.Data("Показать ссылку подписки", "/show_mz_keys", fmt.Sprint(us.ServiceID)),
+				))
+			}
 
 		} else {
 			rows = append(rows, menu.Row(
