@@ -22,7 +22,7 @@ func servePremiumConnectTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("premium-connect-test: %s %s", r.Method, r.URL.RequestURI())
+	log.Printf("premium-connect-test: %s %s", r.Method, r.URL.Path)
 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")

@@ -5,24 +5,21 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
 	"github.com/ryabkov82/vpnbot/internal/models"
-	"github.com/ryabkov82/vpnbot/internal/service"
 )
 
-func servePremiumHappLink(cfg *config.Config, app *service.Service, rw *remnawave.Client) http.HandlerFunc {
+func servePremiumHappLink(cfg *config.Config, app premiumAPIApp, rw *remnawave.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/premium/happ-link" {
 			http.NotFound(w, r)
 			return
 		}
 
-		log.Printf("api/premium/happ-link: %s %s", r.Method, r.URL.RequestURI())
+		log.Printf("api/premium/happ-link: %s %s", r.Method, r.URL.Path)
 
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
@@ -30,25 +27,8 @@ func servePremiumHappLink(cfg *config.Config, app *service.Service, rw *remnawav
 			return
 		}
 
-		raw := strings.TrimSpace(r.URL.Query().Get("service_id"))
-		if raw == "" {
-			writeJSONError(w, http.StatusBadRequest, "invalid service_id")
-			return
-		}
-		id, err := strconv.Atoi(raw)
-		if err != nil || id <= 0 {
-			writeJSONError(w, http.StatusBadRequest, "invalid service_id")
-			return
-		}
-
-		us, err := app.GetUserService(strconv.Itoa(id))
-		if err != nil {
-			log.Printf("api/premium/happ-link GetUserService: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		if us == nil {
-			writeJSONError(w, http.StatusNotFound, "service not found")
+		us, ok := loadPremiumUserServiceForRequest(w, r, cfg, app)
+		if !ok {
 			return
 		}
 
@@ -60,7 +40,7 @@ func servePremiumHappLink(cfg *config.Config, app *service.Service, rw *remnawav
 		}
 
 		if !models.UserServiceTopConfigIsPremium(top, cfg.PremiumSquadName) {
-			writeJSONError(w, http.StatusForbidden, "service is not premium")
+			writePremiumForbidden(w)
 			return
 		}
 
@@ -87,12 +67,7 @@ func servePremiumHappLink(cfg *config.Config, app *service.Service, rw *remnawav
 			return
 		}
 
-		const cryptPrefix = "happ://crypt"
-		prefix := enc
-		if len(enc) > len(cryptPrefix)+6 {
-			prefix = enc[:len(cryptPrefix)+6] + "…"
-		}
-		log.Printf("api/premium/happ-link ok user=%s happ_prefix=%s", username, prefix)
+		log.Printf("api/premium/happ-link ok user=%s", username)
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"happ_link_available": true,

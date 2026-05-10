@@ -13,7 +13,6 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
 	"github.com/ryabkov82/vpnbot/internal/models"
-	"github.com/ryabkov82/vpnbot/internal/service"
 )
 
 type premiumServiceJSON struct {
@@ -40,6 +39,71 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writePremiumForbidden(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+}
+
+// premiumAPIApp — минимальный контракт для premium HTTP handlers (в т.ч. тестовый stub).
+type premiumAPIApp interface {
+	GetUser(userID int64) (*models.User, error)
+	GetUserService(serviceID string) (*models.UserService, error)
+}
+
+// loadPremiumUserServiceForRequest: service_id + access_token → услуга владельца токена.
+// При ошибке пишет ответ в w и возвращает nil, false.
+func loadPremiumUserServiceForRequest(w http.ResponseWriter, r *http.Request, cfg *config.Config, app premiumAPIApp) (*models.UserService, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("service_id"))
+	if raw == "" {
+		writeJSONError(w, http.StatusBadRequest, "invalid service_id")
+		return nil, false
+	}
+	id, err := strconv.Atoi(raw)
+	if err != nil || id <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid service_id")
+		return nil, false
+	}
+
+	tok := strings.TrimSpace(r.URL.Query().Get("access_token"))
+	if tok == "" {
+		writePremiumForbidden(w)
+		return nil, false
+	}
+
+	claims, err := ValidatePremiumAccessToken(cfg.PremiumLinkSigningSecret, tok, id)
+	if err != nil {
+		writePremiumForbidden(w)
+		return nil, false
+	}
+
+	user, err := app.GetUser(claims.UserID)
+	if err != nil {
+		log.Printf("api/premium GetUser: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if user == nil {
+		writePremiumForbidden(w)
+		return nil, false
+	}
+
+	us, err := app.GetUserService(strconv.Itoa(id))
+	if err != nil {
+		log.Printf("api/premium GetUserService: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if us == nil {
+		writeJSONError(w, http.StatusNotFound, "service not found")
+		return nil, false
+	}
+	if us.UserID != user.ID {
+		writePremiumForbidden(w)
+		return nil, false
+	}
+
+	return us, true
 }
 
 func trafficUsedPercent(used, limit int64) int {
@@ -96,14 +160,14 @@ func applyRemnawaveUsage(ctx context.Context, rw *remnawave.Client, us *models.U
 	out.TrafficUsedPercent = trafficUsedPercent(used, limitBytes)
 }
 
-func servePremiumService(cfg *config.Config, app *service.Service, rw *remnawave.Client) http.HandlerFunc {
+func servePremiumService(cfg *config.Config, app premiumAPIApp, rw *remnawave.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/premium/service" {
 			http.NotFound(w, r)
 			return
 		}
 
-		log.Printf("api/premium/service: %s %s", r.Method, r.URL.RequestURI())
+		log.Printf("api/premium/service: %s %s", r.Method, r.URL.Path)
 
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
@@ -111,25 +175,8 @@ func servePremiumService(cfg *config.Config, app *service.Service, rw *remnawave
 			return
 		}
 
-		raw := strings.TrimSpace(r.URL.Query().Get("service_id"))
-		if raw == "" {
-			writeJSONError(w, http.StatusBadRequest, "invalid service_id")
-			return
-		}
-		id, err := strconv.Atoi(raw)
-		if err != nil || id <= 0 {
-			writeJSONError(w, http.StatusBadRequest, "invalid service_id")
-			return
-		}
-
-		us, err := app.GetUserService(strconv.Itoa(id))
-		if err != nil {
-			log.Printf("api/premium/service GetUserService: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		if us == nil {
-			writeJSONError(w, http.StatusNotFound, "service not found")
+		us, ok := loadPremiumUserServiceForRequest(w, r, cfg, app)
+		if !ok {
 			return
 		}
 
@@ -141,7 +188,7 @@ func servePremiumService(cfg *config.Config, app *service.Service, rw *remnawave
 		}
 
 		if !models.UserServiceTopConfigIsPremium(top, cfg.PremiumSquadName) {
-			writeJSONError(w, http.StatusForbidden, "service is not premium")
+			writePremiumForbidden(w)
 			return
 		}
 

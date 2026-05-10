@@ -76,7 +76,11 @@
 <body class="pb-4">
 	<div class="container page-wrap py-3 px-2">
 		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="service-id-warning" role="alert">
-			service_id не передан
+			Не передан service_id
+		</div>
+
+		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="access-token-warning" role="alert">
+			Не передан access_token. Откройте страницу из Telegram-бота.
 		</div>
 
 		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="service-load-error" role="alert">
@@ -258,22 +262,33 @@
 
 		var params = new URLSearchParams(window.location.search);
 		var sid = params.get('service_id');
-		var warn = document.getElementById('service-id-warning');
+		var accessToken = params.get('access_token');
+		var warnSid = document.getElementById('service-id-warning');
+		var warnToken = document.getElementById('access-token-warning');
 		var errBox = document.getElementById('service-load-error');
 		var foot = document.getElementById('service-id-footer');
 		var card = document.getElementById('service-card');
 
-		if (sid) {
-			foot.textContent = 'service_id: ' + sid;
-			warn.classList.add('d-none');
+		if (sid && sid.trim()) {
+			foot.textContent = 'service_id: ' + sid.trim();
+			warnSid.classList.add('d-none');
 		} else {
 			foot.textContent = '';
-			warn.classList.remove('d-none');
+			warnSid.classList.remove('d-none');
 		}
 
-		if (!sid || !sid.trim()) {
+		if (accessToken && accessToken.trim()) {
+			warnToken.classList.add('d-none');
+		} else {
+			warnToken.classList.remove('d-none');
+		}
+
+		if (!sid || !sid.trim() || !accessToken || !accessToken.trim()) {
 			return;
 		}
+
+		var sidTrim = sid.trim();
+		var tokenTrim = accessToken.trim();
 
 		const redirectBase = 'https://vpn-for-friends.com/redirect.html';
 
@@ -355,7 +370,7 @@
 			});
 		});
 
-		fetch('/api/premium/service?service_id=' + encodeURIComponent(sid.trim()))
+		fetch('/api/premium/service?service_id=' + encodeURIComponent(sidTrim) + '&access_token=' + encodeURIComponent(tokenTrim))
 			.then(function (res) {
 				if (!res.ok) {
 					throw new Error('bad status');
@@ -414,7 +429,7 @@
 					ppct.classList.add('d-none');
 				}
 
-				return fetch('/api/premium/happ-link?service_id=' + encodeURIComponent(sid.trim()))
+				return fetch('/api/premium/happ-link?service_id=' + encodeURIComponent(sidTrim) + '&access_token=' + encodeURIComponent(tokenTrim))
 					.then(function (res) {
 						return res.json().then(function (hj) {
 							return { ok: res.ok, j: hj };

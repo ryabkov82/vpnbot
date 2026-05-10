@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/app/web"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/service"
@@ -494,9 +495,18 @@ func (s *Service) isPremiumAntiBlock(us *models.UserService) bool {
 	return models.IsPremiumAntiBlockUserService(us, s.config.PremiumSquadName)
 }
 
-func (s *Service) buildPremiumConnectURL(userServiceID int) string {
+func (s *Service) buildPremiumConnectURL(userServiceID int, telegramUserID int64) string {
+	secret := strings.TrimSpace(s.config.PremiumLinkSigningSecret)
+	if secret == "" {
+		return ""
+	}
 	base := strings.TrimSpace(s.config.PremiumConnectBaseURL)
 	if base == "" {
+		return ""
+	}
+	token, err := web.CreatePremiumAccessToken(secret, telegramUserID, userServiceID, 24*time.Hour)
+	if err != nil {
+		log.Printf("premium connect: failed to create access token: %v", err)
 		return ""
 	}
 	u, err := url.Parse(base)
@@ -505,6 +515,7 @@ func (s *Service) buildPremiumConnectURL(userServiceID int) string {
 	}
 	q := u.Query()
 	q.Set("service_id", strconv.Itoa(userServiceID))
+	q.Set("access_token", token)
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -566,7 +577,12 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 		if strings.HasPrefix(us.Category, "vpn-mz-") {
 			premiumURL := ""
 			if s.isPremiumAntiBlock(us) {
-				premiumURL = s.buildPremiumConnectURL(us.ServiceID)
+				premiumURL = s.buildPremiumConnectURL(us.ServiceID, c.Chat().ID)
+				if premiumURL == "" && strings.TrimSpace(s.config.PremiumConnectBaseURL) != "" {
+					if strings.TrimSpace(s.config.PremiumLinkSigningSecret) == "" {
+						log.Printf("premium connect: premium_link_signing_secret is empty, using subscription fallback (service_id=%d)", us.ServiceID)
+					}
+				}
 			}
 			if premiumURL != "" {
 				rows = append(rows, menu.Row(

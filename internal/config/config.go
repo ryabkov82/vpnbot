@@ -59,8 +59,9 @@ type Config struct {
 	Assets   Assets      `json:"assets"`
 	Payments Payments    `json:"payments"`
 
-	PremiumSquadName      string `json:"premium_squad_name"`
-	PremiumConnectBaseURL string `json:"premium_connect_base_url"`
+	PremiumSquadName         string `json:"premium_squad_name"`
+	PremiumConnectBaseURL    string `json:"premium_connect_base_url"`
+	PremiumLinkSigningSecret string `json:"premium_link_signing_secret"`
 
 	RemnawaveAPIURL   string `json:"remnawave_api_url"`
 	RemnawaveAPIToken string `json:"remnawave_api_token"`
