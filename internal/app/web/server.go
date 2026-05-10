@@ -12,17 +12,20 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/service"
 )
 
-//go:embed static/premium-connect-test/index.html
+//go:embed static/premium-connect/index.html
 var premiumConnectHTML []byte
 
-func servePremiumConnectTest(w http.ResponseWriter, r *http.Request) {
+func servePremiumConnect(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
-	if path != "/premium-connect-test" && path != "/premium-connect-test/" {
+	switch path {
+	case "/premium-connect", "/premium-connect/",
+		"/premium-connect-test", "/premium-connect-test/":
+	default:
 		http.NotFound(w, r)
 		return
 	}
 
-	log.Printf("premium-connect-test: %s %s", r.Method, r.URL.Path)
+	log.Printf("premium-connect: %s %s", r.Method, r.URL.Path)
 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -40,7 +43,9 @@ func servePremiumConnectTest(w http.ResponseWriter, r *http.Request) {
 // Start runs a minimal HTTP server for static premium onboarding (does not block).
 func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux := http.NewServeMux()
-	h := servePremiumConnectTest
+	h := servePremiumConnect
+	mux.HandleFunc("/premium-connect", h)
+	mux.HandleFunc("/premium-connect/", h)
 	mux.HandleFunc("/premium-connect-test", h)
 	mux.HandleFunc("/premium-connect-test/", h)
 	mux.HandleFunc("/api/premium/service", servePremiumService(cfg, app, rw))
@@ -56,7 +61,7 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	}
 
 	go func() {
-		log.Printf("HTTP server (premium-connect-test) listening on %s", addr)
+		log.Printf("HTTP server (premium-connect) listening on %s", addr)
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			log.Printf("HTTP server error: %v", err)
 		}
