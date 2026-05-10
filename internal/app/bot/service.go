@@ -22,6 +22,11 @@ import (
 
 const defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"
 
+var (
+	ErrOwnedServiceNotFound  = errors.New("owned service not found")
+	ErrOwnedServiceForbidden = errors.New("owned service forbidden")
+)
+
 // Service содержит бизнес-логику обработки команд
 type Service struct {
 	service *service.Service
@@ -495,6 +500,30 @@ func (s *Service) isPremiumAntiBlock(us *models.UserService) bool {
 	return models.IsPremiumAntiBlockUserService(us, s.config.PremiumSquadName)
 }
 
+// loadOwnedUserService загружает услугу и проверяет, что она принадлежит Telegram-пользователю.
+func (s *Service) loadOwnedUserService(telegramUserID int64, serviceID string) (*models.UserService, *models.User, error) {
+	user, err := s.service.GetUser(telegramUserID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user == nil {
+		return nil, nil, service.ErrUserNotFound
+	}
+	us, err := s.service.GetUserService(serviceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if us == nil {
+		return nil, nil, ErrOwnedServiceNotFound
+	}
+	if us.UserID != user.ID {
+		log.Printf("owned service forbidden: telegramUserID=%d serviceID=%s user.ID=%d us.UserID=%d",
+			telegramUserID, serviceID, user.ID, us.UserID)
+		return nil, nil, ErrOwnedServiceForbidden
+	}
+	return us, user, nil
+}
+
 func (s *Service) buildPremiumConnectURL(userServiceID int, telegramUserID int64) string {
 	secret := strings.TrimSpace(s.config.PremiumLinkSigningSecret)
 	if secret == "" {
@@ -520,6 +549,26 @@ func (s *Service) buildPremiumConnectURL(userServiceID int, telegramUserID int64
 	return u.String()
 }
 
+// replyPremiumPlainKeyBlocked — не отдаёт plain subscription/QR; предлагает Happ onboarding при наличии URL.
+func (s *Service) replyPremiumPlainKeyBlocked(c telebot.Context, us *models.UserService) error {
+	msg := "Для этой услуги подключение доступно только через защищённую страницу Happ."
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+	if u := strings.TrimSpace(s.buildPremiumConnectURL(us.ServiceID, c.Chat().ID)); u != "" {
+		rows = append(rows, menu.Row(
+			menu.WebApp("Показать данные для подключения", &telebot.WebApp{URL: u}),
+		))
+	}
+	if strings.TrimSpace(s.config.Telegram.SupportChat) != "" {
+		rows = append(rows, menu.Row(
+			menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat),
+		))
+	}
+	rows = append(rows, menu.Row(menu.Data("⇦ Назад", "/list", "")))
+	menu.Inline(rows...)
+	return c.Send(msg, menu)
+}
+
 func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 	if c.Callback() != nil {
@@ -529,15 +578,16 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 		}
 	}
 
-	us, err := s.service.GetUserService(serviceID)
+	us, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
 	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
 		log.Printf("Ошибка при получении информации по услуге: %v", err)
 		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
-	}
-
-	if us == nil {
-		log.Printf("Услуга не найдена: %s", serviceID)
-		return c.Send("⚠️ Услуга не найдена")
 	}
 
 	// Определяем иконку и статус
@@ -575,21 +625,22 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 	// Первый ряд кнопок (для активного ключа)
 	if us.Status == "ACTIVE" {
 		if strings.HasPrefix(us.Category, "vpn-mz-") {
-			premiumURL := ""
 			if s.isPremiumAntiBlock(us) {
-				premiumURL = s.buildPremiumConnectURL(us.ServiceID, c.Chat().ID)
-				if premiumURL == "" && strings.TrimSpace(s.config.PremiumConnectBaseURL) != "" {
-					if strings.TrimSpace(s.config.PremiumLinkSigningSecret) == "" {
-						log.Printf("premium connect: premium_link_signing_secret is empty, using subscription fallback (service_id=%d)", us.ServiceID)
+				premiumURL := s.buildPremiumConnectURL(us.ServiceID, c.Chat().ID)
+				if premiumURL != "" {
+					rows = append(rows, menu.Row(
+						menu.WebApp("Показать данные для подключения", &telebot.WebApp{
+							URL: premiumURL,
+						}),
+					))
+				} else {
+					text.WriteString("\n\nПодключение временно недоступно. Обратитесь в поддержку.")
+					if strings.TrimSpace(s.config.Telegram.SupportChat) != "" {
+						rows = append(rows, menu.Row(
+							menu.URL("🛟 Поддержка", s.config.Telegram.SupportChat),
+						))
 					}
 				}
-			}
-			if premiumURL != "" {
-				rows = append(rows, menu.Row(
-					menu.WebApp("Показать данные для подключения", &telebot.WebApp{
-						URL: premiumURL,
-					}),
-				))
 			} else {
 				rows = append(rows, menu.Row(
 					menu.WebApp("Показать данные для подключения", &telebot.WebApp{
@@ -639,6 +690,21 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 
 func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) error {
 
+	us, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
+		log.Printf("Ошибка при проверке услуги: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+	if s.isPremiumAntiBlock(us) {
+		return s.replyPremiumPlainKeyBlocked(c, us)
+	}
+
 	fileBytes, err := s.service.DownloadUserKey(c.Chat().ID, serviceID)
 	if err != nil {
 		log.Printf("Ошибка загрузки файла ключа: %v", err)
@@ -656,6 +722,21 @@ func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) err
 }
 
 func (s *Service) handleShowMZ(c telebot.Context, serviceID string) error {
+
+	us, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
+		log.Printf("Ошибка при проверке услуги: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+	if s.isPremiumAntiBlock(us) {
+		return s.replyPremiumPlainKeyBlocked(c, us)
+	}
 
 	userKey, err := s.service.GetUserKeyMarzban(c.Chat().ID, serviceID)
 	if err != nil {
@@ -712,6 +793,21 @@ func (s *Service) handleShowMZ(c telebot.Context, serviceID string) error {
 
 func (s *Service) handleShowQR(c telebot.Context, serviceID string) error {
 
+	us, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
+		log.Printf("Ошибка при проверке услуги: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+	if s.isPremiumAntiBlock(us) {
+		return s.replyPremiumPlainKeyBlocked(c, us)
+	}
+
 	qrBytes, err := s.service.GetQRCodeUserKey(c.Chat().ID, serviceID)
 	if err != nil {
 		log.Printf("Ошибка генерации QR-кода: %v", err)
@@ -735,6 +831,18 @@ func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 		if err := c.Bot().Delete(c.Callback().Message); err != nil {
 			log.Printf("Delete callback message error: %v", err)
 		}
+	}
+
+	_, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
+		log.Printf("Ошибка при проверке услуги перед удалением: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
 	}
 
 	// Создаем inline-клавиатуру
@@ -761,7 +869,19 @@ func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 
 func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) error {
 
-	err := s.service.DeleteUserService(c.Chat().ID, serviceID)
+	_, _, err := s.loadOwnedUserService(c.Chat().ID, serviceID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return s.showRegistrationMenu(c)
+		}
+		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+			return c.Send("⚠️ Услуга не найдена или недоступна")
+		}
+		log.Printf("Ошибка при проверке услуги перед удалением: %v", err)
+		return c.Send("⚠️ Произошла ошибка при получении информации по услуге")
+	}
+
+	err = s.service.DeleteUserService(c.Chat().ID, serviceID)
 	if err != nil {
 		log.Printf("Ошибка при удалении услуги: %v", err)
 		return c.Send("⚠️ Ошибка при удалении услуги")
