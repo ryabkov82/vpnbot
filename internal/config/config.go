@@ -51,6 +51,7 @@ type Config struct {
 	Telegram struct {
 		Token         string `json:"token"`
 		SupportChatID int64  `json:"support_chat_id"`
+		LeadsChatID   int64  `json:"leads_chat_id"`
 		SupportChat   string `json:"support_chat"`
 		NewsChannel   string `json:"news_channel"`
 	}

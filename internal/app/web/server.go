@@ -54,6 +54,7 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux.HandleFunc("/api/premium/service", servePremiumService(cfg, app, rw))
 	mux.HandleFunc("/api/premium/happ-link", servePremiumHappLink(cfg, app, rw))
 	mux.HandleFunc("/api/public/services", servePublicServices(cfg, app))
+	mux.HandleFunc("/api/public/lead", servePublicLead(cfg, app))
 
 	port := strings.TrimSpace(cfg.WebPort)
 	if port == "" {

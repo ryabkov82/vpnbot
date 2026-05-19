@@ -58,8 +58,16 @@
 			Не удалось загрузить тарифы. Попробуйте позже или напишите в поддержку.
 		</div>
 
-		<div class="alert alert-info py-2 px-3 mb-3 d-none" id="buy-stub-toast" role="alert">
-			Оплата через сайт будет добавлена на следующем этапе
+		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="lead-success" role="alert">
+			Заявка принята. Мы свяжемся с вами и отправим ссылку на оплату.
+		</div>
+
+		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="lead-rate-limited" role="alert">
+			Слишком много попыток. Попробуйте позже.
+		</div>
+
+		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="lead-submit-error" role="alert">
+			Не удалось отправить заявку. Проверьте данные или попробуйте позже.
 		</div>
 
 		<div class="my-block mb-3">
@@ -76,6 +84,37 @@
 		</div>
 	</div>
 
+	<div class="modal fade" id="leadModal" tabindex="-1" aria-labelledby="leadModalLabel" aria-hidden="true">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content bg-body-secondary border-0">
+				<div class="modal-header border-secondary">
+					<h2 class="modal-title h5" id="leadModalLabel">Заявка на тариф</h2>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+				</div>
+				<form id="lead-form" class="modal-body" novalidate>
+					<input type="hidden" name="service_id" id="lead-service-id" value="">
+					<div class="mb-3">
+						<label for="lead-email" class="form-label">Email</label>
+						<input type="email" class="form-control" id="lead-email" name="email" required autocomplete="email" placeholder="you@example.com">
+					</div>
+					<div class="mb-3">
+						<label for="lead-contact" class="form-label">Telegram или другой контакт <span class="text-secondary fw-normal">(необязательно)</span></label>
+						<input type="text" class="form-control" id="lead-contact" name="contact" autocomplete="off" placeholder="@username">
+					</div>
+					<div class="visually-hidden" aria-hidden="true">
+						<label for="lead-website">Website</label>
+						<input type="text" class="form-control" id="lead-website" name="website" tabindex="-1" autocomplete="off" value="">
+					</div>
+					<div class="d-flex gap-2 justify-content-end pt-1">
+						<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+						<button type="submit" class="btn my-btn" id="lead-submit-btn">Отправить</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 	<script>
 	(function () {
 		function formatPeriod(months) {
@@ -94,12 +133,78 @@
 			}
 		}
 
-		function showStub() {
-			var el = document.getElementById('buy-stub-toast');
-			el.classList.remove('d-none');
-			clearTimeout(showStub._t);
-			showStub._t = setTimeout(function () { el.classList.add('d-none'); }, 5000);
+		function hideLeadAlerts() {
+			['lead-success', 'lead-rate-limited', 'lead-submit-error'].forEach(function (id) {
+				document.getElementById(id).classList.add('d-none');
+			});
 		}
+
+		function showLeadAlert(id) {
+			hideLeadAlerts();
+			document.getElementById(id).classList.remove('d-none');
+		}
+
+		var leadModalEl = document.getElementById('leadModal');
+		var leadModal = leadModalEl && typeof bootstrap !== 'undefined' ? new bootstrap.Modal(leadModalEl) : null;
+
+		function openLeadModal(serviceId) {
+			hideLeadAlerts();
+			document.getElementById('lead-service-id').value = String(serviceId);
+			document.getElementById('lead-email').value = '';
+			document.getElementById('lead-contact').value = '';
+			document.getElementById('lead-website').value = '';
+			if (leadModal) leadModal.show();
+		}
+
+		document.getElementById('lead-form').addEventListener('submit', function (ev) {
+			ev.preventDefault();
+			hideLeadAlerts();
+			var sid = parseInt(document.getElementById('lead-service-id').value, 10);
+			var email = document.getElementById('lead-email').value.trim();
+			var contact = document.getElementById('lead-contact').value.trim();
+			var website = document.getElementById('lead-website').value;
+			var btn = document.getElementById('lead-submit-btn');
+			if (!email) {
+				document.getElementById('lead-email').focus();
+				return;
+			}
+			btn.disabled = true;
+			fetch('/api/public/lead', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					service_id: sid,
+					email: email,
+					contact: contact,
+					website: website
+				})
+			})
+				.then(function (r) {
+					if (r.status === 429) {
+						if (leadModal) leadModal.hide();
+						showLeadAlert('lead-rate-limited');
+						return null;
+					}
+					return r.json().then(function (data) {
+						return { ok: r.ok, status: r.status, data: data };
+					});
+				})
+				.then(function (res) {
+					if (!res) return;
+					if (res.ok && res.data && res.data.status === 'accepted') {
+						if (leadModal) leadModal.hide();
+						showLeadAlert('lead-success');
+						return;
+					}
+					document.getElementById('lead-submit-error').classList.remove('d-none');
+				})
+				.catch(function () {
+					document.getElementById('lead-submit-error').classList.remove('d-none');
+				})
+				.finally(function () {
+					btn.disabled = false;
+				});
+		});
 
 		function renderTariffs(services) {
 			var root = document.getElementById('tariffs-root');
@@ -123,7 +228,9 @@
 					'<span class="fw-bold">' + escapeHtml(formatMoney(s.cost)) + '</span>' +
 					'<button type="button" class="btn btn-sm my-btn buy-btn">Купить</button>' +
 					'</div></div></div>';
-				col.querySelector('.buy-btn').addEventListener('click', showStub);
+				col.querySelector('.buy-btn').addEventListener('click', function () {
+					openLeadModal(s.service_id);
+				});
 				root.appendChild(col);
 			});
 		}
