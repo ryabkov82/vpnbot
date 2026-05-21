@@ -102,11 +102,20 @@ func servePublicOrderStatus(cfg *config.Config, app publicOrderStatusApp) http.H
 			} else {
 				out.Message = publicOrderStatusMsgVPNProvisioning
 			}
-			writeJSON(w, http.StatusOK, out)
-			return
+		} else {
+			out.Message = publicOrderStatusMsgPremiumLater
 		}
 
-		out.Message = publicOrderStatusMsgPremiumLater
+		ttl := webSalesActiveNotifyTTL(cfg)
+		if webSalesOrderActiveNotified.tryMarkFirst(claims.UserServiceID, ttl) {
+			tariff := strings.TrimSpace(us.Name)
+			if tariff == "" {
+				tariff = strconv.Itoa(claims.ServiceID)
+			}
+			connectTG := strings.TrimSpace(out.ConnectURL)
+			sendWebOrderActiveTelegramNotification(cfg, claims.Email, tariff, claims.ServiceID, claims.UserID, claims.UserServiceID, connectTG, ClientIPFromRequest(r))
+		}
+
 		writeJSON(w, http.StatusOK, out)
 	}
 }

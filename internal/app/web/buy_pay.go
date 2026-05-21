@@ -136,6 +136,9 @@ func serveBuyPay(cfg *config.Config, app webOrderPayApp, used *UsedStartTokenSto
 			slog.Warn("buy/pay status email", "err", err)
 		}
 
+		ip := ClientIPFromRequest(r)
+		sendWebOrderCreatedTelegramNotification(cfg, start.Email, svcName, start.ServiceID, amount, user.ID, user.Login, order.ServiceID, order.Status, ip)
+
 		data := buyPayPageData{
 			ServiceName: svcName,
 			Amount:      strconv.FormatFloat(amount, 'f', -1, 64),

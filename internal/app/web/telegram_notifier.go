@@ -62,26 +62,28 @@ func buildLeadTelegramMessage(lead publicLead, serviceName, ip string) string {
 	return b.String()
 }
 
-// sendLeadTelegramNotification шлёт уведомление в Telegram через Bot API.
-// Ошибки не пробрасываются наружу; токен в логи не пишется.
-func sendLeadTelegramNotification(cfg *config.Config, lead publicLead, serviceName, ip string) {
+// postTelegramPlainTextMessage шлёт plain text в Telegram Bot API (без parse_mode).
+// logPrefix — префикс для slog.Warn; токен в логи не пишется.
+func postTelegramPlainTextMessage(cfg *config.Config, text string, logPrefix string) {
+	if logPrefix == "" {
+		logPrefix = "telegram"
+	}
 	chatID := resolveLeadNotificationChatID(cfg)
 	if chatID == 0 {
 		return
 	}
 	token := strings.TrimSpace(cfg.Telegram.Token)
 	if token == "" {
-		slog.Warn("lead telegram: skip, empty bot token")
+		slog.Warn(logPrefix + ": skip, empty bot token")
 		return
 	}
 
-	text := buildLeadTelegramMessage(lead, serviceName, ip)
 	body, err := json.Marshal(map[string]any{
 		"chat_id": chatID,
 		"text":    text,
 	})
 	if err != nil {
-		slog.Warn("lead telegram: marshal body", "err", err)
+		slog.Warn(logPrefix+": marshal body", "err", err)
 		return
 	}
 
@@ -91,25 +93,25 @@ func sendLeadTelegramNotification(cfg *config.Config, lead publicLead, serviceNa
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
-		slog.Warn("lead telegram: build request", "err", err)
+		slog.Warn(logPrefix+": build request", "err", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := leadTelegramHTTPPost(req)
 	if err != nil {
-		slog.Warn("lead telegram: http request failed", "err", err)
+		slog.Warn(logPrefix+": http request failed", "err", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		slog.Warn("lead telegram: read response", "err", err)
+		slog.Warn(logPrefix+": read response", "err", err)
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("lead telegram: non-200 response", "status", resp.StatusCode)
+		slog.Warn(logPrefix+": non-200 response", "status", resp.StatusCode)
 		return
 	}
 	var parsed struct {
@@ -117,10 +119,17 @@ func sendLeadTelegramNotification(cfg *config.Config, lead publicLead, serviceNa
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		slog.Warn("lead telegram: decode response", "err", err)
+		slog.Warn(logPrefix+": decode response", "err", err)
 		return
 	}
 	if !parsed.OK {
-		slog.Warn("lead telegram: api returned error", "description", parsed.Description)
+		slog.Warn(logPrefix+": api returned error", "description", parsed.Description)
 	}
+}
+
+// sendLeadTelegramNotification шлёт уведомление в Telegram через Bot API.
+// Ошибки не пробрасываются наружу; токен в логи не пишется.
+func sendLeadTelegramNotification(cfg *config.Config, lead publicLead, serviceName, ip string) {
+	text := buildLeadTelegramMessage(lead, serviceName, ip)
+	postTelegramPlainTextMessage(cfg, text, "lead telegram")
 }

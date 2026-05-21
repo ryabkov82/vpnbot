@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -97,21 +96,6 @@ func (r *leadRateLimiter) allow(ipKey, emailKey string) bool {
 	r.ip[ipKey] = ipHits
 	r.em[emailKey] = emHits
 	return true
-}
-
-func clientIPForPublicLead(r *http.Request) string {
-	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
-	if xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
-	}
-	return host
 }
 
 func validateLeadEmail(raw string) bool {
@@ -228,7 +212,7 @@ func servePublicLeadWithLimiter(cfg *config.Config, app publicLeadApp, rl *leadR
 			return
 		}
 
-		ipKey := clientIPForPublicLead(r)
+		ipKey := ClientIPFromRequest(r)
 		if ipKey == "" {
 			ipKey = "unknown"
 		}

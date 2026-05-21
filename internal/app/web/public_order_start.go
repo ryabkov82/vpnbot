@@ -113,7 +113,7 @@ func servePublicOrderStart(cfg *config.Config, app publicOrderStartApp, rl *lead
 			return
 		}
 
-		ipKey := clientIPForPublicLead(r)
+		ipKey := ClientIPFromRequest(r)
 		if ipKey == "" {
 			ipKey = "unknown"
 		}
@@ -160,6 +160,9 @@ func servePublicOrderStart(cfg *config.Config, app publicOrderStartApp, rl *lead
 			writeJSONError(w, http.StatusInternalServerError, "email_send_failed")
 			return
 		}
+
+		ip := ClientIPFromRequest(r)
+		sendWebOrderStartTelegramNotification(cfg, normEmail, req.Contact, svcName, req.ServiceID, amount, ip)
 
 		out := publicOrderStartOKJSON{
 			Status:  "email_sent",

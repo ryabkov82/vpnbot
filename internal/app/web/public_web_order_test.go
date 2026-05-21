@@ -387,6 +387,8 @@ func statusUSMatchToken() *models.UserService {
 }
 
 func TestServePublicOrderStatus_ACTIVE_VPNMarzban_SubscriptionURL(t *testing.T) {
+	t.Cleanup(resetWebSalesOrderActiveNotifiedForTest)
+	resetWebSalesOrderActiveNotifiedForTest()
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
 	tok, err := CreateOrderToken(secret, "u@e.e", 1, 10, 20, 100, time.Hour)
@@ -428,6 +430,8 @@ func TestServePublicOrderStatus_ACTIVE_VPNMarzban_SubscriptionURL(t *testing.T) 
 }
 
 func TestServePublicOrderStatus_ACTIVE_VPNMarzban_NoSubscriptionURL(t *testing.T) {
+	t.Cleanup(resetWebSalesOrderActiveNotifiedForTest)
+	resetWebSalesOrderActiveNotifiedForTest()
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
 	tok, err := CreateOrderToken(secret, "u@e.e", 1, 10, 20, 100, time.Hour)
@@ -455,6 +459,8 @@ func TestServePublicOrderStatus_ACTIVE_VPNMarzban_NoSubscriptionURL(t *testing.T
 }
 
 func TestServePublicOrderStatus_ACTIVE_NonVPNMessage(t *testing.T) {
+	t.Cleanup(resetWebSalesOrderActiveNotifiedForTest)
+	resetWebSalesOrderActiveNotifiedForTest()
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
 	tok, err := CreateOrderToken(secret, "u@e.e", 1, 10, 20, 100, time.Hour)
