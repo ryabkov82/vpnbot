@@ -196,6 +196,17 @@ func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserServ
 
 }
 
+// ServiceOrderByUserID создаёт заказ услуги по числовому user_id (SHM).
+func (s *Service) ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error) {
+	if userID <= 0 {
+		return nil, errors.New("invalid user id")
+	}
+	if serviceID <= 0 {
+		return nil, errors.New("invalid service id")
+	}
+	return s.apiClient.ServiceOrder(userID, serviceID)
+}
+
 func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 
 	user, err := s.GetUser(userID)

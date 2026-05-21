@@ -54,6 +54,10 @@
 			Если Telegram недоступен, вы можете оформить VPN прямо на этом сайте — выберите тариф ниже.
 		</p>
 
+		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="order-email-sent" role="alert">
+			Мы отправили ссылку на оплату на ваш email. Откройте письмо и перейдите по ссылке.
+		</div>
+
 		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="services-load-error" role="alert">
 			Не удалось загрузить тарифы. Попробуйте позже или напишите в поддержку.
 		</div>
@@ -134,7 +138,7 @@
 		}
 
 		function hideLeadAlerts() {
-			['lead-success', 'lead-rate-limited', 'lead-submit-error'].forEach(function (id) {
+			['lead-success', 'lead-rate-limited', 'lead-submit-error', 'order-email-sent'].forEach(function (id) {
 				document.getElementById(id).classList.add('d-none');
 			});
 		}
@@ -169,7 +173,38 @@
 				return;
 			}
 			btn.disabled = true;
-			fetch('/api/public/lead', {
+
+			function submitLeadFallback() {
+				return fetch('/api/public/lead', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						service_id: sid,
+						email: email,
+						contact: contact,
+						website: website
+					})
+				}).then(function (r) {
+					if (r.status === 429) {
+						if (leadModal) leadModal.hide();
+						showLeadAlert('lead-rate-limited');
+						return null;
+					}
+					return r.json().then(function (data) {
+						return { ok: r.ok, status: r.status, data: data };
+					});
+				}).then(function (res) {
+					if (!res) return;
+					if (res.ok && res.data && res.data.status === 'accepted') {
+						if (leadModal) leadModal.hide();
+						showLeadAlert('lead-success');
+						return;
+					}
+					document.getElementById('lead-submit-error').classList.remove('d-none');
+				});
+			}
+
+			fetch('/api/public/order/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -180,23 +215,31 @@
 				})
 			})
 				.then(function (r) {
-					if (r.status === 429) {
-						if (leadModal) leadModal.hide();
-						showLeadAlert('lead-rate-limited');
-						return null;
-					}
 					return r.json().then(function (data) {
 						return { ok: r.ok, status: r.status, data: data };
+					}).catch(function () {
+						return { ok: r.ok, status: r.status, data: null };
 					});
 				})
 				.then(function (res) {
-					if (!res) return;
-					if (res.ok && res.data && res.data.status === 'accepted') {
+					if (res.ok && res.data && res.data.status === 'email_sent') {
 						if (leadModal) leadModal.hide();
-						showLeadAlert('lead-success');
+						showLeadAlert('order-email-sent');
 						return;
 					}
+					if (res.ok && res.data && res.data.status === 'accepted') {
+						if (leadModal) leadModal.hide();
+						return;
+					}
+					var err = res.data && res.data.error;
+					if (res.status === 404 || res.status === 429 || res.status === 503 || res.status >= 500 ||
+						err === 'email_unavailable' || err === 'email_send_failed') {
+						return submitLeadFallback();
+					}
 					document.getElementById('lead-submit-error').classList.remove('d-none');
+				})
+				.catch(function () {
+					return submitLeadFallback();
 				})
 				.catch(function () {
 					document.getElementById('lead-submit-error').classList.remove('d-none');

@@ -36,6 +36,13 @@ type UserRegistrationRequest struct {
 
 type UserSettings struct {
 	Telegram TelegramInfo `json:"telegram"`
+	Web      WebInfo      `json:"web,omitempty"`
+}
+
+// WebInfo — метаданные web-пользователя (SHM settings.web).
+type WebInfo struct {
+	Email  string `json:"email"`
+	Source string `json:"source"`
 }
 
 type TelegramInfo struct {

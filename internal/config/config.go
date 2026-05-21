@@ -60,9 +60,30 @@ type Config struct {
 	Assets   Assets      `json:"assets"`
 	Payments Payments    `json:"payments"`
 
+	Admin struct {
+		Token string `json:"token"`
+	} `json:"admin"`
+
 	PremiumSquadName         string `json:"premium_squad_name"`
 	PremiumConnectBaseURL    string `json:"premium_connect_base_url"`
 	PremiumLinkSigningSecret string `json:"premium_link_signing_secret"`
+
+	WebSales struct {
+		Enabled            bool   `json:"enabled"`
+		OrderTokenSecret   string `json:"order_token_secret"`
+		OrderTokenTTLHours int    `json:"order_token_ttl_hours"`
+		PublicBaseURL      string `json:"public_base_url"`
+	} `json:"web_sales"`
+
+	Email struct {
+		SMTPHost     string `json:"smtp_host"`
+		SMTPPort     int    `json:"smtp_port"`
+		SMTPUsername string `json:"smtp_username"`
+		SMTPPassword string `json:"smtp_password"`
+		FromEmail    string `json:"from_email"`
+		FromName     string `json:"from_name"`
+		Enabled      bool   `json:"enabled"`
+	} `json:"email"`
 
 	RemnawaveAPIURL   string `json:"remnawave_api_url"`
 	RemnawaveAPIToken string `json:"remnawave_api_token"`

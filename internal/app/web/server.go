@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
@@ -54,7 +55,16 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux.HandleFunc("/api/premium/service", servePremiumService(cfg, app, rw))
 	mux.HandleFunc("/api/premium/happ-link", servePremiumHappLink(cfg, app, rw))
 	mux.HandleFunc("/api/public/services", servePublicServices(cfg, app))
-	mux.HandleFunc("/api/public/lead", servePublicLead(cfg, app))
+	sharedLeadRL := newLeadRateLimiter(5, 15*time.Minute, 3, time.Hour)
+	usedStartTok := NewUsedStartTokenStore()
+	mux.HandleFunc("/api/public/lead", servePublicLeadWithLimiter(cfg, app, sharedLeadRL))
+	mux.HandleFunc("/api/public/order/start", servePublicOrderStart(cfg, app, sharedLeadRL))
+	mux.HandleFunc("/api/public/order/status", servePublicOrderStatus(cfg, app))
+	mux.HandleFunc("/buy/pay", serveBuyPay(cfg, app, usedStartTok))
+	mux.HandleFunc("/buy/pay/", serveBuyPay(cfg, app, usedStartTok))
+	mux.HandleFunc("/buy/status", serveBuyStatus)
+	mux.HandleFunc("/buy/status/", serveBuyStatus)
+	mux.HandleFunc("/api/admin/web-order/test", serveAdminWebOrderTest(cfg, app))
 
 	port := strings.TrimSpace(cfg.WebPort)
 	if port == "" {

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Статус оплаты — VPN for Friends</title>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+	<style>
+		[data-bs-theme='dark'] { --bs-body-bg: #282a36; --bs-secondary-bg: #35384b; }
+		.my-btn { --bs-btn-bg: rgba(35,131,226,.15); --bs-btn-color: #2383e2; --bs-btn-border-radius: var(--bs-border-radius-xl); --bs-btn-font-weight: 600; }
+	</style>
+</head>
+<body class="pb-4">
+	<div class="container py-4" style="max-width:32rem">
+		<h1 class="h4 fw-bold mb-3">Статус оплаты</h1>
+		<div class="alert alert-secondary d-none" id="no-token" role="alert">
+			Заказ не найден в этом браузере. Откройте ссылку из письма или оформите заявку на <a href="/buy">странице тарифов</a>.
+		</div>
+		<div class="alert alert-info d-none" id="loading" role="alert">Проверяем…</div>
+		<div class="alert alert-danger d-none" id="err-box" role="alert"></div>
+		<div class="alert alert-success d-none" id="success-with-connect" role="alert">
+			<div class="fw-semibold mb-2">Оплата найдена. VPN готов к подключению.</div>
+			<div class="d-grid gap-2">
+				<a class="btn btn-success" id="btn-open-connect" href="#" target="_blank" rel="noopener noreferrer">Открыть подключение</a>
+				<button type="button" class="btn btn-outline-light" id="btn-copy-connect">Скопировать ссылку</button>
+			</div>
+		</div>
+		<div class="p-3 rounded-3 d-none" id="result-box" style="background:var(--bs-secondary-bg)">
+			<div class="fw-semibold" id="status-line"></div>
+			<div class="small text-secondary mt-2" id="msg-line"></div>
+			<div class="d-grid gap-2 mt-3 d-none" id="row-recheck">
+				<button type="button" class="btn btn-outline-light btn-sm" id="btn-recheck">Проверить снова</button>
+			</div>
+		</div>
+		<div class="d-grid gap-2 mt-3">
+			<button type="button" class="btn my-btn" id="btn-check">Проверить оплату</button>
+			<a class="btn btn-outline-secondary" href="/buy">К тарифам</a>
+		</div>
+	</div>
+	<script>
+	(function () {
+		function tokenFromURL() {
+			var p = new URLSearchParams(window.location.search);
+			return p.get('token') || '';
+		}
+		function tokenFromStorage() {
+			try { return localStorage.getItem('vff_order_token') || ''; } catch (e) { return ''; }
+		}
+		function setVisible(id, on) {
+			document.getElementById(id).classList.toggle('d-none', !on);
+		}
+		function hideAllResults() {
+			setVisible('success-with-connect', false);
+			setVisible('result-box', false);
+			document.getElementById('row-recheck').classList.add('d-none');
+		}
+		function check() {
+			var tok = tokenFromURL() || tokenFromStorage();
+			if (!tok) {
+				setVisible('no-token', true);
+				return;
+			}
+			setVisible('no-token', false);
+			setVisible('loading', true);
+			setVisible('err-box', false);
+			hideAllResults();
+			fetch('/api/public/order/status?token=' + encodeURIComponent(tok))
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+				.then(function (x) {
+					setVisible('loading', false);
+					if (!x.ok) {
+						setVisible('err-box', true);
+						document.getElementById('err-box').textContent = x.j && x.j.error ? x.j.error : 'Ошибка запроса';
+						return;
+					}
+					var j = x.j;
+					if (j.paid && j.connect_url) {
+						var openBtn = document.getElementById('btn-open-connect');
+						openBtn.href = j.connect_url;
+						openBtn.textContent = 'Открыть подключение';
+						if (j.connect_title && String(j.connect_title).trim()) {
+							openBtn.setAttribute('title', j.connect_title);
+						} else {
+							openBtn.removeAttribute('title');
+						}
+						setVisible('success-with-connect', true);
+						document.getElementById('btn-copy-connect').onclick = function () {
+							var url = j.connect_url;
+							function ok() {
+								var el = document.getElementById('btn-copy-connect');
+								var t = el.textContent;
+								el.textContent = 'Скопировано';
+								setTimeout(function () { el.textContent = 'Скопировать ссылку'; }, 2000);
+							}
+							function fail() {
+								alert('Не удалось скопировать — выделите ссылку вручную.');
+							}
+							if (navigator.clipboard && navigator.clipboard.writeText) {
+								navigator.clipboard.writeText(url).then(ok).catch(fail);
+							} else {
+								try {
+									var ta = document.createElement('textarea');
+									ta.value = url;
+									ta.style.position = 'fixed';
+									ta.style.left = '-9999px';
+									document.body.appendChild(ta);
+									ta.select();
+									document.execCommand('copy');
+									document.body.removeChild(ta);
+									ok();
+								} catch (e) { fail(); }
+							}
+						};
+						return;
+					}
+					setVisible('result-box', true);
+					document.getElementById('status-line').textContent = 'Статус: ' + (j.status || '—');
+					document.getElementById('msg-line').textContent = j.message || '';
+					if (j.paid && !j.connect_url) {
+						document.getElementById('row-recheck').classList.remove('d-none');
+					}
+				})
+				.catch(function () {
+					setVisible('loading', false);
+					setVisible('err-box', true);
+					document.getElementById('err-box').textContent = 'Сеть недоступна';
+				});
+		}
+		document.getElementById('btn-check').addEventListener('click', check);
+		document.getElementById('btn-recheck').addEventListener('click', check);
+		if (tokenFromURL() || tokenFromStorage()) {
+			check();
+		} else {
+			setVisible('no-token', true);
+		}
+	})();
+	</script>
+</body>
+</html>

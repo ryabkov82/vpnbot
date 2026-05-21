@@ -19,10 +19,10 @@ type PremiumAccessClaims struct {
 }
 
 var (
-	ErrPremiumTokenMalformed = errors.New("malformed premium access token")
-	ErrPremiumTokenSignature = errors.New("invalid premium access token signature")
-	ErrPremiumTokenExpired   = errors.New("premium access token expired")
-	ErrPremiumTokenService   = errors.New("premium access token service mismatch")
+	ErrPremiumTokenMalformed   = errors.New("malformed premium access token")
+	ErrPremiumTokenSignature   = errors.New("invalid premium access token signature")
+	ErrPremiumTokenExpired     = errors.New("premium access token expired")
+	ErrPremiumTokenService     = errors.New("premium access token service mismatch")
 	ErrPremiumTokenEmptySecret = errors.New("premium link signing secret is empty")
 )
 
