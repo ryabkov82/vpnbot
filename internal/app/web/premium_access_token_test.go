@@ -40,6 +40,39 @@ func TestValidatePremiumAccessToken_Expired(t *testing.T) {
 	}
 }
 
+func TestCreatePremiumSHMAccessToken_ValidateRoundTrip(t *testing.T) {
+	secret := "sh-web"
+	tok, err := CreatePremiumSHMAccessToken(secret, 55, 1200, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := ValidatePremiumAccessToken(secret, tok, 1200)
+	if err != nil || cl.ShmUserID != 55 || cl.UserID != 0 || cl.ServiceID != 1200 {
+		t.Fatalf("%+v %v", cl, err)
+	}
+}
+
+func TestValidatePremiumAccessToken_InvalidPrincipalCombination(t *testing.T) {
+	secret := "s-both"
+	claims := PremiumAccessClaims{
+		ServiceID: 1,
+		UserID:    9,
+		ShmUserID: 8,
+		Exp:       time.Now().Add(time.Hour).Unix(),
+	}
+	b, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := base64.RawURLEncoding.EncodeToString(b)
+	sig := signPremiumPayload([]byte(secret), b)
+	tok := enc + "." + base64.RawURLEncoding.EncodeToString(sig)
+	_, err = ValidatePremiumAccessToken(secret, tok, 1)
+	if err == nil {
+		t.Fatal("want error for conflicting principals")
+	}
+}
+
 func TestValidatePremiumAccessToken_WrongServiceID(t *testing.T) {
 	secret := "s2"
 	tok, err := CreatePremiumAccessToken(secret, 1, 100, time.Hour)

@@ -68,6 +68,45 @@ func TestServeAccountCatalog_Success_TrialExcluded(t *testing.T) {
 	}
 }
 
+func TestServeAccountCatalog_PremiumFieldsMatchPublicOffer(t *testing.T) {
+	squad := "cat-prem-squad-z"
+	cfg := orderStartTestCfg()
+	cfg.API.BaseURL = "https://api.example.com"
+	cfg.PremiumSquadName = squad
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 44, "web_aa", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		shmServices: []models.Service{{
+			ServiceID:    31,
+			Name:         "AntiBlock Happ",
+			Descr:        "D",
+			Cost:         400,
+			Period:       1,
+			AllowToOrder: 1,
+			Config: &models.ServiceConfig{Remnawave: models.ServiceRemnawaveConfig{
+				InternalSquadName: squad,
+			}},
+		}},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountCatalogServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/catalog/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out publicServicesListJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Services) != 1 || out.Services[0].Tier != publicTierPremium {
+		t.Fatalf("%#v", out.Services)
+	}
+	if out.Services[0].ConnectApp != publicConnectHapp || len(out.Services[0].Badges) != 3 {
+		t.Fatalf("%#v", out.Services[0])
+	}
+}
+
 func TestServeAccountCatalog_NoInternalFieldsLeak(t *testing.T) {
 	cfg := orderStartTestCfg()
 	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 12, "web_xx", time.Hour)

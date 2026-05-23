@@ -15,11 +15,14 @@ type publicServicesApp interface {
 }
 
 type publicServiceJSON struct {
-	ServiceID   int     `json:"service_id"`
-	Name        string  `json:"name"`
-	Cost        float64 `json:"cost"`
-	Period      float64 `json:"period"`
-	Description string  `json:"description"`
+	ServiceID   int      `json:"service_id"`
+	Name        string   `json:"name"`
+	Cost        float64  `json:"cost"`
+	Period      float64  `json:"period"`
+	Description string   `json:"description"`
+	Tier        string   `json:"tier"`
+	ConnectApp  string   `json:"connect_app"`
+	Badges      []string `json:"badges"`
 }
 
 type publicServicesListJSON struct {
@@ -44,12 +47,19 @@ func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service) [
 		if name == "" {
 			name = "Тариф"
 		}
+		tier, conn, badges := tierConnectBadgesFromCatalog(cfg, s)
+		if badges == nil {
+			badges = []string{}
+		}
 		out = append(out, publicServiceJSON{
 			ServiceID:   s.ServiceID,
 			Name:        name,
 			Cost:        preview.Cost,
 			Period:      float64(s.Period),
 			Description: preview.Description,
+			Tier:        tier,
+			ConnectApp:  conn,
+			Badges:      badges,
 		})
 	}
 	return out

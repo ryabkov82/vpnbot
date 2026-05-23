@@ -525,28 +525,14 @@ func (s *Service) loadOwnedUserService(telegramUserID int64, serviceID string) (
 }
 
 func (s *Service) buildPremiumConnectURL(userServiceID int, telegramUserID int64) string {
-	secret := strings.TrimSpace(s.config.PremiumLinkSigningSecret)
-	if secret == "" {
-		return ""
-	}
-	base := strings.TrimSpace(s.config.PremiumConnectBaseURL)
-	if base == "" {
-		return ""
-	}
-	token, err := web.CreatePremiumAccessToken(secret, telegramUserID, userServiceID, 24*time.Hour)
+	u, err := web.BuildPremiumConnectURLForTelegram(s.config, telegramUserID, userServiceID)
 	if err != nil {
-		log.Printf("premium connect: failed to create access token: %v", err)
+		if !errors.Is(err, web.ErrPremiumConnectNotConfigured) {
+			log.Printf("premium connect: %v", err)
+		}
 		return ""
 	}
-	u, err := url.Parse(base)
-	if err != nil {
-		return ""
-	}
-	q := u.Query()
-	q.Set("service_id", strconv.Itoa(userServiceID))
-	q.Set("access_token", token)
-	u.RawQuery = q.Encode()
-	return u.String()
+	return u
 }
 
 // replyPremiumPlainKeyBlocked — не отдаёт plain subscription/QR; предлагает Happ onboarding при наличии URL.

@@ -99,6 +99,18 @@
 			}
 		}
 
+		function renderTariffBadges(s) {
+			var badges = s.badges;
+			if (!Array.isArray(badges) || !badges.length) return '';
+			var bits = '';
+			for (var i = 0; i < badges.length; i++) {
+				var lbl = escapeHtml(String(badges[i] || '').trim());
+				if (!lbl) continue;
+				bits += '<span class="badge text-bg-secondary me-1 mb-1">' + lbl + '</span>';
+			}
+			return bits ? '<div class="mt-2">' + bits + '</div>' : '';
+		}
+
 		function renderTariffs(services) {
 			var root = document.getElementById('tariffs-root');
 			root.innerHTML = '';
@@ -107,15 +119,18 @@
 				return;
 			}
 			services.forEach(function (s) {
+				var isPrem = String(s.tier || '') === 'premium';
+				var cardBorder = isPrem ? ' border border-primary border-opacity-25' : ' border-0';
 				var col = document.createElement('div');
 				col.className = 'col-12';
 				col.innerHTML =
-					'<div class="card bg-body-secondary border-0 tariff-card">' +
+					'<div class="card bg-body-secondary tariff-card' + cardBorder + '">' +
 					'<div class="card-body">' +
 					'<div class="d-flex justify-content-between align-items-start gap-2">' +
 					'<div class="fw-semibold">' + escapeHtml(s.name || 'Тариф') + '</div>' +
 					'<div class="text-nowrap small text-secondary">' + escapeHtml(formatPeriod(s.period)) + '</div>' +
 					'</div>' +
+					renderTariffBadges(s) +
 					'<p class="card-text small text-secondary mt-2 mb-2">' + escapeHtml(s.description || '') + '</p>' +
 					'<div class="d-flex justify-content-between align-items-center gap-2">' +
 					'<span class="fw-bold">' + escapeHtml(formatMoney(s.cost)) + '</span>' +

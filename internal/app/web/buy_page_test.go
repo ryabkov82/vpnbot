@@ -34,4 +34,12 @@ func TestBuyPageContainsAccountLink(t *testing.T) {
 	if !bytes.Contains(body, []byte("личный кабинет")) {
 		t.Fatal("missing cabinet copy")
 	}
+	if !strings.Contains(string(body), `String(s.tier || '') === 'premium'`) {
+		t.Fatal("/buy UI must honour tier=premium for badges")
+	}
+	for _, forbid := range []string{"SHM", "Remnawave", "internal_squad_name"} {
+		if strings.Contains(string(body), forbid) {
+			t.Fatalf("buy UI must not contain %q", forbid)
+		}
+	}
 }

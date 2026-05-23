@@ -47,8 +47,16 @@ func writePremiumForbidden(w http.ResponseWriter) {
 
 // premiumAPIApp — минимальный контракт для premium HTTP handlers (в т.ч. тестовый stub).
 type premiumAPIApp interface {
-	GetUser(userID int64) (*models.User, error)
+	GetUser(chatID int64) (*models.User, error)
+	GetUserByID(userID int) (*models.User, error)
 	GetUserService(serviceID string) (*models.UserService, error)
+}
+
+func resolvePremiumTokenUser(app premiumAPIApp, claims *PremiumAccessClaims) (*models.User, error) {
+	if claims.ShmUserID > 0 {
+		return app.GetUserByID(claims.ShmUserID)
+	}
+	return app.GetUser(claims.UserID)
 }
 
 // loadPremiumUserServiceForRequest: service_id + access_token → услуга владельца токена.
@@ -77,9 +85,9 @@ func loadPremiumUserServiceForRequest(w http.ResponseWriter, r *http.Request, cf
 		return nil, false
 	}
 
-	user, err := app.GetUser(claims.UserID)
+	user, err := resolvePremiumTokenUser(app, claims)
 	if err != nil {
-		log.Printf("api/premium GetUser: %v", err)
+		log.Printf("api/premium resolve user: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return nil, false
 	}

@@ -66,6 +66,11 @@ func (s *Service) GetUser(chatID int64) (*models.User, error) {
 	return s.apiClient.GetUser(chatID)
 }
 
+// GetUserByID — пользователь по числовому shm user_id (веб-кабинет, premium-токены).
+func (s *Service) GetUserByID(userID int) (*models.User, error) {
+	return s.apiClient.GetUserByID(userID)
+}
+
 func (s *Service) RegisterUser(user models.UserRegistrationRequest) error {
 	return s.apiClient.RegisterUser(user)
 }

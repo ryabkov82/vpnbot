@@ -133,6 +133,58 @@ func (c *APIClient) GetUser(chatID int64) (*models.User, error) {
 	return nil, nil
 }
 
+// GetUserByID возвращает пользователя по shm user_id (фильтр admin/user).
+func (c *APIClient) GetUserByID(userID int) (*models.User, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	filter := map[string]interface{}{
+		"user_id": userID,
+	}
+	jsonBytes, err := json.Marshal(filter)
+	if err != nil {
+		return nil, err
+	}
+	encoded := url.QueryEscape(string(jsonBytes))
+
+	req, err := http.NewRequest(
+		"GET",
+		fmt.Sprintf("%s/shm/v1/admin/user?filter=%s", c.ServerURL, encoded),
+		nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var users struct {
+		Data []models.User `json:"data"`
+	}
+	if err := json.Unmarshal(body, &users); err != nil {
+		return nil, err
+	}
+
+	for i := range users.Data {
+		if users.Data[i].ID == userID {
+			return &users.Data[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func (c *APIClient) GetUserByLogin(login string) (*models.User, error) {
 	login = strings.TrimSpace(login)
 	if login == "" {

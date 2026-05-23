@@ -16,6 +16,10 @@ func (noopPremiumApp) GetUser(int64) (*models.User, error) {
 	panic("noopPremiumApp.GetUser must not be called")
 }
 
+func (noopPremiumApp) GetUserByID(int) (*models.User, error) {
+	panic("noopPremiumApp.GetUserByID must not be called")
+}
+
 func (noopPremiumApp) GetUserService(string) (*models.UserService, error) {
 	panic("noopPremiumApp.GetUserService must not be called")
 }

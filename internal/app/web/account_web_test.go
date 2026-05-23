@@ -244,9 +244,11 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 			Forecast float64 `json:"forecast"`
 		} `json:"user"`
 		Services []struct {
-			UserServiceID int  `json:"user_service_id"`
-			ServiceID     int  `json:"service_id"`
-			CanConnect    bool `json:"can_connect"`
+			UserServiceID int    `json:"user_service_id"`
+			ServiceID     int    `json:"service_id"`
+			CanConnect    bool   `json:"can_connect"`
+			Tier          string `json:"tier"`
+			ConnectApp    string `json:"connect_app"`
 		} `json:"services"`
 	}
 	if err := json.Unmarshal([]byte(raw), &env); err != nil {
@@ -257,6 +259,9 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	}
 	if len(env.Services) != 1 || !env.Services[0].CanConnect || env.Services[0].UserServiceID != 336 || env.Services[0].ServiceID != 3 {
 		t.Fatalf("services %+v", env.Services)
+	}
+	if env.Services[0].Tier != publicTierStandard || env.Services[0].ConnectApp != publicConnectSubscription {
+		t.Fatalf("want standard tier, got %+v", env.Services[0])
 	}
 }
 
@@ -290,7 +295,7 @@ func TestServeAccountConnect_ACTIVE_OK(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Status != "ok" || out.ConnectURL != "https://sub.example/connect" || out.ConnectTitle != accountConnectTitle {
+	if out.Status != "ok" || out.ConnectURL != "https://sub.example/connect" || out.ConnectTitle != accountConnectTitleStandard || out.ConnectApp != publicConnectSubscription {
 		t.Fatalf("%#v", out)
 	}
 }
@@ -338,6 +343,148 @@ func TestServeAccountConnect_NotPaid_NotReady(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&out)
 	if rec.Code != http.StatusOK || out.Status != "not_ready" || out.ConnectURL != "" {
 		t.Fatalf("%#v code=%d", out, rec.Code)
+	}
+}
+
+func catalogPremiumConfigRaw(name string) string {
+	return `{"remnawave":{"internal_squad_name":"` + name + `"}}`
+}
+
+func TestServeAccountServices_PremiumActive(t *testing.T) {
+	cfg := orderStartTestCfg()
+	squad := "anti-premium-squad-x"
+	cfg.PremiumSquadName = squad
+	secret := cfg.WebSales.OrderTokenSecret
+	tok, err := CreateAccountToken(secret, "p@test.com", 55, "web_p55", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		services: []models.UserService{{
+			Name:          "Premium line",
+			ServiceID:     990,
+			BaseServiceID: 12,
+			UserID:        55,
+			Status:        "ACTIVE",
+			Category:      "premium-antiblock",
+			ConfigRaw:     catalogPremiumConfigRaw(squad),
+		}},
+	}
+	h := serveAccountServices(cfg, st)
+	req := httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	var wrap struct {
+		Services []struct {
+			UserServiceID int      `json:"user_service_id"`
+			CanConnect    bool     `json:"can_connect"`
+			Tier          string   `json:"tier"`
+			ConnectApp    string   `json:"connect_app"`
+			Badges        []string `json:"badges"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &wrap); err != nil {
+		t.Fatal(err)
+	}
+	if len(wrap.Services) != 1 || !wrap.Services[0].CanConnect {
+		t.Fatalf("%+v", wrap.Services)
+	}
+	s0 := wrap.Services[0]
+	if s0.Tier != publicTierPremium || s0.ConnectApp != publicConnectHapp || len(s0.Badges) != 3 {
+		t.Fatalf("%+v", s0)
+	}
+}
+
+func TestServeAccountServices_PremiumNotPaid_NoConnect(t *testing.T) {
+	cfg := orderStartTestCfg()
+	squad := "anti-premium-squad-x"
+	cfg.PremiumSquadName = squad
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "p@test.com", 55, "web_p55", time.Hour)
+	st := &stubAccountWeb{
+		services: []models.UserService{{
+			Name:          "Premium line",
+			ServiceID:     991,
+			BaseServiceID: 12,
+			UserID:        55,
+			Status:        "NOT PAID",
+			ConfigRaw:     catalogPremiumConfigRaw(squad),
+		}},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	var wrap struct {
+		Services []struct {
+			CanConnect bool   `json:"can_connect"`
+			Tier       string `json:"tier"`
+		} `json:"services"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &wrap)
+	if len(wrap.Services) != 1 || wrap.Services[0].CanConnect || wrap.Services[0].Tier != publicTierPremium {
+		t.Fatalf("%+v", wrap.Services)
+	}
+}
+
+func TestServeAccountConnect_Premium_OK_WithSignedLink(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.PremiumSquadName = "ps-web"
+	cfg.PremiumConnectBaseURL = "https://shop.example/premium-connect"
+	cfg.PremiumLinkSigningSecret = "signing-signing-xx"
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	us := &models.UserService{
+		UserID:        10,
+		ServiceID:     442,
+		BaseServiceID: 9,
+		Status:        "ACTIVE",
+		Category:      "premium-antiblock",
+		ConfigRaw:     catalogPremiumConfigRaw("ps-web"),
+		KeyMarzban:    models.UserKeyMarzban{SubscriptionURL: "https://raw-subscription.example/secret-sub"},
+	}
+	st := &stubAccountWeb{single: map[int]*models.UserService{442: us}}
+	rec := httptest.NewRecorder()
+	serveAccountServiceConnect(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/service/connect?token="+tok+"&user_service_id=442", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	var out accountConnectOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "ok" || out.ConnectApp != publicConnectHapp {
+		t.Fatalf("%#v", out)
+	}
+	if !strings.Contains(out.ConnectURL, "premium-connect") || !strings.Contains(out.ConnectURL, "access_token") {
+		t.Fatalf("url: %q", out.ConnectURL)
+	}
+	if strings.Contains(rec.Body.String(), "raw-subscription.example") {
+		t.Fatal("must not expose raw subscription in JSON")
+	}
+}
+
+func TestServeAccountConnect_Premium_NoSecret_NotRawSubscription(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.PremiumSquadName = "ps-web"
+	cfg.PremiumConnectBaseURL = "https://shop.example/pc"
+	cfg.PremiumLinkSigningSecret = ""
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	us := &models.UserService{
+		UserID:        10,
+		ServiceID:     442,
+		Status:        "ACTIVE",
+		Category:      "premium-antiblock",
+		ConfigRaw:     catalogPremiumConfigRaw("ps-web"),
+		KeyMarzban:    models.UserKeyMarzban{SubscriptionURL: "https://leak-this.example/forbidden"},
+	}
+	st := &stubAccountWeb{single: map[int]*models.UserService{442: us}}
+	rec := httptest.NewRecorder()
+	serveAccountServiceConnect(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/service/connect?token="+tok+"&user_service_id=442", nil))
+	raw := rec.Body.String()
+	var out accountConnectOKJSON
+	_ = json.Unmarshal([]byte(raw), &out)
+	if out.ConnectURL != "" || strings.Contains(raw, "leak-this.example") || out.Status != "not_ready" {
+		t.Fatalf("%s | %#v", raw, out)
 	}
 }
 

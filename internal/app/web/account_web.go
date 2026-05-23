@@ -131,11 +131,14 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 	}
 }
 
-// accountDashboardCanShowConnect — ACTIVE + vpn-mz-* (без загрузки Marzban в списке).
-func accountDashboardCanShowConnect(us models.UserService) bool {
+// accountDashboardCanShowConnect — ACTIVE и (Premium/AntiBlock или стандартный vpn-mz-*).
+func accountDashboardCanShowConnect(cfg *config.Config, us models.UserService) bool {
 	st := strings.TrimSpace(us.Status)
 	if !strings.EqualFold(st, "ACTIVE") {
 		return false
+	}
+	if cfg != nil && models.IsPremiumAntiBlockUserService(&us, cfg.PremiumSquadName) {
+		return true
 	}
 	return strings.HasPrefix(strings.TrimSpace(us.Category), "vpn-mz-")
 }
@@ -149,14 +152,17 @@ type accountServicesUserJSON struct {
 }
 
 type accountServicesRowJSON struct {
-	UserServiceID int    `json:"user_service_id"`
-	ServiceID     int    `json:"service_id"`
-	Name          string `json:"name"`
-	Status        string `json:"status"`
-	Expire        string `json:"expire"`
-	Period        string `json:"period"`
-	Category      string `json:"category"`
-	CanConnect    bool   `json:"can_connect"`
+	UserServiceID int      `json:"user_service_id"`
+	ServiceID     int      `json:"service_id"`
+	Name          string   `json:"name"`
+	Status        string   `json:"status"`
+	Expire        string   `json:"expire"`
+	Period        string   `json:"period"`
+	Category      string   `json:"category"`
+	Tier          string   `json:"tier"`
+	ConnectApp    string   `json:"connect_app"`
+	Badges        []string `json:"badges"`
+	CanConnect    bool     `json:"can_connect"`
 }
 
 type accountServicesOKJSON struct {
@@ -214,6 +220,10 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 		out := make([]accountServicesRowJSON, 0, len(list))
 		for i := range list {
 			us := &list[i]
+			tier, conn, badges := tierConnectBadgesFromUserService(cfg, us)
+			if badges == nil {
+				badges = []string{}
+			}
 			out = append(out, accountServicesRowJSON{
 				UserServiceID: us.ServiceID,
 				ServiceID:     us.BaseServiceID,
@@ -222,7 +232,10 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 				Expire:        us.Expire,
 				Period:        us.Period,
 				Category:      us.Category,
-				CanConnect:    accountDashboardCanShowConnect(*us),
+				Tier:          tier,
+				ConnectApp:    conn,
+				Badges:        badges,
+				CanConnect:    accountDashboardCanShowConnect(cfg, *us),
 			})
 		}
 
@@ -239,12 +252,17 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 	}
 }
 
-const accountConnectTitle = "Открыть подключение"
+const (
+	accountConnectTitleStandard = "Открыть подключение"
+	accountConnectTitlePremium  = "Открыть Premium подключение"
+	accountPremiumHappMessage   = "Для Premium используйте приложение Happ."
+)
 
 type accountConnectOKJSON struct {
 	Status       string `json:"status"`
 	ConnectURL   string `json:"connect_url,omitempty"`
 	ConnectTitle string `json:"connect_title,omitempty"`
+	ConnectApp   string `json:"connect_app,omitempty"`
 	Message      string `json:"message,omitempty"`
 }
 
@@ -303,14 +321,42 @@ func serveAccountServiceConnect(cfg *config.Config, app accountWebApp) http.Hand
 		}
 
 		st := strings.TrimSpace(us.Status)
+		if !strings.EqualFold(st, "ACTIVE") {
+			writeJSON(w, http.StatusOK, accountConnectOKJSON{
+				Status:  "not_ready",
+				Message: "Подключение пока недоступно",
+			})
+			return
+		}
+
+		if models.IsPremiumAntiBlockUserService(us, cfg.PremiumSquadName) {
+			u, err := BuildPremiumConnectURLForWebAccount(cfg, claims.UserID, us.ServiceID)
+			if err != nil || strings.TrimSpace(u) == "" {
+				writeJSON(w, http.StatusOK, accountConnectOKJSON{
+					Status:     "not_ready",
+					ConnectApp: publicConnectHapp,
+					Message:    "Подключение Premium пока недоступно. Попробуйте позже или напишите в поддержку.",
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, accountConnectOKJSON{
+				Status:       "ok",
+				ConnectURL:   u,
+				ConnectTitle: accountConnectTitlePremium,
+				ConnectApp:   publicConnectHapp,
+				Message:      accountPremiumHappMessage,
+			})
+			return
+		}
+
 		cat := strings.TrimSpace(us.Category)
 		sub := strings.TrimSpace(us.KeyMarzban.SubscriptionURL)
-
-		if strings.EqualFold(st, "ACTIVE") && strings.HasPrefix(cat, "vpn-mz-") && sub != "" {
+		if strings.HasPrefix(cat, "vpn-mz-") && sub != "" {
 			writeJSON(w, http.StatusOK, accountConnectOKJSON{
 				Status:       "ok",
 				ConnectURL:   sub,
-				ConnectTitle: accountConnectTitle,
+				ConnectTitle: accountConnectTitleStandard,
+				ConnectApp:   publicConnectSubscription,
 			})
 			return
 		}

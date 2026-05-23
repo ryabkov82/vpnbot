@@ -11,10 +11,11 @@ import (
 )
 
 // PremiumAccessClaims — полезная нагрузка подписанного токена доступа к premium onboarding.
-// UserID — Telegram user id (как в боте: c.Chat().ID).
+// Либо UserID — Telegram chat id (бот), либо ShmUserID — shm user id (личный кабинет).
 type PremiumAccessClaims struct {
 	ServiceID int   `json:"service_id"`
-	UserID    int64 `json:"user_id"`
+	UserID    int64 `json:"user_id,omitempty"`
+	ShmUserID int   `json:"shm_user_id,omitempty"`
 	Exp       int64 `json:"exp"`
 }
 
@@ -26,23 +27,22 @@ var (
 	ErrPremiumTokenEmptySecret = errors.New("premium link signing secret is empty")
 )
 
-// CreatePremiumAccessToken возвращает base64url(JSON).base64url(HMAC-SHA256(JSON, secret)).
-func CreatePremiumAccessToken(secret string, userID int64, serviceID int, ttl time.Duration) (string, error) {
+func marshalPremiumSignedToken(secret string, claims PremiumAccessClaims) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrPremiumTokenEmptySecret
 	}
-	if ttl <= 0 {
-		return "", errors.New("ttl must be positive")
-	}
-	if serviceID <= 0 {
+	if claims.ServiceID <= 0 {
 		return "", errors.New("serviceID must be positive")
 	}
-	payload := PremiumAccessClaims{
-		ServiceID: serviceID,
-		UserID:    userID,
-		Exp:       time.Now().Add(ttl).Unix(),
+	hasTG := claims.UserID != 0
+	hasSHM := claims.ShmUserID != 0
+	if hasTG == hasSHM {
+		return "", errors.New("exactly one of telegram user_id or shm_user_id must be set")
 	}
-	payloadJSON, err := json.Marshal(payload)
+	if claims.Exp <= 0 {
+		return "", errors.New("exp required")
+	}
+	payloadJSON, err := json.Marshal(claims)
 	if err != nil {
 		return "", err
 	}
@@ -50,6 +50,37 @@ func CreatePremiumAccessToken(secret string, userID int64, serviceID int, ttl ti
 	sig := signPremiumPayload([]byte(secret), payloadJSON)
 	encSig := base64.RawURLEncoding.EncodeToString(sig)
 	return encPayload + "." + encSig, nil
+}
+
+// CreatePremiumAccessToken возвращает base64url(JSON).base64url(HMAC-SHA256(JSON, secret)).
+// userID — Telegram chat id (как в боте).
+func CreatePremiumAccessToken(secret string, userID int64, serviceID int, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		return "", errors.New("ttl must be positive")
+	}
+	if userID == 0 {
+		return "", errors.New("telegram user id required")
+	}
+	return marshalPremiumSignedToken(secret, PremiumAccessClaims{
+		ServiceID: serviceID,
+		UserID:    userID,
+		Exp:       time.Now().Add(ttl).Unix(),
+	})
+}
+
+// CreatePremiumSHMAccessToken — токен для открытия premium-connect из веб-кабинета (shm user id).
+func CreatePremiumSHMAccessToken(secret string, shmUserID int, serviceID int, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		return "", errors.New("ttl must be positive")
+	}
+	if shmUserID <= 0 {
+		return "", errors.New("shm user id required")
+	}
+	return marshalPremiumSignedToken(secret, PremiumAccessClaims{
+		ServiceID: serviceID,
+		ShmUserID: shmUserID,
+		Exp:       time.Now().Add(ttl).Unix(),
+	})
 }
 
 // ValidatePremiumAccessToken проверяет подпись, срок и совпадение service_id с query.
@@ -93,6 +124,11 @@ func ValidatePremiumAccessToken(secret string, token string, serviceID int) (*Pr
 	}
 	if claims.Exp <= time.Now().Unix() {
 		return nil, ErrPremiumTokenExpired
+	}
+	hasTG := claims.UserID != 0
+	hasSHM := claims.ShmUserID != 0
+	if hasTG == hasSHM {
+		return nil, ErrPremiumTokenMalformed
 	}
 	return &claims, nil
 }
