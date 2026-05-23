@@ -405,7 +405,10 @@ func serveAccountBalanceTopup(cfg *config.Config, _ accountWebApp) http.HandlerF
 	}
 }
 
-const accountNewServiceOrderedMessage = "Услуга создана. После оплаты баланс будет пополнен, и SHM активирует услугу автоматически."
+const (
+	accountServiceOrderExistingUnpaidMessage = "У вас уже есть услуга, ожидающая оплаты. Новая услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически."
+	accountServiceOrderPendingMessage        = "Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически."
+)
 
 func serveAccountCatalogServices(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -452,13 +455,17 @@ type accountServiceOrderReqJSON struct {
 }
 
 type accountServiceOrderOKJSON struct {
-	Status            string  `json:"status"`
-	ServiceID         int     `json:"service_id"`
-	UserServiceID     int     `json:"user_service_id"`
-	UserServiceStatus string  `json:"user_service_status"`
-	Amount            float64 `json:"amount"`
-	PaymentURL        string  `json:"payment_url"`
-	Message           string  `json:"message"`
+	Status              string  `json:"status"`
+	ServiceID           int     `json:"service_id"`
+	UserServiceID       int     `json:"user_service_id"`
+	UserServiceStatus   string  `json:"user_service_status"`
+	Amount              float64 `json:"amount"`
+	PaymentURL          string  `json:"payment_url"`
+	Message             string  `json:"message"`
+	ExistingUnpaid      bool    `json:"existing_unpaid"`
+	RequestedServiceID  int     `json:"requested_service_id"`
+	ReturnedServiceID   int     `json:"returned_service_id"`
+	ReturnedServiceName string  `json:"returned_service_name"`
 }
 
 func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.HandlerFunc {
@@ -554,14 +561,29 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
+		orderStatus := strings.TrimSpace(order.Status)
+		existingUnpaid := strings.EqualFold(orderStatus, "NOT PAID") && order.BaseServiceID != svc.ServiceID
+		msg := accountServiceOrderPendingMessage
+		if existingUnpaid {
+			msg = accountServiceOrderExistingUnpaidMessage
+		}
+		retName := strings.TrimSpace(order.Name)
+		if retName == "" {
+			retName = "Тариф"
+		}
+
 		writeJSON(w, http.StatusOK, accountServiceOrderOKJSON{
-			Status:            "created",
-			ServiceID:         svc.ServiceID,
-			UserServiceID:     order.ServiceID,
-			UserServiceStatus: strings.TrimSpace(order.Status),
-			Amount:            amount,
-			PaymentURL:        paymentURL,
-			Message:           accountNewServiceOrderedMessage,
+			Status:              "created",
+			ServiceID:           svc.ServiceID,
+			UserServiceID:       order.ServiceID,
+			UserServiceStatus:   orderStatus,
+			Amount:              amount,
+			PaymentURL:          paymentURL,
+			Message:             msg,
+			ExistingUnpaid:      existingUnpaid,
+			RequestedServiceID:  req.ServiceID,
+			ReturnedServiceID:   order.BaseServiceID,
+			ReturnedServiceName: retName,
 		})
 	}
 }

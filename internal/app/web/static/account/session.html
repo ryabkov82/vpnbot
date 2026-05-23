@@ -20,35 +20,48 @@
 		<div class="alert alert-danger d-none" id="err-box"></div>
 
 		<div id="dashboard-area" class="d-none">
-			<div id="balance-wrap" class="rounded-3 px-3 py-3 mb-4 border" style="background: rgba(35,131,226,.08); border-color: rgba(35,131,226,.25) !important;">
-				<div class="fw-semibold mb-1">Баланс: <span id="balance-num">—</span> ₽</div>
-				<p class="small text-secondary mb-2 mb-lg-3">Баланс используется для оплаты новых услуг и автоматического продления действующих подписок. Если есть неоплаченная услуга и средств достаточно, она будет активирована автоматически.</p>
-				<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">Пополнить баланс</button>
-			</div>
+			<p class="small text-secondary mb-3" id="user-line"></p>
 
-			<div id="new-catalog-wrap" class="rounded-3 px-3 py-3 mb-4 border border-secondary" style="background: var(--bs-secondary-bg);">
-				<h2 class="h6 fw-semibold mb-2">Купить новую услугу</h2>
-				<p class="small text-secondary mb-2">Выберите тариф ниже и оплатите — после этого баланс пополнится, а SHM активирует услугу при достаточных средствах.</p>
-				<div class="alert alert-danger py-2 small d-none mb-2" id="catalog-err-box" role="alert"></div>
-				<p class="small text-secondary d-none mb-2" id="catalog-loading-msg">Загрузка тарифов…</p>
-				<div id="catalog-tariffs" class="row g-2"></div>
+			<ul class="nav nav-pills flex-column flex-sm-row gap-2 mb-3" id="cabinet-tabs" role="tablist">
+				<li class="nav-item" role="presentation">
+					<button class="nav-link active" id="tab-services-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-services" type="button" role="tab" aria-controls="tab-pane-services" aria-selected="true">Мои услуги</button>
+				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link" id="tab-buy-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-buy" type="button" role="tab" aria-controls="tab-pane-buy" aria-selected="false">Купить VPN</button>
+				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link" id="tab-balance-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-balance" type="button" role="tab" aria-controls="tab-pane-balance" aria-selected="false">Баланс</button>
+				</li>
+			</ul>
 
-				<div id="order-success-block" class="d-none rounded-3 px-3 py-3 mt-3 border" style="background: rgba(25,135,84,.12); border-color: rgba(25,135,84,.35) !important;">
-					<p class="small mb-2 mb-lg-3">Услуга создана. Перейдите к оплате, затем вернитесь в кабинет и обновите страницу.</p>
-					<div class="d-grid gap-2 d-md-flex flex-md-wrap">
-						<a class="btn btn-success" id="new-svc-pay" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
-						<button type="button" class="btn btn-outline-light" id="new-svc-reload-services" onclick="location.reload();">Обновить услуги</button>
+			<div class="tab-content" id="cabinet-tab-content">
+				<div class="tab-pane fade show active" id="tab-pane-services" role="tabpanel" aria-labelledby="tab-services-tab" tabindex="0">
+					<div id="cards" class="row g-3"></div>
+				</div>
+
+				<div class="tab-pane fade" id="tab-pane-buy" role="tabpanel" aria-labelledby="tab-buy-tab" tabindex="0">
+					<div id="new-catalog-wrap" class="rounded-3 px-3 py-3 border border-secondary" style="background: var(--bs-secondary-bg);">
+						<h2 class="h6 fw-semibold mb-2">Купить новую услугу</h2>
+						<p class="small text-secondary mb-2">Выберите тариф ниже. Оплату можно провести по ссылке — баланс пополнится согласно выбранной сумме, неоплаченная услуга активируется при достатке средств.</p>
+						<div class="alert alert-danger py-2 small d-none mb-3" id="catalog-err-box" role="alert"></div>
+						<p class="small text-secondary d-none mb-2" id="catalog-loading-msg">Загрузка тарифов…</p>
+						<div id="catalog-tariffs" class="row g-2"></div>
 					</div>
 				</div>
-			</div>
-			<p class="small text-secondary mb-3" id="user-line"></p>
-			<div id="cards" class="row g-3"></div>
 
-			<div id="topup-result" class="alert alert-secondary mt-3 d-none py-3" role="region">
-				<div class="d-grid gap-2">
-					<a class="btn btn-success" id="topup-pay-open" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
+				<div class="tab-pane fade" id="tab-pane-balance" role="tabpanel" aria-labelledby="tab-balance-tab" tabindex="0">
+					<div id="balance-wrap" class="rounded-3 px-3 py-3 mb-4 border" style="background: rgba(35,131,226,.08); border-color: rgba(35,131,226,.25) !important;">
+						<div class="fw-semibold mb-1">Баланс: <span id="balance-num">—</span> ₽</div>
+						<p class="small text-secondary mb-2 mb-lg-3">Баланс используется для оплаты новых услуг и автоматического продления действующих подписок. Если есть неоплаченная услуга и средств достаточно, она будет активирована автоматически.</p>
+						<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">Пополнить баланс</button>
+					</div>
+					<div id="topup-result" class="alert alert-secondary d-none py-3" role="region">
+						<div class="d-grid gap-2">
+							<a class="btn btn-success" id="topup-pay-open" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
+						</div>
+						<p class="small text-secondary mt-2 mb-0">После оплаты вернитесь в кабинет и обновите страницу. Баланс должен обновиться в течение 1–2 минут.</p>
+					</div>
 				</div>
-				<p class="small text-secondary mt-2 mb-0">После оплаты вернитесь в кабинет и обновите страницу. Баланс должен обновиться в течение 1–2 минут.</p>
 			</div>
 		</div>
 
@@ -112,12 +125,18 @@
 			return n + ' мес.';
 		}
 
+		function resetBuyBtn(cardRoot) {
+			var buyBtn = cardRoot.querySelector('.js-buy-catalog');
+			if (!buyBtn) return;
+			buyBtn.disabled = false;
+			buyBtn.textContent = 'Купить';
+			cardRoot.querySelector('.catalog-card-spinner').classList.add('d-none');
+		}
+
 		function loadAccountCatalog(tok) {
 			document.getElementById('catalog-err-box').classList.add('d-none');
-			document.getElementById('order-success-block').classList.add('d-none');
 			document.getElementById('catalog-loading-msg').classList.remove('d-none');
 			document.getElementById('catalog-tariffs').innerHTML = '';
-			document.getElementById('new-svc-pay').href = '#';
 			fetch('/api/account/catalog/services?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
@@ -134,24 +153,48 @@
 					list.forEach(function (s) {
 						var sid = Number(s.service_id);
 						var wrap = document.createElement('div');
-						wrap.className = 'col-12';
+						wrap.className = 'col-12 js-catalog-card';
 						var descEsc = escapeHtml(String(s.description || ''));
 						var titleEsc = escapeHtml(String(s.name || 'Тариф'));
 						wrap.innerHTML =
-							'<div class="card rounded-3 border border-secondary bg-body-secondary">' +
-							'<div class="card-body py-3">' +
+							'<div class="card rounded-3 border border-secondary bg-body-secondary tariff-order-card h-100">' +
+							'<div class="card-body py-3 d-flex flex-column">' +
 							'<div class="fw-semibold">' + titleEsc + '</div>' +
-							'<div class="small text-secondary mt-2 mb-3" style="white-space:pre-wrap">' + descEsc + '</div>' +
-							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between">' +
+							'<div class="small text-secondary mt-2 mb-3 flex-grow-1" style="white-space:pre-wrap">' + descEsc + '</div>' +
+							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-auto">' +
 							'<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>' +
 							'<div class="fw-bold">' + escapeHtml(fmtMoney(Number(s.cost))) + ' ₽</div>' +
 							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">Купить</button>' +
-							'</div></div></div>';
+							'</div>' +
+							'<div class="catalog-card-spinner mt-3 d-none text-secondary small align-items-center' +
+							'"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span><span>Создаем услугу…</span></div>' +
+							'<div class="catalog-card-err alert alert-danger py-2 small mt-2 mb-0 d-none" role="alert"></div>' +
+							'<div class="catalog-card-success d-none mt-3 rounded border border-success px-3 py-2 small" style="background: rgba(25,135,84,.08);">' +
+							'<p class="mb-2 mb-lg-3 js-catalog-success-text"></p>' +
+							'<div class="d-grid gap-2 d-sm-flex flex-sm-wrap">' +
+							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>' +
+							'<button type="button" class="btn btn-sm btn-outline-light js-card-reload">Обновить услуги</button>' +
+							'</div></div>' +
+							'</div></div>';
+						var spin = wrap.querySelector('.catalog-card-spinner');
+						spin.classList.add('d-flex');
 						var buyBtn = wrap.querySelector('.js-buy-catalog');
+						var cardErr = wrap.querySelector('.catalog-card-err');
+						var cardOk = wrap.querySelector('.catalog-card-success');
+						var payA = wrap.querySelector('.js-card-pay');
+						var reloadB = wrap.querySelector('.js-card-reload');
+						var cardOkMsg = wrap.querySelector('.js-catalog-success-text');
+
+						reloadB.addEventListener('click', function () { location.reload(); });
+
 						buyBtn.addEventListener('click', function () {
 							var cid = parseInt(buyBtn.getAttribute('data-service-id'), 10);
+							cardErr.classList.add('d-none');
+							cardErr.textContent = '';
 							buyBtn.disabled = true;
-							document.getElementById('catalog-err-box').classList.add('d-none');
+							buyBtn.textContent = 'Создаем...';
+							spin.classList.remove('d-none');
+							cardOk.classList.add('d-none');
 							fetch('/api/account/service/order', {
 								method: 'POST',
 								headers: { 'Content-Type': 'application/json' },
@@ -159,23 +202,36 @@
 							})
 								.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 								.then(function (y) {
-									buyBtn.disabled = false;
-									document.getElementById('new-catalog-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+									spin.classList.add('d-none');
 									if (!y.ok) {
-										document.getElementById('catalog-err-box').textContent =
+										resetBuyBtn(wrap.firstElementChild);
+										cardErr.textContent =
 											(y.j && y.j.error) ? String(y.j.error) : 'Ошибка заказа';
-										document.getElementById('catalog-err-box').classList.remove('d-none');
+										cardErr.classList.remove('d-none');
 										return;
 									}
+									buyBtn.textContent = 'Ожидает оплаты';
 									if (y.j && y.j.payment_url) {
-										document.getElementById('new-svc-pay').href = String(y.j.payment_url);
-										document.getElementById('order-success-block').classList.remove('d-none');
+										payA.href = String(y.j.payment_url);
 									}
+									var rn = '';
+									if (y.j && y.j.returned_service_name !== undefined && y.j.returned_service_name !== null) {
+										rn = String(y.j.returned_service_name).trim();
+									}
+									if (!rn) { rn = 'Тариф'; }
+									var neutralMsg = 'Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.';
+									var dupMsg =
+										'У вас уже есть услуга, ожидающая оплаты: ' + rn +
+										'. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.';
+									cardOkMsg.textContent = (y.j && y.j.existing_unpaid === true) ? dupMsg : neutralMsg;
+									cardOk.classList.remove('d-none');
+									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 								})
 								.catch(function () {
-									buyBtn.disabled = false;
-									document.getElementById('catalog-err-box').textContent = 'Сеть недоступна';
-									document.getElementById('catalog-err-box').classList.remove('d-none');
+									spin.classList.add('d-none');
+									resetBuyBtn(wrap.firstElementChild);
+									cardErr.textContent = 'Сеть недоступна';
+									cardErr.classList.remove('d-none');
 								});
 						});
 						rootEl.appendChild(wrap);
@@ -323,18 +379,22 @@
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ token: tok, amount: amt })
 						}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-						.then(function (x) {
+						.then(function (xv) {
 							document.getElementById('topup-submit').disabled = false;
-							if (!x.ok) {
-								errEl.textContent = (x.j && x.j.error) ? x.j.error : 'Ошибка';
+							if (!xv.ok) {
+								errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
 								errEl.classList.remove('d-none');
 								return;
 							}
 							var modalEl = document.getElementById('topupModal');
 							var m = bootstrap.Modal.getInstance(modalEl);
 							if (m) m.hide();
-							document.getElementById('topup-pay-open').href = x.j.payment_url;
+							document.getElementById('topup-pay-open').href = xv.j.payment_url;
 							document.getElementById('topup-result').classList.remove('d-none');
+							var balTabBtn = document.getElementById('tab-balance-tab');
+							if (balTabBtn && window.bootstrap && bootstrap.Tab) {
+								bootstrap.Tab.getOrCreateInstance(balTabBtn).show();
+							}
 							document.getElementById('topup-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 						}).catch(function () {
 							document.getElementById('topup-submit').disabled = false;

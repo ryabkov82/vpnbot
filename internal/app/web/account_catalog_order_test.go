@@ -242,12 +242,72 @@ func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if out.Status != "created" || out.ServiceID != 3 || out.UserServiceID != 338 ||
-		out.UserServiceStatus != "NOT PAID" || out.Amount != 150 || out.PaymentURL == "" ||
-		out.Message != accountNewServiceOrderedMessage {
+		out.UserServiceStatus != "NOT PAID" || out.Amount != 150 || out.PaymentURL == "" {
 		t.Fatalf("%#v", out)
+	}
+	if out.ExistingUnpaid != false {
+		t.Fatalf("existing_unpaid=%v", out.ExistingUnpaid)
+	}
+	if out.RequestedServiceID != 3 || out.ReturnedServiceID != 3 || strings.TrimSpace(out.ReturnedServiceName) == "" {
+		t.Fatalf("ids/name: %#v", out)
+	}
+	if !strings.Contains(out.Message, "Услуга ожидает оплаты") || strings.Contains(out.Message, "создана") {
+		t.Fatalf("unexpected message: %q", out.Message)
 	}
 	if !strings.Contains(out.PaymentURL, "yookassa.cgi") ||
 		!strings.Contains(out.PaymentURL, "3381") || !strings.Contains(out.PaymentURL, "amount=150") {
+		t.Fatal(out.PaymentURL)
+	}
+}
+
+func TestServeAccountServiceOrder_ExistingUnpaidOtherTariffReturned(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.API.BaseURL = "https://api.good.test"
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "buyer@x.com", 501, "web_buy", time.Hour)
+	st := &stubAccountWeb{
+		svcByID: map[int]*models.Service{
+			4: {ServiceID: 4, Name: "3 месяца", Descr: "x", Cost: 399, Period: 3, AllowToOrder: 1},
+		},
+		serviceOrderRet: &models.UserService{
+			ServiceID:     771,
+			BaseServiceID: 3,
+			Status:        "NOT PAID",
+			Name:          "1 месяц",
+		},
+	}
+	h := serveAccountServiceOrder(cfg, st)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/account/service/order",
+		strings.NewReader(`{"token":"`+tok+`","service_id":4}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if st.serviceOrderSID != 4 {
+		t.Fatalf("want ServiceOrder svc 4 got %d", st.serviceOrderSID)
+	}
+	var out accountServiceOrderOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.ExistingUnpaid || out.RequestedServiceID != 4 || out.ReturnedServiceID != 3 {
+		t.Fatalf("%#v", out)
+	}
+	if strings.TrimSpace(out.ReturnedServiceName) != "1 месяц" {
+		t.Fatalf("name %q", out.ReturnedServiceName)
+	}
+	if !strings.Contains(out.Message, "У вас уже есть услуга, ожидающая оплаты") {
+		t.Fatalf("message: %q", out.Message)
+	}
+	if !strings.Contains(out.Message, "Новая услуга не создана") {
+		t.Fatalf("message: %q", out.Message)
+	}
+	if strings.Contains(strings.ToUpper(out.Message), "SHM") {
+		t.Fatalf("message leaked SHM: %q", out.Message)
+	}
+	if out.PaymentURL == "" {
+		t.Fatal("missing payment_url")
+	}
+	if !strings.Contains(out.PaymentURL, "501") || !strings.Contains(out.PaymentURL, "399") {
 		t.Fatal(out.PaymentURL)
 	}
 }
