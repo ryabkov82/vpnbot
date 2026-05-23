@@ -111,3 +111,16 @@ func SendOrderStatusEmail(cfg *config.Config, to, serviceName, amount, statusURL
 `, serviceName, amount, statusURL)
 	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
 }
+
+// SendAccountLoginEmail — magic-link вход в личный кабинет.
+func SendAccountLoginEmail(cfg *config.Config, to, loginURL string) error {
+	subject := "VPN for Friends — вход в личный кабинет"
+	body := fmt.Sprintf(`VPN for Friends
+
+Для входа в личный кабинет откройте ссылку:
+%s
+
+Если вы не запрашивали вход, просто проигнорируйте это письмо.
+`, strings.TrimSpace(loginURL))
+	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
+}

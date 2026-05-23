@@ -56,6 +56,7 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux.HandleFunc("/api/premium/happ-link", servePremiumHappLink(cfg, app, rw))
 	mux.HandleFunc("/api/public/services", servePublicServices(cfg, app))
 	sharedLeadRL := newLeadRateLimiter(5, 15*time.Minute, 3, time.Hour)
+	accountLoginRL := newLeadRateLimiter(5, 15*time.Minute, 3, time.Hour)
 	usedStartTok := NewUsedStartTokenStore()
 	mux.HandleFunc("/api/public/lead", servePublicLeadWithLimiter(cfg, app, sharedLeadRL))
 	mux.HandleFunc("/api/public/order/start", servePublicOrderStart(cfg, app, sharedLeadRL))
@@ -65,6 +66,15 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux.HandleFunc("/buy/status", serveBuyStatus)
 	mux.HandleFunc("/buy/status/", serveBuyStatus)
 	mux.HandleFunc("/api/admin/web-order/test", serveAdminWebOrderTest(cfg, app))
+	mux.HandleFunc("/api/admin/account/test", serveAdminAccountTest(cfg, app))
+
+	mux.HandleFunc("/account", serveAccount(cfg))
+	mux.HandleFunc("/account/", serveAccount(cfg))
+	mux.HandleFunc("/account/session", serveAccountSession(cfg))
+	mux.HandleFunc("/account/session/", serveAccountSession(cfg))
+	mux.HandleFunc("/api/account/login/start", serveAccountLoginStart(cfg, app, accountLoginRL))
+	mux.HandleFunc("/api/account/services", serveAccountServices(cfg, app))
+	mux.HandleFunc("/api/account/service/connect", serveAccountServiceConnect(cfg, app))
 
 	port := strings.TrimSpace(cfg.WebPort)
 	if port == "" {
