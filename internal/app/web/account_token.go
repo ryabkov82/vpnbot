@@ -104,6 +104,27 @@ func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, erro
 	return &claims, nil
 }
 
+func webSalesOrderTokenTTL(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.WebSales.OrderTokenTTLHours <= 0 {
+		return 24 * time.Hour
+	}
+	return time.Duration(cfg.WebSales.OrderTokenTTLHours) * time.Hour
+}
+
+func signOrderTokenPayload(secret []byte, payloadJSON []byte) []byte {
+	m := hmac.New(sha256.New, secret)
+	_, _ = m.Write(payloadJSON)
+	return m.Sum(nil)
+}
+
 func accountTokenTTL(cfg *config.Config) time.Duration {
 	return webSalesOrderTokenTTL(cfg)
+}
+
+// webSalesTokenFlowAvailable сообщает, настроены ли подписанные ссылки для веб-кабинета (WebSales.order_token_secret).
+func webSalesTokenFlowAvailable(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return strings.TrimSpace(cfg.WebSales.OrderTokenSecret) != ""
 }

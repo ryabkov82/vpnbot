@@ -7,7 +7,7 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
-// publicOrderBaseURL — база для ссылок web-sales (/buy/pay, /buy/status): WebSales.public_base_url или scheme://Host.
+// publicOrderBaseURL — базовый URL сайта для ссылок в письмах (magic-link /account/session): WebSales.public_base_url или scheme://Host.
 func publicOrderBaseURL(cfg *config.Config, r *http.Request) string {
 	if cfg != nil {
 		b := strings.TrimRight(strings.TrimSpace(cfg.WebSales.PublicBaseURL), "/")

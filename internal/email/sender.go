@@ -14,7 +14,7 @@ var SendMail = smtp.SendMail
 
 var ErrNotConfigured = errors.New("email not configured")
 
-// IsConfigured — включённый SMTP с минимально необходимыми полями для web-order писем.
+// IsConfigured — включённый SMTP с минимально необходимыми полями (magic-link вход в кабинет и др.).
 func IsConfigured(cfg *config.Config) bool {
 	if cfg == nil || !cfg.Email.Enabled {
 		return false
@@ -76,40 +76,6 @@ func buildRFC822(fromHeader, to, subject, body string) string {
 		b.WriteString("\r\n")
 	}
 	return b.String()
-}
-
-// SendOrderStartEmail отправляет ссылку на /buy/pay.
-func SendOrderStartEmail(cfg *config.Config, to, serviceName, amount, payURL string) error {
-	subject := "VPN for Friends — ссылка на оплату"
-	body := fmt.Sprintf(`VPN for Friends
-
-Вы выбрали тариф: %s
-Сумма к оплате: %s ₽
-
-Перейти к оплате:
-%s
-
-Если вы не оформляли покупку VPN, просто проигнорируйте это письмо.
-`, serviceName, amount, payURL)
-	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
-}
-
-// SendOrderStatusEmail отправляет ссылку на проверку оплаты.
-func SendOrderStatusEmail(cfg *config.Config, to, serviceName, amount, statusURL string) error {
-	subject := "VPN for Friends — проверка оплаты"
-	body := fmt.Sprintf(`VPN for Friends
-
-Ваш заказ создан.
-
-Тариф: %s
-Сумма: %s ₽
-
-Ссылка для проверки оплаты:
-%s
-
-Если вы закрыли страницу оплаты, откройте эту ссылку повторно.
-`, serviceName, amount, statusURL)
-	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
 }
 
 // SendAccountLoginEmail — magic-link вход в личный кабинет.

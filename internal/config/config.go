@@ -68,6 +68,8 @@ type Config struct {
 	PremiumConnectBaseURL    string `json:"premium_connect_base_url"`
 	PremiumLinkSigningSecret string `json:"premium_link_signing_secret"`
 
+	// WebSales: секрет подписи ссылок /account/session и TTL; публичный URL сайта для писем.
+	// enabled — сохранено в JSON для совместимости (раньше включало удалённый email-first /buy order flow).
 	WebSales struct {
 		Enabled            bool   `json:"enabled"`
 		OrderTokenSecret   string `json:"order_token_secret"`

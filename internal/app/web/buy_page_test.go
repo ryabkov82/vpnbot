@@ -25,6 +25,9 @@ func TestBuyPageContainsAccountLink(t *testing.T) {
 	if strings.Contains(string(body), "/api/public/order/start") {
 		t.Fatal("/buy UI must not reference /api/public/order/start")
 	}
+	if !bytes.Contains(body, []byte("/api/public/services")) {
+		t.Fatal("/buy must load tariffs from /api/public/services")
+	}
 	if !bytes.Contains(body, []byte("Войти и купить")) {
 		t.Fatal(`missing "Войти и купить" CTA`)
 	}

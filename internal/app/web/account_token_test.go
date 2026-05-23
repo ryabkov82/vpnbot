@@ -1,8 +1,12 @@
 package web
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
 func TestCreateAndVerifyAccountToken(t *testing.T) {
@@ -32,11 +36,16 @@ func TestAccountTokenExpired(t *testing.T) {
 
 func TestAccountTokenWrongTyp(t *testing.T) {
 	secret := "order-token-secret-order-token-sec"
-	orderTok, err := CreateOrderToken(secret, "e@f.g", 2, 10, 20, 10, time.Hour)
+	payload := AccountTokenClaims{Typ: "order", Email: "e@f.g", UserID: 10, Login: "x", Exp: time.Now().Add(time.Hour).Unix()}
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ParseAndVerifyAccountToken(secret, orderTok)
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	token := encPayload + "." + encSig
+	_, err = ParseAndVerifyAccountToken(secret, token)
 	if err != ErrAccountTokenType {
 		t.Fatalf("want type err, got %v", err)
 	}
@@ -50,5 +59,16 @@ func TestAccountTokenWrongSignature(t *testing.T) {
 	_, err = ParseAndVerifyAccountToken("bbb", tok)
 	if err != ErrAccountTokenSignature {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestWebSalesOrderTokenTTLDefault(t *testing.T) {
+	if webSalesOrderTokenTTL(nil) != 24*time.Hour {
+		t.Fatal("nil cfg ttl")
+	}
+	cfg := &config.Config{}
+	cfg.WebSales.OrderTokenTTLHours = 48
+	if webSalesOrderTokenTTL(cfg) != 48*time.Hour {
+		t.Fatal("custom ttl")
 	}
 }
