@@ -25,6 +25,22 @@
 				<p class="small text-secondary mb-2 mb-lg-3">Баланс используется для оплаты новых услуг и автоматического продления действующих подписок. Если есть неоплаченная услуга и средств достаточно, она будет активирована автоматически.</p>
 				<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">Пополнить баланс</button>
 			</div>
+
+			<div id="new-catalog-wrap" class="rounded-3 px-3 py-3 mb-4 border border-secondary" style="background: var(--bs-secondary-bg);">
+				<h2 class="h6 fw-semibold mb-2">Купить новую услугу</h2>
+				<p class="small text-secondary mb-2">Выберите тариф ниже и оплатите — после этого баланс пополнится, а SHM активирует услугу при достаточных средствах.</p>
+				<div class="alert alert-danger py-2 small d-none mb-2" id="catalog-err-box" role="alert"></div>
+				<p class="small text-secondary d-none mb-2" id="catalog-loading-msg">Загрузка тарифов…</p>
+				<div id="catalog-tariffs" class="row g-2"></div>
+
+				<div id="order-success-block" class="d-none rounded-3 px-3 py-3 mt-3 border" style="background: rgba(25,135,84,.12); border-color: rgba(25,135,84,.35) !important;">
+					<p class="small mb-2 mb-lg-3">Услуга создана. Перейдите к оплате, затем вернитесь в кабинет и обновите страницу.</p>
+					<div class="d-grid gap-2 d-md-flex flex-md-wrap">
+						<a class="btn btn-success" id="new-svc-pay" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
+						<button type="button" class="btn btn-outline-light" id="new-svc-reload-services" onclick="location.reload();">Обновить услуги</button>
+					</div>
+				</div>
+			</div>
 			<p class="small text-secondary mb-3" id="user-line"></p>
 			<div id="cards" class="row g-3"></div>
 
@@ -87,6 +103,89 @@
 			if (typeof n !== 'number' || isNaN(n)) return '—';
 			var v = Math.round(n * 100) / 100;
 			return v.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+		}
+
+		function catalogMonthsLabel(v) {
+			if (typeof v !== 'number' || !isFinite(v)) return '—';
+			var n = Math.round(v * 10) / 10;
+			if (n === Math.floor(n)) n = Math.floor(n);
+			return n + ' мес.';
+		}
+
+		function loadAccountCatalog(tok) {
+			document.getElementById('catalog-err-box').classList.add('d-none');
+			document.getElementById('order-success-block').classList.add('d-none');
+			document.getElementById('catalog-loading-msg').classList.remove('d-none');
+			document.getElementById('catalog-tariffs').innerHTML = '';
+			document.getElementById('new-svc-pay').href = '#';
+			fetch('/api/account/catalog/services?token=' + encodeURIComponent(tok))
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+				.then(function (x) {
+					document.getElementById('catalog-loading-msg').classList.add('d-none');
+					var rootEl = document.getElementById('catalog-tariffs');
+					rootEl.innerHTML = '';
+					if (!x.ok) {
+						document.getElementById('catalog-err-box').textContent =
+							(x.j && x.j.error) ? String(x.j.error) : 'Не удалось загрузить тарифы';
+						document.getElementById('catalog-err-box').classList.remove('d-none');
+						return;
+					}
+					var list = (x.j && x.j.services && Array.isArray(x.j.services)) ? x.j.services : [];
+					list.forEach(function (s) {
+						var sid = Number(s.service_id);
+						var wrap = document.createElement('div');
+						wrap.className = 'col-12';
+						var descEsc = escapeHtml(String(s.description || ''));
+						var titleEsc = escapeHtml(String(s.name || 'Тариф'));
+						wrap.innerHTML =
+							'<div class="card rounded-3 border border-secondary bg-body-secondary">' +
+							'<div class="card-body py-3">' +
+							'<div class="fw-semibold">' + titleEsc + '</div>' +
+							'<div class="small text-secondary mt-2 mb-3" style="white-space:pre-wrap">' + descEsc + '</div>' +
+							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between">' +
+							'<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>' +
+							'<div class="fw-bold">' + escapeHtml(fmtMoney(Number(s.cost))) + ' ₽</div>' +
+							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">Купить</button>' +
+							'</div></div></div>';
+						var buyBtn = wrap.querySelector('.js-buy-catalog');
+						buyBtn.addEventListener('click', function () {
+							var cid = parseInt(buyBtn.getAttribute('data-service-id'), 10);
+							buyBtn.disabled = true;
+							document.getElementById('catalog-err-box').classList.add('d-none');
+							fetch('/api/account/service/order', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ token: tok, service_id: cid })
+							})
+								.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+								.then(function (y) {
+									buyBtn.disabled = false;
+									document.getElementById('new-catalog-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+									if (!y.ok) {
+										document.getElementById('catalog-err-box').textContent =
+											(y.j && y.j.error) ? String(y.j.error) : 'Ошибка заказа';
+										document.getElementById('catalog-err-box').classList.remove('d-none');
+										return;
+									}
+									if (y.j && y.j.payment_url) {
+										document.getElementById('new-svc-pay').href = String(y.j.payment_url);
+										document.getElementById('order-success-block').classList.remove('d-none');
+									}
+								})
+								.catch(function () {
+									buyBtn.disabled = false;
+									document.getElementById('catalog-err-box').textContent = 'Сеть недоступна';
+									document.getElementById('catalog-err-box').classList.remove('d-none');
+								});
+						});
+						rootEl.appendChild(wrap);
+					});
+				})
+				.catch(function () {
+					document.getElementById('catalog-loading-msg').classList.add('d-none');
+					document.getElementById('catalog-err-box').textContent = 'Сеть недоступна';
+					document.getElementById('catalog-err-box').classList.remove('d-none');
+				});
 		}
 
 		function attachConnect(btn, tok, userServiceId, resWrap) {
@@ -199,6 +298,8 @@
 						var res = outer.querySelector('.conn-res');
 						attachConnect(nb, tok, usid, res);
 					});
+
+					loadAccountCatalog(tok);
 
 					var customIn = document.getElementById('topup-custom');
 					document.querySelectorAll('.amt-quick').forEach(function (b) {

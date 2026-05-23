@@ -74,7 +74,9 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux.HandleFunc("/account/session/", serveAccountSession(cfg))
 	mux.HandleFunc("/api/account/login/start", serveAccountLoginStart(cfg, app, accountLoginRL))
 	mux.HandleFunc("/api/account/services", serveAccountServices(cfg, app))
+	mux.HandleFunc("/api/account/catalog/services", serveAccountCatalogServices(cfg, app))
 	mux.HandleFunc("/api/account/service/connect", serveAccountServiceConnect(cfg, app))
+	mux.HandleFunc("/api/account/service/order", serveAccountServiceOrder(cfg, app))
 	mux.HandleFunc("/api/account/balance/topup", serveAccountBalanceTopup(cfg, app))
 
 	port := strings.TrimSpace(cfg.WebPort)

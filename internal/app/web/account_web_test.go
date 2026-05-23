@@ -23,6 +23,17 @@ type stubAccountWeb struct {
 
 	balance    *models.UserBalance
 	balanceErr error
+
+	shmServices    []models.Service
+	shmServicesErr error
+
+	svcByID     map[int]*models.Service
+	getSvcByErr error
+
+	serviceOrderRet *models.UserService
+	serviceOrderErr error
+	serviceOrderUID int
+	serviceOrderSID int
 }
 
 func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
@@ -52,6 +63,32 @@ func (s *stubAccountWeb) GetUserService(serviceID string) (*models.UserService, 
 	id, _ := strconv.Atoi(serviceID)
 	us := s.single[id]
 	return us, nil
+}
+
+func (s *stubAccountWeb) GetServices() ([]models.Service, error) {
+	if s.shmServicesErr != nil {
+		return nil, s.shmServicesErr
+	}
+	return s.shmServices, nil
+}
+
+func (s *stubAccountWeb) GetServiceByID(serviceID int) (*models.Service, error) {
+	if s.getSvcByErr != nil {
+		return nil, s.getSvcByErr
+	}
+	if s.svcByID == nil {
+		return nil, nil
+	}
+	return s.svcByID[serviceID], nil
+}
+
+func (s *stubAccountWeb) ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error) {
+	s.serviceOrderUID = userID
+	s.serviceOrderSID = serviceID
+	if s.serviceOrderErr != nil {
+		return nil, s.serviceOrderErr
+	}
+	return s.serviceOrderRet, nil
 }
 
 func TestServeAccountLoginStart_Honeypot(t *testing.T) {

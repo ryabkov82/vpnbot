@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +21,14 @@ func TestBuyPageContainsAccountLink(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte(`href="/account"`)) {
 		t.Fatal("missing /account link")
+	}
+	if strings.Contains(string(body), "/api/public/order/start") {
+		t.Fatal("/buy UI must not reference /api/public/order/start")
+	}
+	if !bytes.Contains(body, []byte("Войти и купить")) {
+		t.Fatal(`missing "Войти и купить" CTA`)
+	}
+	if !bytes.Contains(body, []byte("личный кабинет")) {
+		t.Fatal("missing cabinet copy")
 	}
 }

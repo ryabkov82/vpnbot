@@ -29,4 +29,13 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte("Для автопродления заранее пополните баланс")) {
 		t.Fatal("ACTIVE autopay hint missing")
 	}
+	if !bytes.Contains(b, []byte("Купить новую услугу")) {
+		t.Fatal(`missing "Купить новую услугу" block`)
+	}
+	if !bytes.Contains(b, []byte("/api/account/catalog/services")) {
+		t.Fatal("catalog endpoint missing")
+	}
+	if !bytes.Contains(b, []byte("/api/account/service/order")) {
+		t.Fatal("service order endpoint missing")
+	}
 }

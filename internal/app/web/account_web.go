@@ -25,6 +25,9 @@ type accountWebApp interface {
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
 	GetUserService(serviceID string) (*models.UserService, error)
 	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
+	GetServices() ([]models.Service, error)
+	GetServiceByID(serviceID int) (*models.Service, error)
+	ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error)
 }
 
 type accountLoginStartRequestJSON struct {
@@ -398,6 +401,167 @@ func serveAccountBalanceTopup(cfg *config.Config, _ accountWebApp) http.HandlerF
 			Amount:     amountRounded,
 			PaymentURL: paymentURL,
 			Message:    accountBalanceTopupMessage,
+		})
+	}
+}
+
+const accountNewServiceOrderedMessage = "Услуга создана. После оплаты баланс будет пополнен, и SHM активирует услугу автоматически."
+
+func serveAccountCatalogServices(cfg *config.Config, app accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/catalog/services" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		raw := strings.TrimSpace(r.URL.Query().Get("token"))
+		if raw == "" {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		if _, err := ParseAndVerifyAccountToken(secret, raw); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+
+		list, err := app.GetServices()
+		if err != nil {
+			slog.Error("account catalog: GetServices", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "services_unavailable")
+			return
+		}
+
+		out := buildPublicServiceRowsFromList(cfg, list)
+		writeJSON(w, http.StatusOK, publicServicesListJSON{Services: out})
+	}
+}
+
+type accountServiceOrderReqJSON struct {
+	Token     string `json:"token"`
+	ServiceID int    `json:"service_id"`
+}
+
+type accountServiceOrderOKJSON struct {
+	Status            string  `json:"status"`
+	ServiceID         int     `json:"service_id"`
+	UserServiceID     int     `json:"user_service_id"`
+	UserServiceStatus string  `json:"user_service_status"`
+	Amount            float64 `json:"amount"`
+	PaymentURL        string  `json:"payment_url"`
+	Message           string  `json:"message"`
+}
+
+func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/service/order" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		const maxBody = 1 << 20
+		dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+		var req accountServiceOrderReqJSON
+		if err := dec.Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+
+		rawTok := strings.TrimSpace(req.Token)
+		if rawTok == "" {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+
+		if req.ServiceID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_service")
+			return
+		}
+
+		if tid := trialBaseServiceID(cfg); tid > 0 && req.ServiceID == tid {
+			writeJSONError(w, http.StatusNotFound, "service_not_found")
+			return
+		}
+
+		svc, err := app.GetServiceByID(req.ServiceID)
+		if err != nil {
+			if isServiceNotFoundErr(err) {
+				writeJSONError(w, http.StatusNotFound, "service_not_found")
+				return
+			}
+			slog.Error("account service order: GetServiceByID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		if svc == nil {
+			writeJSONError(w, http.StatusNotFound, "service_not_found")
+			return
+		}
+		if svc.AllowToOrder != 1 {
+			writeJSONError(w, http.StatusNotFound, "service_not_found")
+			return
+		}
+
+		order, err := app.ServiceOrderByUserID(claims.UserID, svc.ServiceID)
+		if err != nil {
+			slog.Error("account service order: ServiceOrderByUserID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "order_failed")
+			return
+		}
+		if order == nil {
+			writeJSONError(w, http.StatusInternalServerError, "order_failed")
+			return
+		}
+
+		preview := models.BuildServicePreview(svc)
+		amount := preview.Cost
+		if amount <= 0 {
+			amount = svc.Cost
+		}
+
+		baseURL := ""
+		if cfg != nil {
+			baseURL = cfg.API.BaseURL
+		}
+		paymentURL, err := payments.BuildYooKassaPaymentURL(baseURL, claims.UserID, amount, time.Now().Unix())
+		if err != nil {
+			slog.Error("account service order: BuildYooKassaPaymentURL", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "payment_url_failed")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, accountServiceOrderOKJSON{
+			Status:            "created",
+			ServiceID:         svc.ServiceID,
+			UserServiceID:     order.ServiceID,
+			UserServiceStatus: strings.TrimSpace(order.Status),
+			Amount:            amount,
+			PaymentURL:        paymentURL,
+			Message:           accountNewServiceOrderedMessage,
 		})
 	}
 }

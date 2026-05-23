@@ -26,6 +26,35 @@ type publicServicesListJSON struct {
 	Services []publicServiceJSON `json:"services"`
 }
 
+// buildPublicServiceRowsFromList — публичные поля тарифов (BuildServicePreview), trial из cfg исключается.
+func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service) []publicServiceJSON {
+	trialID := 0
+	if cfg != nil && cfg.Features.Trial.Enabled && cfg.Features.Trial.BaseServiceID > 0 {
+		trialID = cfg.Features.Trial.BaseServiceID
+	}
+
+	out := make([]publicServiceJSON, 0, len(list))
+	for i := range list {
+		s := &list[i]
+		if trialID > 0 && s.ServiceID == trialID {
+			continue
+		}
+		preview := models.BuildServicePreview(s)
+		name := strings.TrimSpace(preview.Title)
+		if name == "" {
+			name = "Тариф"
+		}
+		out = append(out, publicServiceJSON{
+			ServiceID:   s.ServiceID,
+			Name:        name,
+			Cost:        preview.Cost,
+			Period:      float64(s.Period),
+			Description: preview.Description,
+		})
+	}
+	return out
+}
+
 func servePublicServices(cfg *config.Config, app publicServicesApp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/public/services" {
@@ -48,30 +77,7 @@ func servePublicServices(cfg *config.Config, app publicServicesApp) http.Handler
 			return
 		}
 
-		trialID := 0
-		if cfg != nil && cfg.Features.Trial.Enabled && cfg.Features.Trial.BaseServiceID > 0 {
-			trialID = cfg.Features.Trial.BaseServiceID
-		}
-
-		out := make([]publicServiceJSON, 0, len(list))
-		for i := range list {
-			s := &list[i]
-			if trialID > 0 && s.ServiceID == trialID {
-				continue
-			}
-			preview := models.BuildServicePreview(s)
-			name := strings.TrimSpace(preview.Title)
-			if name == "" {
-				name = "Тариф"
-			}
-			out = append(out, publicServiceJSON{
-				ServiceID:   s.ServiceID,
-				Name:        name,
-				Cost:        preview.Cost,
-				Period:      float64(s.Period),
-				Description: preview.Description,
-			})
-		}
+		out := buildPublicServiceRowsFromList(cfg, list)
 
 		writeJSON(w, http.StatusOK, publicServicesListJSON{Services: out})
 	}

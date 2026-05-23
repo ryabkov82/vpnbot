@@ -50,8 +50,9 @@
 <body class="pb-4">
 	<div class="container page-wrap py-3 px-2">
 		<h1 class="h4 fw-bold text-center mb-2">VPN for Friends</h1>
-		<p class="text-secondary text-center small mb-3">
-			Если Telegram недоступен, вы можете оформить VPN прямо на этом сайте — выберите тариф ниже.
+		<p class="text-secondary text-center small mb-3 lh-base">
+			Тарифы ниже можно посмотреть без входа.
+			Покупка и управление подписками выполняются через личный кабинет. Войдите по email, выберите тариф и оплатите с баланса.
 		</p>
 
 		<div class="rounded-3 border px-3 py-2 mb-3 text-center" style="background: rgba(var(--bs-my-btn-bg-rgb),.08); border-color: rgba(var(--bs-my-btn-bg-rgb),.22) !important;">
@@ -61,24 +62,8 @@
 			</p>
 		</div>
 
-		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="order-email-sent" role="alert">
-			Мы отправили ссылку на оплату на ваш email. Откройте письмо и перейдите по ссылке.
-		</div>
-
 		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="services-load-error" role="alert">
 			Не удалось загрузить тарифы. Попробуйте позже или напишите в поддержку.
-		</div>
-
-		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="lead-success" role="alert">
-			Заявка принята. Мы свяжемся с вами и отправим ссылку на оплату.
-		</div>
-
-		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="lead-rate-limited" role="alert">
-			Слишком много попыток. Попробуйте позже.
-		</div>
-
-		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="lead-submit-error" role="alert">
-			Не удалось отправить заявку. Проверьте данные или попробуйте позже.
 		</div>
 
 		<div class="my-block mb-3">
@@ -92,36 +77,6 @@
 			<a class="link-secondary" href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer">
 				<i class="bi bi-telegram me-1"></i>Поддержка в Telegram
 			</a>
-		</div>
-	</div>
-
-	<div class="modal fade" id="leadModal" tabindex="-1" aria-labelledby="leadModalLabel" aria-hidden="true">
-		<div class="modal-dialog modal-dialog-centered">
-			<div class="modal-content bg-body-secondary border-0">
-				<div class="modal-header border-secondary">
-					<h2 class="modal-title h5" id="leadModalLabel">Заявка на тариф</h2>
-					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-				</div>
-				<form id="lead-form" class="modal-body" novalidate>
-					<input type="hidden" name="service_id" id="lead-service-id" value="">
-					<div class="mb-3">
-						<label for="lead-email" class="form-label">Email</label>
-						<input type="email" class="form-control" id="lead-email" name="email" required autocomplete="email" placeholder="you@example.com">
-					</div>
-					<div class="mb-3">
-						<label for="lead-contact" class="form-label">Telegram или другой контакт <span class="text-secondary fw-normal">(необязательно)</span></label>
-						<input type="text" class="form-control" id="lead-contact" name="contact" autocomplete="off" placeholder="@username">
-					</div>
-					<div class="visually-hidden" aria-hidden="true">
-						<label for="lead-website">Website</label>
-						<input type="text" class="form-control" id="lead-website" name="website" tabindex="-1" autocomplete="off" value="">
-					</div>
-					<div class="d-flex gap-2 justify-content-end pt-1">
-						<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
-						<button type="submit" class="btn my-btn" id="lead-submit-btn">Отправить</button>
-					</div>
-				</form>
-			</div>
 		</div>
 	</div>
 
@@ -144,118 +99,6 @@
 			}
 		}
 
-		function hideLeadAlerts() {
-			['lead-success', 'lead-rate-limited', 'lead-submit-error', 'order-email-sent'].forEach(function (id) {
-				document.getElementById(id).classList.add('d-none');
-			});
-		}
-
-		function showLeadAlert(id) {
-			hideLeadAlerts();
-			document.getElementById(id).classList.remove('d-none');
-		}
-
-		var leadModalEl = document.getElementById('leadModal');
-		var leadModal = leadModalEl && typeof bootstrap !== 'undefined' ? new bootstrap.Modal(leadModalEl) : null;
-
-		function openLeadModal(serviceId) {
-			hideLeadAlerts();
-			document.getElementById('lead-service-id').value = String(serviceId);
-			document.getElementById('lead-email').value = '';
-			document.getElementById('lead-contact').value = '';
-			document.getElementById('lead-website').value = '';
-			if (leadModal) leadModal.show();
-		}
-
-		document.getElementById('lead-form').addEventListener('submit', function (ev) {
-			ev.preventDefault();
-			hideLeadAlerts();
-			var sid = parseInt(document.getElementById('lead-service-id').value, 10);
-			var email = document.getElementById('lead-email').value.trim();
-			var contact = document.getElementById('lead-contact').value.trim();
-			var website = document.getElementById('lead-website').value;
-			var btn = document.getElementById('lead-submit-btn');
-			if (!email) {
-				document.getElementById('lead-email').focus();
-				return;
-			}
-			btn.disabled = true;
-
-			function submitLeadFallback() {
-				return fetch('/api/public/lead', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						service_id: sid,
-						email: email,
-						contact: contact,
-						website: website
-					})
-				}).then(function (r) {
-					if (r.status === 429) {
-						if (leadModal) leadModal.hide();
-						showLeadAlert('lead-rate-limited');
-						return null;
-					}
-					return r.json().then(function (data) {
-						return { ok: r.ok, status: r.status, data: data };
-					});
-				}).then(function (res) {
-					if (!res) return;
-					if (res.ok && res.data && res.data.status === 'accepted') {
-						if (leadModal) leadModal.hide();
-						showLeadAlert('lead-success');
-						return;
-					}
-					document.getElementById('lead-submit-error').classList.remove('d-none');
-				});
-			}
-
-			fetch('/api/public/order/start', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					service_id: sid,
-					email: email,
-					contact: contact,
-					website: website
-				})
-			})
-				.then(function (r) {
-					return r.json().then(function (data) {
-						return { ok: r.ok, status: r.status, data: data };
-					}).catch(function () {
-						return { ok: r.ok, status: r.status, data: null };
-					});
-				})
-				.then(function (res) {
-					if (res.ok && res.data && res.data.status === 'email_sent') {
-						if (leadModal) leadModal.hide();
-						showLeadAlert('order-email-sent');
-						return;
-					}
-					if (res.ok && res.data && res.data.status === 'accepted') {
-						if (leadModal) leadModal.hide();
-						return;
-					}
-					var err = res.data && res.data.error;
-					if (res.status === 404 || res.status === 429 || res.status === 503 || res.status >= 500 ||
-						err === 'email_unavailable' || err === 'email_send_failed') {
-						return submitLeadFallback();
-					}
-					document.getElementById('lead-submit-error').classList.remove('d-none');
-				})
-				.catch(function () {
-					return submitLeadFallback();
-				})
-				.catch(function () {
-					document.getElementById('lead-submit-error').classList.remove('d-none');
-				})
-				.finally(function () {
-					btn.disabled = false;
-				});
-		});
-
 		function renderTariffs(services) {
 			var root = document.getElementById('tariffs-root');
 			root.innerHTML = '';
@@ -276,11 +119,8 @@
 					'<p class="card-text small text-secondary mt-2 mb-2">' + escapeHtml(s.description || '') + '</p>' +
 					'<div class="d-flex justify-content-between align-items-center gap-2">' +
 					'<span class="fw-bold">' + escapeHtml(formatMoney(s.cost)) + '</span>' +
-					'<button type="button" class="btn btn-sm my-btn buy-btn">Купить</button>' +
+					'<a class="btn btn-sm my-btn buy-btn text-decoration-none" href="/account" role="button">Войти и купить</a>' +
 					'</div></div></div>';
-				col.querySelector('.buy-btn').addEventListener('click', function () {
-					openLeadModal(s.service_id);
-				});
 				root.appendChild(col);
 			});
 		}
