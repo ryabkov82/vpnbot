@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image/png"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,6 +226,17 @@ func (s *Service) ServiceOrderByUserID(userID int, serviceID int) (*models.UserS
 		return nil, errors.New("invalid service id")
 	}
 	return s.apiClient.ServiceOrder(userID, serviceID)
+}
+
+// DeleteUserServiceByUserID удаляет user_service по числовому user_id (личный кабинет).
+func (s *Service) DeleteUserServiceByUserID(userID int, userServiceID string) error {
+	if userID <= 0 {
+		return errors.New("invalid user id")
+	}
+	if strings.TrimSpace(userServiceID) == "" {
+		return errors.New("invalid service id")
+	}
+	return s.apiClient.DeleteUserService(userID, userServiceID)
 }
 
 func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {

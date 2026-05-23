@@ -28,6 +28,7 @@ type accountWebApp interface {
 	GetServices() ([]models.Service, error)
 	GetServiceByID(serviceID int) (*models.Service, error)
 	ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error)
+	DeleteUserServiceByUserID(userID int, userServiceID string) error
 }
 
 type accountLoginStartRequestJSON struct {
@@ -584,6 +585,95 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			RequestedServiceID:  req.ServiceID,
 			ReturnedServiceID:   order.BaseServiceID,
 			ReturnedServiceName: retName,
+		})
+	}
+}
+
+const accountServiceDeletedMessage = "Услуга удалена. Теперь можно выбрать другой тариф."
+
+type accountServiceDeleteReqJSON struct {
+	Token         string `json:"token"`
+	UserServiceID int    `json:"user_service_id"`
+}
+
+type accountServiceDeleteOKJSON struct {
+	Status        string `json:"status"`
+	UserServiceID int    `json:"user_service_id"`
+	Message       string `json:"message"`
+}
+
+func serveAccountServiceDelete(cfg *config.Config, app accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/service/delete" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		const maxBody = 1 << 20
+		dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+		var req accountServiceDeleteReqJSON
+		if err := dec.Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+
+		rawTok := strings.TrimSpace(req.Token)
+		if rawTok == "" {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+
+		if req.UserServiceID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_service")
+			return
+		}
+
+		usKey := strconv.Itoa(req.UserServiceID)
+		us, err := app.GetUserService(usKey)
+		if err != nil {
+			slog.Error("account service delete: GetUserService", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		if us == nil {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if us.UserID != claims.UserID || us.ServiceID != req.UserServiceID {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		if strings.EqualFold(strings.TrimSpace(us.Status), "ACTIVE") {
+			writeJSONError(w, http.StatusConflict, "active_service_cannot_be_deleted")
+			return
+		}
+
+		if err := app.DeleteUserServiceByUserID(claims.UserID, usKey); err != nil {
+			slog.Error("account service delete: DeleteUserServiceByUserID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, accountServiceDeleteOKJSON{
+			Status:        "deleted",
+			UserServiceID: req.UserServiceID,
+			Message:       accountServiceDeletedMessage,
 		})
 	}
 }

@@ -76,4 +76,22 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte(`js-card-pay`)) {
 		t.Fatal("per-card pay button missing")
 	}
+	if !strings.Contains(raw, "/api/account/service/delete") {
+		t.Fatal("delete endpoint missing")
+	}
+	if !strings.Contains(raw, "Отменить услугу") {
+		t.Fatal("cancel service button missing")
+	}
+	if !strings.Contains(raw, "!active") {
+		t.Fatal("cancel controls must branch on !active (ACTIVE hides cancel)")
+	}
+	if !strings.Contains(raw, "Если хотите выбрать другой тариф") {
+		t.Fatal("NOT PAID reschedule hint missing")
+	}
+	if !strings.Contains(raw, `Удалить услугу «`) {
+		t.Fatal("delete confirm prompt missing")
+	}
+	if !strings.Contains(raw, "post-delete-buy-hint") {
+		t.Fatal("post-delete buy tab hint missing")
+	}
 }

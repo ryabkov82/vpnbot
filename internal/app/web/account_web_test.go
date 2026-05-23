@@ -34,6 +34,11 @@ type stubAccountWeb struct {
 	serviceOrderErr error
 	serviceOrderUID int
 	serviceOrderSID int
+
+	deleteCalls             int
+	deleteErr               error
+	deleteLastUID           int
+	deleteLastUserServiceID string
 }
 
 func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
@@ -89,6 +94,13 @@ func (s *stubAccountWeb) ServiceOrderByUserID(userID int, serviceID int) (*model
 		return nil, s.serviceOrderErr
 	}
 	return s.serviceOrderRet, nil
+}
+
+func (s *stubAccountWeb) DeleteUserServiceByUserID(userID int, userServiceID string) error {
+	s.deleteCalls++
+	s.deleteLastUID = userID
+	s.deleteLastUserServiceID = userServiceID
+	return s.deleteErr
 }
 
 func TestServeAccountLoginStart_Honeypot(t *testing.T) {

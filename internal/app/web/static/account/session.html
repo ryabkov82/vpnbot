@@ -41,6 +41,7 @@
 
 				<div class="tab-pane fade" id="tab-pane-buy" role="tabpanel" aria-labelledby="tab-buy-tab" tabindex="0">
 					<div id="new-catalog-wrap" class="rounded-3 px-3 py-3 border border-secondary" style="background: var(--bs-secondary-bg);">
+						<div id="post-delete-buy-hint" class="alert alert-info py-2 small d-none mb-2" role="status">Теперь можно выбрать другой тариф.</div>
 						<h2 class="h6 fw-semibold mb-2">Купить новую услугу</h2>
 						<p class="small text-secondary mb-2">Выберите тариф ниже. Оплату можно провести по ссылке — баланс пополнится согласно выбранной сумме, неоплаченная услуга активируется при достатке средств.</p>
 						<div class="alert alert-danger py-2 small d-none mb-3" id="catalog-err-box" role="alert"></div>
@@ -289,6 +290,181 @@
 			});
 		}
 
+		var topupHandlersBound = false;
+
+		function bindTopupHandlers(tok) {
+			if (topupHandlersBound) {
+				return;
+			}
+			topupHandlersBound = true;
+			var customIn = document.getElementById('topup-custom');
+			document.querySelectorAll('.amt-quick').forEach(function (b) {
+				b.addEventListener('click', function () {
+					customIn.value = b.getAttribute('data-amt');
+				});
+			});
+			document.getElementById('topup-submit').addEventListener('click', function () {
+				var raw = String(customIn.value || '').trim().replace(',', '.');
+				var amt = parseFloat(raw);
+				var errEl = document.getElementById('topup-modal-err');
+				errEl.classList.add('d-none');
+				if (isNaN(amt)) {
+					errEl.textContent = 'Укажите сумму';
+					errEl.classList.remove('d-none');
+					return;
+				}
+				document.getElementById('topup-submit').disabled = true;
+				fetch('/api/account/balance/topup', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ token: tok, amount: amt })
+				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+					.then(function (xv) {
+						document.getElementById('topup-submit').disabled = false;
+						if (!xv.ok) {
+							errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
+							errEl.classList.remove('d-none');
+							return;
+						}
+						var modalEl = document.getElementById('topupModal');
+						var m = bootstrap.Modal.getInstance(modalEl);
+						if (m) {
+							m.hide();
+						}
+						document.getElementById('topup-pay-open').href = xv.j.payment_url;
+						document.getElementById('topup-result').classList.remove('d-none');
+						var balTabBtn = document.getElementById('tab-balance-tab');
+						if (balTabBtn && window.bootstrap && bootstrap.Tab) {
+							bootstrap.Tab.getOrCreateInstance(balTabBtn).show();
+						}
+						document.getElementById('topup-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+					}).catch(function () {
+						document.getElementById('topup-submit').disabled = false;
+						errEl.textContent = 'Сеть недоступна';
+						errEl.classList.remove('d-none');
+					});
+			});
+		}
+
+		function refreshAccountSnapshot(tok) {
+			return fetch('/api/account/services?token=' + encodeURIComponent(tok))
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+				.then(function (x) {
+					if (!x.ok) {
+						throw new Error('refresh_failed');
+					}
+					var j = x.j;
+					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
+					document.getElementById('user-line').textContent =
+						j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
+					renderServiceCards(tok, j.services || []);
+				});
+		}
+
+		function renderServiceCards(tok, services) {
+			var wrap = document.getElementById('cards');
+			wrap.innerHTML = '';
+			(services || []).forEach(function (s) {
+				var stUp = String(s.status || '').toUpperCase();
+				var active = stUp === 'ACTIVE';
+				var notPaid = stUp === 'NOT PAID';
+				var cardEl = document.createElement('div');
+				cardEl.className = 'col-12';
+				var nm = escapeHtml(String(s.name || 'Услуга'));
+				var st = escapeHtml(String(s.status || '—'));
+				var exp = escapeHtml(String(s.expire || '—'));
+				var btnShow = active && s.can_connect;
+				var usid = Number(s.user_service_id);
+				var hint = '';
+				if (active) {
+					hint = '<div class="small text-secondary mt-2">Для автопродления заранее пополните баланс.</div>';
+				} else if (notPaid) {
+					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.</div>' +
+						'<div class="small text-secondary mt-2">Если хотите выбрать другой тариф, сначала отмените эту услугу.</div>';
+				}
+				var cancelHtml = '';
+				if (!active) {
+					cancelHtml =
+						'<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">Отменить услугу</button>' +
+						'<div class="svc-cancel-err small text-danger mt-2 d-none" role="alert"></div>' +
+						'<div class="svc-cancel-ok small text-success mt-2 d-none" role="status"></div>';
+				}
+				cardEl.innerHTML = '<div class="card rounded-3 border-secondary" style="background:var(--bs-secondary-bg)">' +
+					'<div class="card-body">' +
+					'<div class="fw-semibold">' + nm + '</div>' +
+					'<div class="small text-secondary mt-2">Статус: ' + st + '</div>' +
+					'<div class="small text-secondary">До: ' + exp + '</div>' +
+					hint +
+					'<button type="button" class="btn btn-sm btn-primary mt-3 conn-btn"' +
+					(btnShow ? '' : ' style="display:none"') + '>Подключить</button>' +
+					'<div class="mt-3 d-none conn-res">' +
+					'<div class="d-grid gap-2">' +
+					'<a class="btn btn-success conn-open d-none" target="_blank" rel="noopener noreferrer">Открыть подключение</a>' +
+					'<button type="button" class="btn btn-outline-light conn-copy d-none">Скопировать ссылку</button>' +
+					'</div>' +
+					'<div class="small text-secondary mt-2 conn-notready"></div>' +
+					'</div>' +
+					cancelHtml +
+					'</div></div>';
+				wrap.appendChild(cardEl);
+				var cardRoot = wrap.lastChild;
+				if (btnShow) {
+					var nb = cardRoot.querySelector('.conn-btn');
+					var res = cardRoot.querySelector('.conn-res');
+					attachConnect(nb, tok, usid, res);
+				}
+				var cb = cardRoot.querySelector('.js-cancel-service');
+				if (cb) {
+					(function (nmPlain, idNum) {
+						cb.addEventListener('click', function () {
+							var errBox = cardRoot.querySelector('.svc-cancel-err');
+							var okBox = cardRoot.querySelector('.svc-cancel-ok');
+							errBox.classList.add('d-none');
+							okBox.classList.add('d-none');
+							var pn = String(nmPlain).trim() !== '' ? String(nmPlain).trim() : 'Услуга';
+							if (!window.confirm('Удалить услугу «' + pn + '»? После удаления можно будет выбрать другой тариф.')) {
+								return;
+							}
+							cb.disabled = true;
+							cb.textContent = 'Удаляем...';
+							fetch('/api/account/service/delete', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ token: tok, user_service_id: idNum })
+							})
+								.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+								.then(function (op) {
+									if (!op.ok) {
+										cb.disabled = false;
+										cb.textContent = 'Отменить услугу';
+										errBox.textContent = op.j && op.j.error ? String(op.j.error) : 'Ошибка удаления';
+										errBox.classList.remove('d-none');
+										return;
+									}
+									okBox.textContent =
+										op.j && op.j.message ? String(op.j.message) : 'Услуга удалена. Теперь можно выбрать другой тариф.';
+									okBox.classList.remove('d-none');
+									document.getElementById('post-delete-buy-hint').classList.remove('d-none');
+									return refreshAccountSnapshot(tok).then(function () {
+										var buyTabBtn = document.getElementById('tab-buy-tab');
+										if (buyTabBtn && window.bootstrap && bootstrap.Tab) {
+											bootstrap.Tab.getOrCreateInstance(buyTabBtn).show();
+										}
+										document.getElementById('new-catalog-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+									});
+								})
+								.catch(function () {
+									cb.disabled = false;
+									cb.textContent = 'Отменить услугу';
+									errBox.textContent = 'Сеть недоступна';
+									errBox.classList.remove('d-none');
+								});
+						});
+					})(String(s.name || ''), usid);
+				}
+			});
+		}
+
 		var tok = tokenFromURL();
 		if (tok) {
 			try { localStorage.setItem(STORAGE, tok); } catch (e) {}
@@ -299,6 +475,7 @@
 			show('no-token', true);
 		} else {
 			show('loading', true);
+			document.getElementById('post-delete-buy-hint').classList.add('d-none');
 			fetch('/api/account/services?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
@@ -311,97 +488,11 @@
 					var j = x.j;
 					show('dashboard-area', true);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
-					document.getElementById('user-line').textContent = j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
-
-					var wrap = document.getElementById('cards');
-					(j.services || []).forEach(function (s) {
-						var stUp = String(s.status || '').toUpperCase();
-						var active = stUp === 'ACTIVE';
-						var notPaid = stUp === 'NOT PAID';
-						var card = document.createElement('div');
-						card.className = 'col-12';
-						var nm = escapeHtml(String(s.name || 'Услуга'));
-						var st = escapeHtml(String(s.status || '—'));
-						var exp = escapeHtml(String(s.expire || '—'));
-						var btnShow = active && s.can_connect;
-						var usid = Number(s.user_service_id);
-						var hint = '';
-						if (active) {
-							hint = '<div class="small text-secondary mt-2">Для автопродления заранее пополните баланс.</div>';
-						} else if (notPaid) {
-							hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.</div>';
-						}
-						card.innerHTML = '<div class="card rounded-3 border-secondary" style="background:var(--bs-secondary-bg)">' +
-						  '<div class="card-body">' +
-						  '<div class="fw-semibold">' + nm + '</div>' +
-						  '<div class="small text-secondary mt-2">Статус: ' + st + '</div>' +
-						  '<div class="small text-secondary">До: ' + exp + '</div>' +
-						  hint +
-						  '<button type="button" class="btn btn-sm btn-primary mt-3 conn-btn"' + (btnShow ? '' : ' style="display:none"') +
-						  '>Подключить</button>' +
-						  '<div class="mt-3 d-none conn-res">' +
-						    '<div class="d-grid gap-2">' +
-						      '<a class="btn btn-success conn-open d-none" target="_blank" rel="noopener noreferrer">Открыть подключение</a>' +
-						      '<button type="button" class="btn btn-outline-light conn-copy d-none">Скопировать ссылку</button>' +
-						    '</div>' +
-						    '<div class="small text-secondary mt-2 conn-notready"></div>' +
-						  '</div>' +
-						  '</div></div>';
-						wrap.appendChild(card);
-						if (!btnShow) return;
-						var outer = wrap.lastChild;
-						var nb = outer.querySelector('.conn-btn');
-						var res = outer.querySelector('.conn-res');
-						attachConnect(nb, tok, usid, res);
-					});
-
+					document.getElementById('user-line').textContent =
+						j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
+					renderServiceCards(tok, j.services || []);
 					loadAccountCatalog(tok);
-
-					var customIn = document.getElementById('topup-custom');
-					document.querySelectorAll('.amt-quick').forEach(function (b) {
-						b.addEventListener('click', function () {
-							customIn.value = b.getAttribute('data-amt');
-						});
-					});
-					document.getElementById('topup-submit').addEventListener('click', function () {
-						var raw = String(customIn.value || '').trim().replace(',', '.');
-						var amt = parseFloat(raw);
-						var errEl = document.getElementById('topup-modal-err');
-						errEl.classList.add('d-none');
-						if (isNaN(amt)) {
-							errEl.textContent = 'Укажите сумму';
-							errEl.classList.remove('d-none');
-							return;
-						}
-						document.getElementById('topup-submit').disabled = true;
-						fetch('/api/account/balance/topup', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ token: tok, amount: amt })
-						}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-						.then(function (xv) {
-							document.getElementById('topup-submit').disabled = false;
-							if (!xv.ok) {
-								errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
-								errEl.classList.remove('d-none');
-								return;
-							}
-							var modalEl = document.getElementById('topupModal');
-							var m = bootstrap.Modal.getInstance(modalEl);
-							if (m) m.hide();
-							document.getElementById('topup-pay-open').href = xv.j.payment_url;
-							document.getElementById('topup-result').classList.remove('d-none');
-							var balTabBtn = document.getElementById('tab-balance-tab');
-							if (balTabBtn && window.bootstrap && bootstrap.Tab) {
-								bootstrap.Tab.getOrCreateInstance(balTabBtn).show();
-							}
-							document.getElementById('topup-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-						}).catch(function () {
-							document.getElementById('topup-submit').disabled = false;
-							errEl.textContent = 'Сеть недоступна';
-							errEl.classList.remove('d-none');
-						});
-					});
+					bindTopupHandlers(tok);
 				}).catch(function () {
 					show('loading', false);
 					show('err-box', true);
