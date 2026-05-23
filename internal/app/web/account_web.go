@@ -5,14 +5,17 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/email"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	"github.com/ryabkov82/vpnbot/internal/payments"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
@@ -21,6 +24,7 @@ type accountWebApp interface {
 	GetUserByLogin(login string) (*models.User, error)
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
 	GetUserService(serviceID string) (*models.UserService, error)
+	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
 }
 
 type accountLoginStartRequestJSON struct {
@@ -133,9 +137,11 @@ func accountDashboardCanShowConnect(us models.UserService) bool {
 }
 
 type accountServicesUserJSON struct {
-	Email  string `json:"email"`
-	UserID int    `json:"user_id"`
-	Login  string `json:"login"`
+	Email    string  `json:"email"`
+	UserID   int     `json:"user_id"`
+	Login    string  `json:"login"`
+	Balance  float64 `json:"balance"`
+	Forecast float64 `json:"forecast"`
 }
 
 type accountServicesRowJSON struct {
@@ -182,6 +188,18 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 			return
 		}
 
+		bal, err := app.GetUserBalanceByUserID(claims.UserID)
+		if err != nil {
+			slog.Error("account services: GetUserBalanceByUserID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "balance_failed")
+			return
+		}
+		var balance, forecast float64
+		if bal != nil {
+			balance = bal.Balance
+			forecast = bal.Forecast
+		}
+
 		list, err := app.GetUserServicesByUserID(claims.UserID)
 		if err != nil {
 			slog.Error("account services: GetUserServicesByUserID", "err", err)
@@ -206,9 +224,11 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 
 		writeJSON(w, http.StatusOK, accountServicesOKJSON{
 			User: accountServicesUserJSON{
-				Email:  claims.Email,
-				UserID: claims.UserID,
-				Login:  claims.Login,
+				Email:    claims.Email,
+				UserID:   claims.UserID,
+				Login:    claims.Login,
+				Balance:  balance,
+				Forecast: forecast,
 			},
 			Services: out,
 		})
@@ -294,6 +314,90 @@ func serveAccountServiceConnect(cfg *config.Config, app accountWebApp) http.Hand
 		writeJSON(w, http.StatusOK, accountConnectOKJSON{
 			Status:  "not_ready",
 			Message: "Подключение пока недоступно",
+		})
+	}
+}
+
+const accountBalanceTopupMessage = "После оплаты баланс будет пополнен. Если средств достаточно, SHM автоматически активирует неоплаченные услуги или использует баланс для будущего продления."
+
+func accountTopupAmountValid(amount float64) bool {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 50 || amount > 10000 {
+		return false
+	}
+	norm := math.Round(amount*100) / 100
+	return math.Abs(amount-norm) < 1e-9
+}
+
+type accountBalanceTopupRequestJSON struct {
+	Token  string  `json:"token"`
+	Amount float64 `json:"amount"`
+}
+
+type accountBalanceTopupOKJSON struct {
+	Status     string  `json:"status"`
+	Amount     float64 `json:"amount"`
+	PaymentURL string  `json:"payment_url"`
+	Message    string  `json:"message"`
+}
+
+func serveAccountBalanceTopup(cfg *config.Config, _ accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/balance/topup" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		const maxBody = 1 << 20
+		dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+		var req accountBalanceTopupRequestJSON
+		if err := dec.Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		raw := strings.TrimSpace(req.Token)
+		if raw == "" {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+
+		if !accountTopupAmountValid(req.Amount) {
+			writeJSONError(w, http.StatusBadRequest, "invalid_amount")
+			return
+		}
+
+		baseURL := ""
+		if cfg != nil {
+			baseURL = cfg.API.BaseURL
+		}
+		amountRounded := math.Round(req.Amount*100) / 100
+		paymentURL, err := payments.BuildYooKassaPaymentURL(baseURL, claims.UserID, amountRounded, time.Now().Unix())
+		if err != nil {
+			slog.Error("account balance topup: BuildYooKassaPaymentURL", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "payment_url_failed")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, accountBalanceTopupOKJSON{
+			Status:     "payment_required",
+			Amount:     amountRounded,
+			PaymentURL: paymentURL,
+			Message:    accountBalanceTopupMessage,
 		})
 	}
 }

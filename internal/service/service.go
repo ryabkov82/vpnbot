@@ -114,6 +114,14 @@ func (s *Service) GetUserServicesByUserID(userID int) ([]models.UserService, err
 	return s.apiClient.GetUserServices(userID)
 }
 
+// GetUserBalanceByUserID — баланс по SHM user_id (личный кабинет без Telegram).
+func (s *Service) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
+	if userID <= 0 {
+		return nil, errors.New("invalid user id")
+	}
+	return s.apiClient.GetUserBalance(userID)
+}
+
 func (s *Service) DownloadUserKey(userID int64, serviceID string) ([]byte, error) {
 
 	user, err := s.GetUser(userID)

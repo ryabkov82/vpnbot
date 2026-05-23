@@ -20,6 +20,16 @@ type stubAccountWeb struct {
 	services       []models.UserService
 	servicesErr    error
 	single         map[int]*models.UserService
+
+	balance    *models.UserBalance
+	balanceErr error
+}
+
+func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
+	if s.balanceErr != nil {
+		return nil, s.balanceErr
+	}
+	return s.balance, nil
 }
 
 func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
@@ -28,7 +38,6 @@ func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
 	}
 	return s.userByLogin, nil
 }
-
 func (s *stubAccountWeb) GetUserServicesByUserID(userID int) ([]models.UserService, error) {
 	if s.servicesErr != nil {
 		return nil, s.servicesErr
@@ -152,6 +161,7 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &stubAccountWeb{
+		balance: &models.UserBalance{Balance: 0.93, Forecast: 0},
 		services: []models.UserService{{
 			Name:          "1 мес",
 			ServiceID:     336,
@@ -179,8 +189,10 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	}
 	var env struct {
 		User struct {
-			Email string `json:"email"`
-			ID    int    `json:"user_id"`
+			Email    string  `json:"email"`
+			ID       int     `json:"user_id"`
+			Balance  float64 `json:"balance"`
+			Forecast float64 `json:"forecast"`
 		} `json:"user"`
 		Services []struct {
 			UserServiceID int  `json:"user_service_id"`
@@ -191,7 +203,7 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &env); err != nil {
 		t.Fatal(err)
 	}
-	if env.User.Email != "ok@test.com" || env.User.ID != 99 {
+	if env.User.Email != "ok@test.com" || env.User.ID != 99 || env.User.Balance != 0.93 || env.User.Forecast != 0 {
 		t.Fatalf("user %+v", env.User)
 	}
 	if len(env.Services) != 1 || !env.Services[0].CanConnect || env.Services[0].UserServiceID != 336 || env.Services[0].ServiceID != 3 {
@@ -278,4 +290,100 @@ func TestServeAccountConnect_NotPaid_NotReady(t *testing.T) {
 	if rec.Code != http.StatusOK || out.Status != "not_ready" || out.ConnectURL != "" {
 		t.Fatalf("%#v code=%d", out, rec.Code)
 	}
+}
+
+func TestServeAccountServices_BalanceFailed(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 50, "web_xx", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{balanceErr: errors.New("shm down")}
+	h := serveAccountServices(cfg, st)
+	req := httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "balance_failed")
+}
+
+func TestServeAccountBalanceTopup_InvalidToken(t *testing.T) {
+	cfg := orderStartTestCfg()
+	h := serveAccountBalanceTopup(cfg, &stubAccountWeb{})
+	req := httptest.NewRequest(http.MethodPost, "/api/account/balance/topup", strings.NewReader(`{"token":"","amount":150}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func TestServeAccountBalanceTopup_InvalidAmount(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.API.BaseURL = "https://api.example.com"
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 51, "web_xx", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := serveAccountBalanceTopup(cfg, &stubAccountWeb{})
+	for _, body := range []string{
+		`{"token":"` + tok + `","amount":49}`,
+		`{"token":"` + tok + `","amount":10000.01}`,
+		`{"token":"` + tok + `","amount":150.001}`,
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/account/balance/topup", strings.NewReader(body))
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("want 400 got %d %s for %s", rec.Code, rec.Body.String(), body)
+		}
+		assertJSONErrorField(t, rec.Body.String(), "invalid_amount")
+	}
+}
+
+func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.API.BaseURL = "https://api.fix.test"
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 701, "web_xx", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := serveAccountBalanceTopup(cfg, &stubAccountWeb{})
+	body := `{"token":"` + tok + `","amount":150}`
+	req := httptest.NewRequest(http.MethodPost, "/api/account/balance/topup", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out accountBalanceTopupOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "payment_required" || out.Amount != 150 || out.PaymentURL == "" {
+		t.Fatalf("%#v", out)
+	}
+	if !strings.Contains(out.PaymentURL, "yookassa.cgi") || !strings.Contains(out.PaymentURL, "701") || !strings.Contains(out.PaymentURL, "amount=150") {
+		t.Fatal(out.PaymentURL)
+	}
+}
+
+func TestServeAccountBalanceTopup_PaymentURLFailed_EmptyAPIBase(t *testing.T) {
+	cfg := orderStartTestCfg()
+	cfg.API.BaseURL = ""
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "z@z.z", 2, "web_yy", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := serveAccountBalanceTopup(cfg, &stubAccountWeb{})
+	req := httptest.NewRequest(http.MethodPost, "/api/account/balance/topup", strings.NewReader(`{"token":"`+tok+`","amount":100}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 got %d %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "payment_url_failed")
 }
