@@ -210,6 +210,7 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 
 		isNewUser := false
 		var user *models.User
+		fromExisting := existing != nil
 		if existing != nil {
 			user = existing
 		} else {
@@ -228,6 +229,10 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			slog.Error("account session start: CreateAccountToken", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
+		}
+
+		if !fromExisting && isNewUser {
+			sendAccountUserRegisteredTelegramNotification(cfg, normEmail, user.ID, user.Login, ClientIPFromRequest(r))
 		}
 
 		writeJSON(w, http.StatusOK, accountSessionStartOKJSON{

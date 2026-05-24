@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
@@ -315,6 +317,10 @@ func accountSessionStartPostBody(t *testing.T, tok string) string {
 }
 
 func TestServeAccountSessionStart_AccountTokenReturnsSame(t *testing.T) {
+	var telegramNotifyCalls int
+	patchAccountWebUserRegisteredTelegramNotifier(t, func(*config.Config, string, int, string, string) {
+		telegramNotifyCalls++
+	})
 	cfg := orderStartTestCfg()
 	sec := cfg.WebSales.OrderTokenSecret
 	rawTok, err := CreateAccountToken(sec, "acc@test.com", 44, "web_acc44", time.Hour)
@@ -339,9 +345,16 @@ func TestServeAccountSessionStart_AccountTokenReturnsSame(t *testing.T) {
 	if st.findOrCreateCalls != 0 {
 		t.Fatalf("unexpected FindOrCreateWebUser calls: %d", st.findOrCreateCalls)
 	}
+	if telegramNotifyCalls != 0 {
+		t.Fatalf("telegram notifier must not run for plain account token, got %d", telegramNotifyCalls)
+	}
 }
 
 func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
+	var telegramNotifyCalls int
+	patchAccountWebUserRegisteredTelegramNotifier(t, func(*config.Config, string, int, string, string) {
+		telegramNotifyCalls++
+	})
 	cfg := orderStartTestCfg()
 	sec := cfg.WebSales.OrderTokenSecret
 	em := "signup-new@test.com"
@@ -377,9 +390,16 @@ func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
 	if err != nil || ac.UserID != 6600 || ac.Login != login || ac.Email != norm {
 		t.Fatalf("%+v err=%v", ac, err)
 	}
+	if telegramNotifyCalls != 1 {
+		t.Fatalf("want 1 telegram notify for new registration, got %d", telegramNotifyCalls)
+	}
 }
 
 func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing.T) {
+	var telegramNotifyCalls int
+	patchAccountWebUserRegisteredTelegramNotifier(t, func(*config.Config, string, int, string, string) {
+		telegramNotifyCalls++
+	})
 	cfg := orderStartTestCfg()
 	sec := cfg.WebSales.OrderTokenSecret
 	em := "signup-old@test.com"
@@ -413,6 +433,74 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
 	if err != nil || ac.UserID != 6611 {
 		t.Fatalf("%+v err=%v", ac, err)
+	}
+	if telegramNotifyCalls != 0 {
+		t.Fatalf("telegram notify must not run for existing SHM user, got %d", telegramNotifyCalls)
+	}
+}
+
+func TestServeAccountSessionStart_SignupNewUserTelegramAPIErrorStill200(t *testing.T) {
+	old := leadTelegramHTTPPost
+	leadTelegramHTTPPost = func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Body:       io.NopCloser(strings.NewReader(`{"ok":false}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		}, nil
+	}
+	t.Cleanup(func() { leadTelegramHTTPPost = old })
+
+	prevHook := accountWebUserRegisteredTelegramNotifier
+	accountWebUserRegisteredTelegramNotifier = sendAccountWebUserRegisteredTelegramImpl
+	t.Cleanup(func() { accountWebUserRegisteredTelegramNotifier = prevHook })
+
+	cfg := orderStartTestCfg()
+	cfg.Telegram.Token = "notify-test-token"
+	cfg.Telegram.LeadsChatID = 7001
+
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "tg-error@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &models.User{ID: 7700, Login: login}
+	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
+
+	rec := httptest.NewRecorder()
+	serveAccountSessionStart(cfg, st).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, signupTok))))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServeAccountSessionStart_SignupNewUserNotifierGetsFirstXFFIP(t *testing.T) {
+	var gotIP string
+	patchAccountWebUserRegisteredTelegramNotifier(t, func(_ *config.Config, _ string, _ int, _ string, ip string) {
+		gotIP = ip
+	})
+
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "xff@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	signupTok, _ := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	want := &models.User{ID: 8801, Login: login}
+	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, signupTok)))
+	req.Header.Set("X-Forwarded-For", "203.0.113.55, 10.0.0.22")
+	rec := httptest.NewRecorder()
+	serveAccountSessionStart(cfg, st).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if gotIP != "203.0.113.55" {
+		t.Fatalf("IP %q", gotIP)
 	}
 }
 
