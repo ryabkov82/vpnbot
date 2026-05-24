@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -986,13 +985,6 @@ func (s *Service) handleHelp(c telebot.Context) error {
 	return err
 }
 
-func formatRubAmount(v float64) string {
-	if math.Abs(v-math.Round(v)) < 0.005 {
-		return fmt.Sprintf("%.0f ₽", v)
-	}
-	return fmt.Sprintf("%.2f ₽", v)
-}
-
 func (s *Service) handlePays(c telebot.Context) error {
 
 	if c.Callback() != nil {
@@ -1011,7 +1003,7 @@ func (s *Service) handlePays(c telebot.Context) error {
 		return c.Send("⚠️ Не удалось получить данные о платежах")
 	}
 
-	visible := visibleUserPaysForBot(pays)
+	visible := models.VisibleUserPays(pays)
 	caption := paysListCaption(visible, len(pays))
 	backBtn := telebot.InlineButton{Text: "⇦ Назад", Data: "/menu"}
 	backRow := []telebot.InlineButton{backBtn}
@@ -1028,7 +1020,7 @@ func (s *Service) handlePays(c telebot.Context) error {
 	var inlineKeys [][]telebot.InlineButton
 	for _, pay := range visible {
 		btn := telebot.InlineButton{
-			Text: fmt.Sprintf("Дата: %s, Сумма: %s", pay.Date, formatRubAmount(pay.Money)),
+			Text: fmt.Sprintf("Дата: %s, Сумма: %s", pay.Date, models.FormatRubAmount(pay.Money)),
 			Data: "/menu",
 		}
 		inlineKeys = append(inlineKeys, []telebot.InlineButton{btn})

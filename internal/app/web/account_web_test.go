@@ -28,6 +28,9 @@ type stubAccountWeb struct {
 	balance    *models.UserBalance
 	balanceErr error
 
+	pays    []models.UserPay
+	paysErr error
+
 	shmServices    []models.Service
 	shmServicesErr error
 
@@ -55,6 +58,13 @@ func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance
 		return nil, s.balanceErr
 	}
 	return s.balance, nil
+}
+
+func (s *stubAccountWeb) GetUserPaysByUserID(userID int) ([]models.UserPay, error) {
+	if s.paysErr != nil {
+		return nil, s.paysErr
+	}
+	return s.pays, nil
 }
 
 func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
@@ -551,6 +561,143 @@ func TestServeAccountServices_InvalidToken(t *testing.T) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func TestServeAccountPayments_EmptyToken401(t *testing.T) {
+	cfg := orderStartTestCfg()
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, &stubAccountWeb{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func TestServeAccountPayments_InvalidToken401(t *testing.T) {
+	cfg := orderStartTestCfg()
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, &stubAccountWeb{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments?token=not-a-jwt", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d: %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func TestServeAccountPayments_APIDown500(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "p@test.com", 5, "l", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{paysErr: errors.New("shm")}
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments?token="+tok, nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "payments_failed")
+}
+
+func TestServeAccountPayments_FiltersCanceledNoLeak(t *testing.T) {
+	ev, err := json.Marshal(map[string]string{"event": "payment.canceled"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "pay@test.com", 9, "l9", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{pays: []models.UserPay{
+		{Date: "2024-01-01", Money: 0, PaySystemID: "yookassa-canceled", Comment: json.RawMessage(ev), UniqKey: "secret-uk"},
+		{Date: "2024-02-02", Money: 150.5, PaySystemID: "yookassa"},
+		{Date: "2024-03-03", Money: -1318.74, PaySystemID: "corr"},
+	}}
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	raw := rec.Body.String()
+	for _, forbid := range []string{"uniq_key", `"comment"`, "secret-uk"} {
+		if strings.Contains(raw, forbid) {
+			t.Fatalf("leak %q in %s", forbid, raw)
+		}
+	}
+	var env accountPaymentsOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Payments) != 2 {
+		t.Fatalf("got %+v", env.Payments)
+	}
+	if env.Payments[0].Amount != 150.5 || env.Payments[0].AmountText != "150.50 ₽" || env.Payments[0].PaySystemID != "yookassa" {
+		t.Fatalf("row0 %+v", env.Payments[0])
+	}
+	if env.Payments[1].Amount != -1318.74 || env.Payments[1].AmountText != "-1318.74 ₽" {
+		t.Fatalf("row1 %+v", env.Payments[1])
+	}
+}
+
+func TestServeAccountPayments_OnlyCanceledEmptySlice(t *testing.T) {
+	ev, err := json.Marshal(map[string]string{"event": "payment.canceled"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "empty@test.com", 3, "l3", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{pays: []models.UserPay{
+		{Date: "d", Money: 0, PaySystemID: "yookassa-canceled", Comment: json.RawMessage(ev)},
+	}}
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	var env accountPaymentsOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Payments) != 0 {
+		t.Fatalf("%+v", env.Payments)
+	}
+	if !strings.Contains(rec.Body.String(), `"payments":[]`) {
+		t.Fatalf("%s", rec.Body.String())
+	}
+}
+
+func TestServeAccountPayments_LimitTwenty(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "lim@test.com", 2, "l2", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pays []models.UserPay
+	for i := 1; i <= 21; i++ {
+		pays = append(pays, models.UserPay{Date: "d", Money: float64(i), PaySystemID: "x"})
+	}
+	st := &stubAccountWeb{pays: pays}
+	rec := httptest.NewRecorder()
+	serveAccountPayments(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/payments?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	var env accountPaymentsOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Payments) != 20 {
+		t.Fatalf("len=%d", len(env.Payments))
+	}
+	if env.Payments[0].Amount != 2 {
+		t.Fatalf("first should be first of truncated window, got %+v", env.Payments[0])
+	}
+	if env.Payments[19].Amount != 21 {
+		t.Fatalf("last %+v", env.Payments[19])
+	}
 }
 
 func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {

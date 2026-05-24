@@ -26,6 +26,7 @@ type accountWebApp interface {
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
 	GetUserService(serviceID string) (*models.UserService, error)
 	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
+	GetUserPaysByUserID(userID int) ([]models.UserPay, error)
 	GetServices() ([]models.Service, error)
 	GetServiceByID(serviceID int) (*models.Service, error)
 	ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error)
@@ -321,6 +322,74 @@ type accountServicesRowJSON struct {
 type accountServicesOKJSON struct {
 	User     accountServicesUserJSON  `json:"user"`
 	Services []accountServicesRowJSON `json:"services"`
+}
+
+const accountPaymentsLimit = 20
+
+type accountPaymentRowJSON struct {
+	Date        string  `json:"date"`
+	Amount      float64 `json:"amount"`
+	AmountText  string  `json:"amount_text"`
+	PaySystemID string  `json:"pay_system_id"`
+}
+
+type accountPaymentsOKJSON struct {
+	Payments []accountPaymentRowJSON `json:"payments"`
+}
+
+func serveAccountPayments(cfg *config.Config, app accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/payments" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		raw := strings.TrimSpace(r.URL.Query().Get("token"))
+		if raw == "" {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			return
+		}
+
+		pays, err := app.GetUserPaysByUserID(claims.UserID)
+		if err != nil {
+			slog.Error("account payments: GetUserPaysByUserID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "payments_failed")
+			return
+		}
+
+		visible := models.VisibleUserPays(pays)
+		if len(visible) > accountPaymentsLimit {
+			visible = visible[len(visible)-accountPaymentsLimit:]
+		}
+
+		out := make([]accountPaymentRowJSON, 0, len(visible))
+		for i := range visible {
+			p := visible[i]
+			out = append(out, accountPaymentRowJSON{
+				Date:        p.Date,
+				Amount:      p.Money,
+				AmountText:  models.FormatRubAmount(p.Money),
+				PaySystemID: p.PaySystemID,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, accountPaymentsOKJSON{Payments: out})
+	}
 }
 
 func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFunc {

@@ -139,8 +139,11 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iCt < 0 || iPaneSvc < 0 || !(iBw < iCt && iCt < iPaneSvc) {
 		t.Fatal("embed balance-wrap must sit above tabs and outside tab panes")
 	}
-	if strings.Count(raw, `data-bs-toggle="pill"`) != 2 {
-		t.Fatal("embed: cabinet must have exactly two pills (services + buy)")
+	if !bytes.Contains(b, []byte(`История платежей`)) {
+		t.Fatal("payments tab heading missing")
+	}
+	if strings.Count(raw, `data-bs-toggle="pill"`) != 3 {
+		t.Fatal("embed: cabinet must have three pills (services + buy + payments)")
 	}
 	for _, forbid := range []string{
 		`id="tab-balance-tab"`,

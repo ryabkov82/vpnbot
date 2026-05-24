@@ -260,6 +260,14 @@ func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {
 	return pays, err
 }
 
+// GetUserPaysByUserID — сырой список платежей по SHM user_id (личный кабинет без Telegram chat id).
+func (s *Service) GetUserPaysByUserID(userID int) ([]models.UserPay, error) {
+	if userID <= 0 {
+		return nil, errors.New("invalid user id")
+	}
+	return s.apiClient.GetUserPays(userID)
+}
+
 // UserHasTrialService возвращает true, если у пользователя уже было СПИСАНИЕ по тестовой услуге.
 // Теперь мы считаем “брал тест” по факту withdraw, а не просто наличию UserService.
 func (s *Service) UserHasTrialService(chatID int64, baseServiceID int) (bool, error) {

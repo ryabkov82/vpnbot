@@ -38,6 +38,52 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "'/api/account/services?token='") {
 		t.Fatal("session must fetch /api/account/services with exchanged token")
 	}
+	if !strings.Contains(s, `'/api/account/payments?token='`) || !strings.Contains(s, "function loadAccountPayments") || !strings.Contains(s, "function renderAccountPayments") {
+		t.Fatal("session must load payments via loadAccountPayments /api/account/payments")
+	}
+	if !strings.Contains(s, `id="tab-payments-tab"`) || !strings.Contains(s, `data-bs-target="#tab-payments"`) ||
+		!strings.Contains(s, `id="tab-payments"`) || !strings.Contains(s, `id="payments-list"`) ||
+		!strings.Contains(s, `id="payments-refresh"`) {
+		t.Fatal("session payments tab-pane or payments-list / refresh anchor missing")
+	}
+	iRfPay := strings.Index(s, `function refreshAccountSnapshot`)
+	if iRfPay >= 0 {
+		refreshBody := s[iRfPay:]
+		if k := strings.Index(refreshBody, `function showMyServicesTabScrollCards`); k > 0 {
+			refreshBody = refreshBody[:k]
+		}
+		if strings.Contains(refreshBody, "loadAccountPayments") {
+			t.Fatal("refreshAccountSnapshot must not load payments unconditionally")
+		}
+	}
+	if !strings.Contains(s, `addEventListener('shown.bs.tab'`) ||
+		!strings.Contains(s, `getElementById('tab-payments-tab')`) {
+		t.Fatal("session must wire shown.bs.tab on tab-payments-tab for lazy payments load")
+	}
+	if !strings.Contains(s, "var paymentsLoaded") || !strings.Contains(s, "var accountPaymentsCache") || !strings.Contains(s, "var dashboardToken") {
+		t.Fatal("session must declare paymentsLoaded, accountPaymentsCache, dashboardToken")
+	}
+	if !strings.Contains(s, "function bindDashboardPayments") || !strings.Contains(s, "bindDashboardPayments(") {
+		t.Fatal("expected bindDashboardPayments for payments tab/refresher wiring")
+	}
+	if !strings.Contains(s, "Загружаем платежи…") {
+		t.Fatal("session payments load copy missing")
+	}
+	if !strings.Contains(s, "История платежей") {
+		t.Fatal("session heading for payment history missing")
+	}
+	if !strings.Contains(s, "Откройте вкладку, чтобы загрузить историю платежей.") {
+		t.Fatal("payments tab initial placeholder missing")
+	}
+	if !strings.Contains(s, "Оплаченных платежей пока нет.") {
+		t.Fatal("session must include empty-state copy for filtered payments")
+	}
+	if strings.Contains(s, `uniq_key`) {
+		t.Fatal("session UI must not reference uniq_key from payments API")
+	}
+	if strings.Contains(strings.ToLower(s), `function bindpaymentsrefresh`) || strings.Contains(s, `bindPaymentsRefresh`) {
+		t.Fatal("session must bind payments tab via bindDashboardPayments, not bindPaymentsRefresh")
+	}
 	if !strings.Contains(s, "function bootFromRawToken") {
 		t.Fatal("expected bootFromRawToken bootstrap")
 	}
@@ -165,15 +211,19 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	iBalWrap := strings.Index(s, `id="balance-wrap"`)
 	iCabTabs := strings.Index(s, `id="cabinet-tabs"`)
+	iPanePayments := strings.Index(s, `id="tab-payments"`)
 	iPaneSvcEarly := strings.Index(s, `id="tab-pane-services"`)
-	if iBalWrap < 0 || iCabTabs < 0 || iPaneSvcEarly < 0 {
-		t.Fatal("balance-wrap, cabinet-tabs, or tab-pane-services anchor missing")
+	if iBalWrap < 0 || iCabTabs < 0 || iPanePayments < 0 || iPaneSvcEarly < 0 {
+		t.Fatal("balance-wrap, cabinet-tabs, tab-payments, or tab-pane-services anchor missing")
 	}
-	if !(iBalWrap < iCabTabs && iCabTabs < iPaneSvcEarly) {
-		t.Fatal("balance card must precede pills and stay outside tab panes")
+	if !(iBalWrap < iCabTabs && iCabTabs < iPaneSvcEarly && iPaneSvcEarly < iPanePayments) {
+		t.Fatal("balance and tab nav must precede tab panes; payments pane must be inside tab-content after services pane")
 	}
-	if strings.Count(s, `data-bs-toggle="pill"`) != 2 {
-		t.Fatal("cabinet must have exactly two pills (services + buy)")
+	if strings.Index(s[iPanePayments:], `id="payments-list"`) < 0 {
+		t.Fatal("payments-list must live inside payments tab-pane")
+	}
+	if strings.Count(s, `data-bs-toggle="pill"`) != 3 {
+		t.Fatal("cabinet must have exactly three pills (services + buy + payments)")
 	}
 	for _, forbid := range []string{
 		`id="tab-balance-tab"`,

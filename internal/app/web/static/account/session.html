@@ -92,6 +92,9 @@
 				<li class="nav-item" role="presentation">
 					<button class="nav-link" id="tab-buy-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-buy" type="button" role="tab" aria-controls="tab-pane-buy" aria-selected="false">Купить VPN</button>
 				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link" id="tab-payments-tab" data-bs-toggle="pill" data-bs-target="#tab-payments" type="button" role="tab" aria-controls="tab-payments" aria-selected="false">История платежей</button>
+				</li>
 			</ul>
 
 			<div class="tab-content" id="cabinet-tab-content">
@@ -107,6 +110,18 @@
 						<div class="alert alert-danger py-2 small d-none mb-3" id="catalog-err-box" role="alert"></div>
 						<p class="small text-secondary d-none mb-2" id="catalog-loading-msg">Загрузка тарифов…</p>
 						<div id="catalog-tariffs" class="row g-2"></div>
+					</div>
+				</div>
+
+				<div class="tab-pane fade" id="tab-payments" role="tabpanel" aria-labelledby="tab-payments-tab" tabindex="0">
+					<div class="card rounded-3 border border-secondary bg-body-secondary">
+						<div class="card-body py-3">
+							<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+								<h2 class="h5 mb-0">История платежей</h2>
+								<button type="button" class="btn btn-sm btn-outline-secondary" id="payments-refresh">Обновить</button>
+							</div>
+							<div id="payments-list" class="mt-3 text-secondary">Откройте вкладку, чтобы загрузить историю платежей.</div>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -142,6 +157,9 @@
 	<script>
 	(function () {
 		var STORAGE = 'vff_account_token';
+		var dashboardToken = '';
+		var paymentsLoaded = false;
+		var accountPaymentsCache = [];
 
 		function escapeHtml(s) {
 			var t = String(s);
@@ -550,6 +568,87 @@
 			});
 		}
 
+		function bindDashboardPayments(tok) {
+			dashboardToken = tok;
+			paymentsLoaded = false;
+			accountPaymentsCache = [];
+			var listElReset = document.getElementById('payments-list');
+			if (listElReset) {
+				listElReset.className = 'mt-3 text-secondary';
+				listElReset.textContent = 'Откройте вкладку, чтобы загрузить историю платежей.';
+			}
+			var refBtn = document.getElementById('payments-refresh');
+			if (refBtn && refBtn.dataset.bound !== '1') {
+				refBtn.dataset.bound = '1';
+				refBtn.addEventListener('click', function () {
+					loadAccountPayments(dashboardToken);
+				});
+			}
+			var payTabBtn = document.getElementById('tab-payments-tab');
+			if (payTabBtn && payTabBtn.dataset.payBound !== '1') {
+				payTabBtn.dataset.payBound = '1';
+				payTabBtn.addEventListener('shown.bs.tab', function () {
+					if (!paymentsLoaded) {
+						loadAccountPayments(dashboardToken);
+					} else {
+						renderAccountPayments(accountPaymentsCache);
+					}
+				});
+			}
+		}
+
+		function renderAccountPayments(payments) {
+			var listEl = document.getElementById('payments-list');
+			if (!listEl) {
+				return;
+			}
+			var plist = payments || [];
+			if (!plist.length) {
+				listEl.className = 'mt-3 text-secondary';
+				listEl.textContent = 'Оплаченных платежей пока нет.';
+				return;
+			}
+			listEl.className = 'mt-3';
+			var ul = '<ul class="list-group list-group-flush rounded border border-secondary">';
+			plist.forEach(function (p) {
+				var dt = escapeHtml(String(p.date || '—'));
+				var at = escapeHtml(String(p.amount_text || ''));
+				ul +=
+					'<li class="list-group-item bg-transparent px-0 py-2 d-flex justify-content-between gap-2 align-items-baseline">' +
+					'<span class="text-secondary small">' + dt + '</span>' +
+					'<span class="fw-semibold text-nowrap">' + at + '</span></li>';
+			});
+			ul += '</ul>';
+			listEl.innerHTML = ul;
+		}
+
+		function loadAccountPayments(tok) {
+			var listEl = document.getElementById('payments-list');
+			if (!tok || !listEl) {
+				return Promise.resolve();
+			}
+			listEl.className = 'mt-3 text-secondary';
+			listEl.textContent = 'Загружаем платежи…';
+
+			return fetch('/api/account/payments?token=' + encodeURIComponent(tok))
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+				.then(function (x) {
+					if (!x.ok) {
+						listEl.textContent = 'Не удалось загрузить историю платежей. Попробуйте позже.';
+						listEl.className = 'mt-3 text-danger';
+						return;
+					}
+					var arr = (x.j && x.j.payments) ? x.j.payments : [];
+					paymentsLoaded = true;
+					accountPaymentsCache = arr.slice();
+					renderAccountPayments(arr);
+				})
+				.catch(function () {
+					listEl.textContent = 'Не удалось загрузить историю платежей. Попробуйте позже.';
+					listEl.className = 'mt-3 text-danger';
+				});
+		}
+
 		function refreshAccountSnapshot(tok) {
 			return fetch('/api/account/services?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -881,6 +980,7 @@
 					renderServiceCards(accountTok, j.services || []);
 					loadAccountCatalog(accountTok);
 					bindTopupHandlers(accountTok);
+					bindDashboardPayments(accountTok);
 				}).catch(function () {
 					show('loading', false);
 					showInvalidSessionLink();
