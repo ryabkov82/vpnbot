@@ -52,6 +52,9 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	buyH := serveBuy
 	mux.HandleFunc("/buy", buyH)
 	mux.HandleFunc("/buy/", buyH)
+	mux.HandleFunc("/favicon.ico", serveEmbeddedAsset("image/x-icon", faviconICO))
+	mux.HandleFunc("/favicon-32x32.png", serveEmbeddedAsset("image/png", favicon32PNG))
+	mux.HandleFunc("/apple-touch-icon.png", serveEmbeddedAsset("image/png", appleTouchIconPNG))
 	mux.HandleFunc("/api/premium/service", servePremiumService(cfg, app, rw))
 	mux.HandleFunc("/api/premium/happ-link", servePremiumHappLink(cfg, app, rw))
 	mux.HandleFunc("/api/public/services", servePublicServices(cfg, app))
