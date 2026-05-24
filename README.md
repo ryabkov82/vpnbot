@@ -11,6 +11,7 @@
 - **`web_account.google_enabled`** — включает кнопку «Войти с Google» на `/account`.
 - **`web_account.google_client_id`**, **`web_account.google_client_secret`**, **`web_account.google_redirect_url`** — учётные данные OAuth-приложения Google. Если `google_enabled=true`, но не задан хотя бы один из трёх параметров или они пустые, SSO считается выключенным. Секрет **не помещать в git** и не логировать; указывайте его только на production-хостах.
 - Типичное значение `google_redirect_url` — публичный URL backend’а вида `https://<ваш домен>/api/account/google/callback` (должен совпадать с разрешённым redirect URI в Google Cloud Console).
+- Ссылка **«Поддержка»** в web-кабинете (`/account/session`) берётся из **`telegram.support_chat`** (как в боте: полный `https://` / `http://` / `tg:` URL, `t.me/...` без схемы или username от 5 символов с опциональным `@`). Переменные окружения **`TELEGRAM_SUPPORT_URL`** или **`SUPPORT_TELEGRAM_URL`** (первая имеет приоритет) при непустом значении переопределяют поле конфига. Если итоговый URL пустой или не проходит проверку, блок ссылки не показывается.
 
 Premium / AntiBlock в каталоге и в списке услуг отражаются полями `tier`, `connect_app`, `badges`; определение такое же, как в Telegram-боте (`premium_squad_name` из конфигурации бота и соответствующее поле в конфигурации услуги). Активный Premium подключается через `premium_connect_base_url` и подписанный токен (приложение Happ); активный обычный VPN Marzban — через `subscription_url`.
 

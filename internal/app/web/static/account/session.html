@@ -18,6 +18,10 @@
 		}
 		[data-bs-theme='dark'] { --bs-body-bg: #282a36; --bs-secondary-bg: #35384b; }
 		.my-btn { --bs-btn-bg: rgba(35,131,226,.15); --bs-btn-color: #2383e2; --bs-btn-border-radius: var(--bs-border-radius-xl); --bs-btn-font-weight: 600; }
+		/* Footer: отступ от нижнего UI браузера; на iOS — с учётом safe area */
+		.account-footer {
+			margin-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+		}
 		/* Кабинет: вкладки в одну строку на всех экранах; узкий экран — горизонтальный скролл */
 		.account-tabs {
 			display: flex;
@@ -52,7 +56,10 @@
 				<h1 class="h4 fw-bold mb-1 mb-sm-2 mb-md-3">Личный кабинет</h1>
 				<div id="user-line" class="small text-secondary"></div>
 			</div>
-			<button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0 align-self-start" id="logout-btn">Выйти</button>
+			<div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start">
+				<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->
+				<button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0" id="logout-btn">Выйти</button>
+			</div>
 		</div>
 		<div class="alert alert-secondary d-none" id="no-token" role="alert">
 			Откройте <a href="/account">страницу входа</a>, чтобы получить ссылку.
@@ -151,6 +158,11 @@
 				</div>
 			</div>
 		</div>
+
+		<footer class="mt-4 pt-3 text-center text-secondary small account-footer">
+			<div class="fw-semibold">VPN for Friends</div>
+			<div>Безопасный доступ к вашим VPN-услугам</div>
+		</footer>
 	</div>
 
 	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>

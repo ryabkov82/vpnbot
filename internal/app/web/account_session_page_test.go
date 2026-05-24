@@ -15,6 +15,19 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, "Remnawave") || strings.Contains(raw, "check_exists_unpaid") {
 		t.Fatal("session embed must not contain internal terminology")
 	}
+	for _, footerNeedle := range []string{
+		`<footer `,
+		`account-footer`,
+		`VPN for Friends</div>`,
+		`Безопасный доступ к вашим VPN-услугам`,
+	} {
+		if !strings.Contains(raw, footerNeedle) {
+			t.Fatalf("embed session branded footer missing %q", footerNeedle)
+		}
+	}
+	if !strings.Contains(raw, "safe-area-inset-bottom") || !strings.Contains(raw, "calc(1.5rem + env(") {
+		t.Fatal("embed session must include .account-footer safe-area bottom margin")
+	}
 	for _, needle := range []string{
 		`function openPaymentWindow`,
 		`navigatePaymentWindow(`,
@@ -307,6 +320,9 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	embCatPreorder := raw[idxEmbCatBuy:idxEmbCatFetch]
 	if strings.Contains(embCatPreorder, `openPaymentWindow`) {
 		t.Fatal("embed catalog buy must not reference openPaymentWindow")
+	}
+	if !strings.Contains(raw, "<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->") {
+		t.Fatal("embed session must include support link placeholder")
 	}
 	for _, needle := range []string{
 		`id="logout-btn"`,

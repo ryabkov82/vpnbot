@@ -108,6 +108,22 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "account-tabs") {
 		t.Fatal("cabinet tabs should use account-tabs class for responsive layout")
 	}
+	if !strings.Contains(s, "<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->") {
+		t.Fatal("session.html must include support link placeholder for server-side injection")
+	}
+	for _, needle := range []string{
+		`<footer `,
+		`account-footer`,
+		`VPN for Friends</div>`,
+		`Безопасный доступ к вашим VPN-услугам`,
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("session.html branded footer missing %q", needle)
+		}
+	}
+	if !strings.Contains(s, ".account-footer") || !strings.Contains(s, "safe-area-inset-bottom") {
+		t.Fatal("session footer must include .account-footer CSS with safe-area bottom inset")
+	}
 	if !strings.Contains(s, "flex-wrap: nowrap") {
 		t.Fatal("account-tabs css should force single-line tabs")
 	}
@@ -219,7 +235,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !(iBalWrap < iCabTabs && iCabTabs < iPaneSvcEarly && iPaneSvcEarly < iPanePayments) {
 		t.Fatal("balance and tab nav must precede tab panes; payments pane must be inside tab-content after services pane")
 	}
-	if strings.Index(s[iPanePayments:], `id="payments-list"`) < 0 {
+	if !strings.Contains(s[iPanePayments:], `id="payments-list"`) {
 		t.Fatal("payments-list must live inside payments tab-pane")
 	}
 	if strings.Count(s, `data-bs-toggle="pill"`) != 3 {
