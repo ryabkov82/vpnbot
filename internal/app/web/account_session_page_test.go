@@ -15,6 +15,21 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, "Remnawave") || strings.Contains(raw, "check_exists_unpaid") {
 		t.Fatal("session embed must not contain internal terminology")
 	}
+	for _, needle := range []string{
+		`function openPaymentWindow`,
+		`navigatePaymentWindow(`,
+		`closePaymentWindow(`,
+		`window.open('about:blank', '_blank')`,
+		`win.opener = null`,
+		`win.location.href = u`,
+	} {
+		if !strings.Contains(raw, needle) {
+			t.Fatalf("embed session missing payment helper %q", needle)
+		}
+	}
+	if strings.Contains(raw, `window.open('', '_blank', 'noopener')`) {
+		t.Fatal("embed: pre-open must not use noopener third argument")
+	}
 	if !strings.Contains(raw, `Вы вошли как ' + String(j.user.email`) {
 		t.Fatal("embed user-line must show «Вы вошли как» email only")
 	}
@@ -68,8 +83,10 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if jEmbedTopEnd > 0 {
 		tsSnip = tsSnip[:jEmbedTopEnd]
 	}
-	if !strings.Contains(tsSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
-		t.Fatal("embed balance topup must window.open payment_url")
+	if !strings.Contains(tsSnip, `openPaymentWindow()`) ||
+		!strings.Contains(tsSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||
+		!strings.Contains(tsSnip, `closePaymentWindow(payWin)`) {
+		t.Fatal("embed balance topup must use blank-window + navigatePaymentWindow pattern")
 	}
 	if strings.Contains(tsSnip, `getElementById('tab-balance-tab')`) {
 		t.Fatal("embed topup success must not switch removed balance pill")
@@ -265,7 +282,8 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		"fetch('/api/account/balance/topup'",
 		"Готовим оплату...",
 		`JSON.stringify({ token: baseTok, amount: amt })`,
-		"window.open(u, '_blank', 'noopener')",
+		`navigatePaymentWindow(payWin, u)`,
+		`closePaymentWindow(payWin)`,
 	} {
 		if !strings.Contains(emSnip, needle) {
 			t.Fatalf("embed NOT PAID pay handler missing %q", needle)
@@ -273,6 +291,19 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	}
 	if strings.Contains(emSnip, "/api/account/service/order") {
 		t.Fatal("embed NOT PAID strip must not call service/order path")
+	}
+	idxEmbCatBuy := strings.Index(raw, `buyBtn.addEventListener('click',`)
+	if idxEmbCatBuy < 0 {
+		t.Fatal("embed catalog buy handler anchor missing")
+	}
+	idxEmbCatFetch := strings.Index(raw[idxEmbCatBuy:], `fetch('/api/account/service/order',`)
+	if idxEmbCatFetch < 0 {
+		t.Fatal("embed catalog service/order fetch missing")
+	}
+	idxEmbCatFetch += idxEmbCatBuy
+	embCatPreorder := raw[idxEmbCatBuy:idxEmbCatFetch]
+	if strings.Contains(embCatPreorder, `openPaymentWindow`) {
+		t.Fatal("embed catalog buy must not reference openPaymentWindow")
 	}
 	for _, needle := range []string{
 		`id="logout-btn"`,

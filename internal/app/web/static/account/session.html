@@ -164,6 +164,29 @@
 			window.location.href = '/account?logged_out=1';
 		});
 
+		function openPaymentWindow() {
+			return window.open('about:blank', '_blank');
+		}
+		function navigatePaymentWindow(win, url) {
+			var u = String(url || '').trim();
+			if (!u) {
+				return false;
+			}
+			if (!win) {
+				return false;
+			}
+			try {
+				win.opener = null;
+			} catch (_) {}
+			win.location.href = u;
+			return true;
+		}
+		function closePaymentWindow(win) {
+			if (win) {
+				try { win.close(); } catch (_) {}
+			}
+		}
+
 		function fmtMoney(n) {
 			if (typeof n !== 'number' || isNaN(n)) return '—';
 			var v = Math.round(n * 100) / 100;
@@ -203,6 +226,7 @@
 			document.querySelectorAll('.js-card-pay').forEach(function (el) {
 				el.href = '#';
 				el.removeAttribute('target');
+				el.removeAttribute('rel');
 			});
 			document.querySelectorAll('.catalog-card-err').forEach(function (el) {
 				el.classList.add('d-none');
@@ -268,7 +292,7 @@
 							'<div class="catalog-card-success d-none mt-3 rounded border border-success px-3 py-2 small" style="background: rgba(25,135,84,.08);">' +
 							'<p class="mb-2 mb-lg-3 js-catalog-success-text"></p>' +
 							'<div class="d-grid gap-2 d-sm-flex flex-sm-wrap">' +
-							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>' +
+							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener">Перейти к оплате</a>' +
 							'<button type="button" class="btn btn-sm btn-outline-light js-card-goto-my-services">Перейти к моим услугам</button>' +
 							'</div></div>' +
 							'</div></div>';
@@ -311,9 +335,14 @@
 										return;
 									}
 									buyBtn.textContent = 'Ожидает оплаты';
-									if (y.j && y.j.payment_url) {
-										payA.href = String(y.j.payment_url);
+									var payUrl = y.j && y.j.payment_url ? String(y.j.payment_url).trim() : '';
+									if (payUrl) {
+										payA.href = payUrl;
+									} else {
+										payA.href = '#';
 									}
+									payA.target = '_blank';
+									payA.rel = 'noopener';
 									var rn = '';
 									if (y.j && y.j.returned_service_name !== undefined && y.j.returned_service_name !== null) {
 										rn = String(y.j.returned_service_name).trim();
@@ -445,11 +474,12 @@
 				var amt = parseFloat(raw);
 				var errEl = document.getElementById('topup-modal-err');
 				errEl.classList.add('d-none');
-				if (isNaN(amt)) {
-					errEl.textContent = 'Укажите сумму';
+				if (isNaN(amt) || !svcTopupAmountUsable(amt)) {
+					errEl.textContent = isNaN(amt) ? 'Укажите сумму' : 'Сумма 50–10 000 ₽, до 2 знаков после запятой';
 					errEl.classList.remove('d-none');
 					return;
 				}
+				var payWin = openPaymentWindow();
 				document.getElementById('topup-submit').disabled = true;
 				fetch('/api/account/balance/topup', {
 					method: 'POST',
@@ -459,12 +489,14 @@
 					.then(function (xv) {
 						document.getElementById('topup-submit').disabled = false;
 						if (!xv.ok) {
+							closePaymentWindow(payWin);
 							errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
 							errEl.classList.remove('d-none');
 							return;
 						}
 						var urlRaw = xv.j && xv.j.payment_url ? String(xv.j.payment_url).trim() : '';
 						if (!urlRaw) {
+							closePaymentWindow(payWin);
 							errEl.textContent = 'Ссылка на оплату недоступна';
 							errEl.classList.remove('d-none');
 							return;
@@ -477,20 +509,20 @@
 						var headEl = document.getElementById('topup-result-heading');
 						var fbMsg = document.getElementById('topup-result-fallback-msg');
 						var fbLink = document.getElementById('topup-result-pay-fallback');
-						if (fbMsg) {
-							fbMsg.classList.add('d-none');
-						}
-						if (fbLink) {
-							fbLink.classList.add('d-none');
-							fbLink.href = '#';
-							fbLink.removeAttribute('target');
-							fbLink.removeAttribute('rel');
-						}
-						if (headEl) {
-							headEl.classList.remove('d-none');
-						}
-						var popWin = window.open(urlRaw, '_blank', 'noopener');
-						if (!popWin) {
+						if (navigatePaymentWindow(payWin, urlRaw)) {
+							if (headEl) {
+								headEl.classList.remove('d-none');
+							}
+							if (fbMsg) {
+								fbMsg.classList.add('d-none');
+							}
+							if (fbLink) {
+								fbLink.classList.add('d-none');
+								fbLink.href = '#';
+								fbLink.removeAttribute('target');
+								fbLink.removeAttribute('rel');
+							}
+						} else {
 							if (headEl) {
 								headEl.classList.add('d-none');
 							}
@@ -503,10 +535,6 @@
 								fbLink.rel = 'noopener noreferrer';
 								fbLink.classList.remove('d-none');
 							}
-						} else {
-							try {
-								popWin.opener = null;
-							} catch (ep) {}
 						}
 						document.getElementById('topup-result').classList.remove('d-none');
 						var bw = document.getElementById('balance-wrap');
@@ -514,6 +542,7 @@
 							bw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 						}
 					}).catch(function () {
+						closePaymentWindow(payWin);
 						document.getElementById('topup-submit').disabled = false;
 						errEl.textContent = 'Сеть недоступна';
 						errEl.classList.remove('d-none');
@@ -733,6 +762,7 @@
 								openBalanceTabWithTopupModal();
 								return;
 							}
+							var payWin = openPaymentWindow();
 							initBtn.disabled = true;
 							initBtn.textContent = 'Готовим оплату...';
 							if (payErr) {
@@ -754,6 +784,7 @@
 									initBtn.disabled = false;
 									initBtn.textContent = payInitLabel;
 									if (!op.ok) {
+										closePaymentWindow(payWin);
 										var msg = '';
 										var jErr = op.j;
 										if (jErr && jErr.error) {
@@ -770,6 +801,7 @@
 									}
 									var u = op.j && op.j.payment_url ? String(op.j.payment_url).trim() : '';
 									if (!u) {
+										closePaymentWindow(payWin);
 										if (payErr) {
 											payErr.textContent = 'Ссылка на оплату недоступна';
 											payErr.classList.remove('d-none');
@@ -777,20 +809,20 @@
 										return;
 									}
 									initBtn.classList.add('d-none');
-									if (payFallbackMsg) {
-										payFallbackMsg.classList.add('d-none');
-									}
-									if (payFallbackA) {
-										payFallbackA.classList.add('d-none');
-										payFallbackA.href = '#';
-										payFallbackA.removeAttribute('target');
-										payFallbackA.removeAttribute('rel');
-									}
-									if (payOkHeading) {
-										payOkHeading.classList.remove('d-none');
-									}
-									var openedWin = window.open(u, '_blank', 'noopener');
-									if (!openedWin) {
+									if (navigatePaymentWindow(payWin, u)) {
+										if (payOkHeading) {
+											payOkHeading.classList.remove('d-none');
+										}
+										if (payFallbackMsg) {
+											payFallbackMsg.classList.add('d-none');
+										}
+										if (payFallbackA) {
+											payFallbackA.classList.add('d-none');
+											payFallbackA.href = '#';
+											payFallbackA.removeAttribute('target');
+											payFallbackA.removeAttribute('rel');
+										}
+									} else {
 										if (payOkHeading) {
 											payOkHeading.classList.add('d-none');
 										}
@@ -803,16 +835,13 @@
 											payFallbackA.rel = 'noopener noreferrer';
 											payFallbackA.classList.remove('d-none');
 										}
-									} else {
-										try {
-											openedWin.opener = null;
-										} catch (ew) {}
 									}
 									if (payOk) {
 										payOk.classList.remove('d-none');
 									}
 								})
 								.catch(function () {
+									closePaymentWindow(payWin);
 									initBtn.disabled = false;
 									initBtn.textContent = payInitLabel;
 									if (payErr) {

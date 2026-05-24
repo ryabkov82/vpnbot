@@ -41,6 +41,21 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "function bootFromRawToken") {
 		t.Fatal("expected bootFromRawToken bootstrap")
 	}
+	for _, needle := range []string{
+		`function openPaymentWindow`,
+		`function navigatePaymentWindow`,
+		`function closePaymentWindow`,
+		`window.open('about:blank', '_blank')`,
+		`win.opener = null`,
+		`win.location.href = u`,
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("session payment window helpers missing %q", needle)
+		}
+	}
+	if strings.Contains(s, `window.open('', '_blank', 'noopener')`) {
+		t.Fatal("pre-open must not use noopener (returns null in some browsers)")
+	}
 	if !strings.Contains(s, "Ссылка недействительна или устарела.") {
 		t.Fatal("missing invalid magic-link message")
 	}
@@ -191,8 +206,10 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if jTopSubmitEnd > 0 {
 		topSubmitSnip = topSubmitSnip[:jTopSubmitEnd]
 	}
-	if !strings.Contains(topSubmitSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
-		t.Fatal("balance topup success must auto-open payment in a new tab")
+	if !strings.Contains(topSubmitSnip, `openPaymentWindow()`) ||
+		!strings.Contains(topSubmitSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||
+		!strings.Contains(topSubmitSnip, `closePaymentWindow(payWin)`) {
+		t.Fatal("balance topup must open blank tab then navigatePaymentWindow after fetch")
 	}
 	if strings.Contains(topSubmitSnip, `getElementById('tab-balance-tab')`) {
 		t.Fatal("topup success must not force-switch removed balance pill")
@@ -256,7 +273,8 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		"fetch('/api/account/balance/topup'",
 		"Готовим оплату...",
 		`JSON.stringify({ token: baseTok, amount: amt })`,
-		"window.open(u, '_blank', 'noopener')",
+		`navigatePaymentWindow(payWin, u)`,
+		`closePaymentWindow(payWin)`,
 	} {
 		if !strings.Contains(svcPaySnip, needle) {
 			t.Fatalf("NOT PAID pay handler missing %q", needle)
@@ -264,6 +282,19 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	if strings.Contains(svcPaySnip, "/api/account/service/order") {
 		t.Fatal("NOT PAID service pay flow must not call service/order")
+	}
+	idxCatBuy := strings.Index(s, `buyBtn.addEventListener('click',`)
+	if idxCatBuy < 0 {
+		t.Fatal("catalog buy handler anchor missing")
+	}
+	idxCatFetch := strings.Index(s[idxCatBuy:], `fetch('/api/account/service/order',`)
+	if idxCatFetch < 0 {
+		t.Fatal("catalog service/order fetch missing")
+	}
+	idxCatFetch += idxCatBuy
+	catPreorder := s[idxCatBuy:idxCatFetch]
+	if strings.Contains(catPreorder, `openPaymentWindow`) {
+		t.Fatal("catalog buy must not use openPaymentWindow — payment opens via «Перейти к оплате» link")
 	}
 	for _, forbid := range []string{"SHM", "Remnawave", "internal_squad_name"} {
 		if strings.Contains(s, forbid) {
