@@ -8,6 +8,31 @@
 	<style>
 		[data-bs-theme='dark'] { --bs-body-bg: #282a36; --bs-secondary-bg: #35384b; }
 		.my-btn { --bs-btn-bg: rgba(35,131,226,.15); --bs-btn-color: #2383e2; --bs-btn-border-radius: var(--bs-border-radius-xl); --bs-btn-font-weight: 600; }
+		/* Кабинет: вкладки в одну строку на всех экранах; узкий экран — горизонтальный скролл */
+		.account-tabs {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: nowrap;
+			gap: 8px;
+			overflow-x: auto;
+			overflow-y: hidden;
+			-webkit-overflow-scrolling: touch;
+		}
+		.account-tabs .nav-item {
+			flex: 0 0 auto;
+		}
+		.account-tabs .nav-link {
+			white-space: nowrap;
+		}
+		@media (max-width: 576px) {
+			.account-tabs {
+				gap: 6px;
+			}
+			.account-tabs .nav-link {
+				padding: 0.5rem 0.65rem;
+				font-size: 0.9rem;
+			}
+		}
 	</style>
 </head>
 <body class="pb-4">
@@ -22,7 +47,7 @@
 		<div id="dashboard-area" class="d-none">
 			<p class="small text-secondary mb-3" id="user-line"></p>
 
-			<ul class="nav nav-pills flex-column flex-sm-row gap-2 mb-3" id="cabinet-tabs" role="tablist">
+			<ul class="nav nav-pills account-tabs mb-3" id="cabinet-tabs" role="tablist">
 				<li class="nav-item" role="presentation">
 					<button class="nav-link active" id="tab-services-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-services" type="button" role="tab" aria-controls="tab-pane-services" aria-selected="true">Мои услуги</button>
 				</li>

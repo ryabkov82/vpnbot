@@ -44,6 +44,15 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "Ссылка недействительна или устарела.") {
 		t.Fatal("missing invalid magic-link message")
 	}
+	if !strings.Contains(s, "account-tabs") {
+		t.Fatal("cabinet tabs should use account-tabs class for responsive layout")
+	}
+	if !strings.Contains(s, "flex-wrap: nowrap") {
+		t.Fatal("account-tabs css should force single-line tabs")
+	}
+	if !strings.Contains(s, "overflow-x: auto") {
+		t.Fatal("account-tabs css should allow horizontal scroll")
+	}
 	for _, forbid := range []string{"SHM", "Remnawave", "internal_squad_name"} {
 		if strings.Contains(s, forbid) {
 			t.Fatalf("session UI leak %q", forbid)
