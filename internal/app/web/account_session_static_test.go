@@ -103,6 +103,61 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(orderOkFragment, "resetCatalogOrderState") {
 		t.Fatal("order success must not reset catalog order state immediately after purchase")
 	}
+	if strings.Contains(s, `(50–10 000 ₽, до 2 знаков)</label>`) {
+		t.Fatal("ambiguous topup custom amount label must clarify decimal digits")
+	}
+	if !strings.Contains(s, `50–10 000 ₽, до 2 знаков после запятой`) {
+		t.Fatal("topup modal must say «после запятой» for fractional amounts")
+	}
+	iTopRes := strings.Index(s, `id="topup-result" class="alert`)
+	if iTopRes < 0 {
+		t.Fatal("topup-result block missing")
+	}
+	jTopModal := strings.Index(s[iTopRes:], `<div class="modal fade" id="topupModal"`)
+	if jTopModal < 0 {
+		t.Fatal("topup modal markup anchor missing")
+	}
+	topResFrag := s[iTopRes : iTopRes+jTopModal]
+	if strings.Contains(topResFrag, `id="topup-pay-open"`) {
+		t.Fatal("topup-result must not use legacy topup-pay-open CTA")
+	}
+	if strings.Contains(topResFrag, `>Перейти к оплате<`) {
+		t.Fatal("topup-result success must not duplicate modal «Перейти к оплате» button")
+	}
+	for _, needle := range []string{
+		`Страница оплаты открыта в новой вкладке`,
+		`обновите баланс. Баланс должен обновиться в течение 1–2 минут`,
+		`topup-result-pay-fallback`,
+		`Открыть оплату`,
+		`topup-result-refresh`,
+		`Обновить баланс`,
+	} {
+		if !strings.Contains(topResFrag, needle) {
+			t.Fatalf("topup-result markup missing %q", needle)
+		}
+	}
+	iTopSubmit := strings.Index(s, `getElementById('topup-submit').addEventListener`)
+	if iTopSubmit < 0 {
+		t.Fatal("topup submit handler missing")
+	}
+	topSubmitSnip := s[iTopSubmit:]
+	if len(topSubmitSnip) > 2600 {
+		topSubmitSnip = topSubmitSnip[:2600]
+	}
+	if !strings.Contains(topSubmitSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
+		t.Fatal("balance topup success must auto-open payment in a new tab")
+	}
+	iTopRefBind := strings.Index(s, `topupRefreshBtn.addEventListener`)
+	if iTopRefBind < 0 {
+		t.Fatal("topup balance refresh binding missing")
+	}
+	topRefSnip := s[iTopRefBind:]
+	if idx := strings.Index(topRefSnip, `document.querySelectorAll('.amt-quick')`); idx > 0 {
+		topRefSnip = topRefSnip[:idx]
+	}
+	if !strings.Contains(topRefSnip, `refreshAccountSnapshot(tok)`) {
+		t.Fatal("«Обновить баланс» must call refreshAccountSnapshot(tok)")
+	}
 	idxSvcPayBlock := strings.Index(s, `"svc-pay-ok mt-2 d-none"`)
 	if idxSvcPayBlock < 0 {
 		t.Fatal("svc-pay-ok block missing")

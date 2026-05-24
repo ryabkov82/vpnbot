@@ -85,10 +85,13 @@
 						<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">Пополнить баланс</button>
 					</div>
 					<div id="topup-result" class="alert alert-secondary d-none py-3" role="region">
-						<div class="d-grid gap-2">
-							<a class="btn btn-success" id="topup-pay-open" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
+						<div id="topup-result-heading" class="small text-secondary mb-2">Страница оплаты открыта в новой вкладке.</div>
+						<p id="topup-result-detail" class="small text-secondary mb-2 mb-lg-3">После оплаты вернитесь в кабинет и обновите баланс. Баланс должен обновиться в течение 1–2 минут.</p>
+						<div id="topup-result-fallback-msg" class="small text-secondary mb-2 d-none">Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».</div>
+						<div class="d-flex flex-wrap gap-2 mb-2">
+							<button type="button" class="btn btn-sm btn-outline-light" id="topup-result-refresh">Обновить баланс</button>
+							<a id="topup-result-pay-fallback" class="btn btn-sm btn-success d-none" href="#">Открыть оплату</a>
 						</div>
-						<p class="small text-secondary mt-2 mb-0">После оплаты вернитесь в кабинет и обновите страницу. Баланс должен обновиться в течение 1–2 минут.</p>
 					</div>
 				</div>
 			</div>
@@ -109,7 +112,7 @@
 							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="600">600 ₽</button>
 						</div>
 						<div class="mb-3">
-							<label for="topup-custom" class="form-label">Другая сумма (50–10 000 ₽, до 2 знаков)</label>
+							<label for="topup-custom" class="form-label">Другая сумма: 50–10 000 ₽, до 2 знаков после запятой</label>
 							<input type="number" class="form-control" id="topup-custom" min="50" max="10000" step="0.01" placeholder="Например 250">
 						</div>
 						<div class="alert alert-danger py-2 small d-none" id="topup-modal-err"></div>
@@ -405,6 +408,13 @@
 			}
 			topupHandlersBound = true;
 			var customIn = document.getElementById('topup-custom');
+			var topupRefreshBtn = document.getElementById('topup-result-refresh');
+			if (topupRefreshBtn && topupRefreshBtn.dataset.bound !== '1') {
+				topupRefreshBtn.dataset.bound = '1';
+				topupRefreshBtn.addEventListener('click', function () {
+					refreshAccountSnapshot(tok).catch(function () {});
+				});
+			}
 			document.querySelectorAll('.amt-quick').forEach(function (b) {
 				b.addEventListener('click', function () {
 					customIn.value = b.getAttribute('data-amt');
@@ -433,12 +443,51 @@
 							errEl.classList.remove('d-none');
 							return;
 						}
+						var urlRaw = xv.j && xv.j.payment_url ? String(xv.j.payment_url).trim() : '';
+						if (!urlRaw) {
+							errEl.textContent = 'Ссылка на оплату недоступна';
+							errEl.classList.remove('d-none');
+							return;
+						}
 						var modalEl = document.getElementById('topupModal');
 						var m = bootstrap.Modal.getInstance(modalEl);
 						if (m) {
 							m.hide();
 						}
-						document.getElementById('topup-pay-open').href = xv.j.payment_url;
+						var headEl = document.getElementById('topup-result-heading');
+						var fbMsg = document.getElementById('topup-result-fallback-msg');
+						var fbLink = document.getElementById('topup-result-pay-fallback');
+						if (fbMsg) {
+							fbMsg.classList.add('d-none');
+						}
+						if (fbLink) {
+							fbLink.classList.add('d-none');
+							fbLink.href = '#';
+							fbLink.removeAttribute('target');
+							fbLink.removeAttribute('rel');
+						}
+						if (headEl) {
+							headEl.classList.remove('d-none');
+						}
+						var popWin = window.open(urlRaw, '_blank', 'noopener');
+						if (!popWin) {
+							if (headEl) {
+								headEl.classList.add('d-none');
+							}
+							if (fbMsg) {
+								fbMsg.classList.remove('d-none');
+							}
+							if (fbLink) {
+								fbLink.href = urlRaw;
+								fbLink.target = '_blank';
+								fbLink.rel = 'noopener noreferrer';
+								fbLink.classList.remove('d-none');
+							}
+						} else {
+							try {
+								popWin.opener = null;
+							} catch (ep) {}
+						}
 						document.getElementById('topup-result').classList.remove('d-none');
 						var balTabBtn = document.getElementById('tab-balance-tab');
 						if (balTabBtn && window.bootstrap && bootstrap.Tab) {

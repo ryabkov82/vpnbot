@@ -24,6 +24,57 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte(`/api/account/balance/topup`)) {
 		t.Fatal("topup endpoint missing")
 	}
+	if strings.Contains(raw, `(50–10 000 ₽, до 2 знаков)</label>`) {
+		t.Fatal("embed: ambiguous topup amount label removed")
+	}
+	if !strings.Contains(raw, `50–10 000 ₽, до 2 знаков после запятой`) {
+		t.Fatal("embed: topup label must clarify decimal places")
+	}
+	iER := strings.Index(raw, `id="topup-result" class="alert`)
+	if iER < 0 {
+		t.Fatal("embed topup-result missing")
+	}
+	jEmbModal := strings.Index(raw[iER:], `<div class="modal fade" id="topupModal"`)
+	if jEmbModal < 0 {
+		t.Fatal("embed topup modal missing")
+	}
+	erFrag := raw[iER : iER+jEmbModal]
+	if strings.Contains(erFrag, `id="topup-pay-open"`) || strings.Contains(erFrag, `>Перейти к оплате<`) {
+		t.Fatal("embed topup-result must not show post-success Перейти к оплате")
+	}
+	for _, needle := range []string{
+		`Страница оплаты открыта в новой вкладке`,
+		`обновите баланс. Баланс должен обновиться в течение 1–2 минут`,
+		`Если страница оплаты не открылась автоматически`,
+		`topup-result-pay-fallback`,
+		`Обновить баланс`,
+	} {
+		if !strings.Contains(erFrag, needle) {
+			t.Fatalf("embed topup-result missing %q", needle)
+		}
+	}
+	iTS := strings.Index(raw, `getElementById('topup-submit').addEventListener`)
+	if iTS < 0 {
+		t.Fatal("embed topup submit handler missing")
+	}
+	tsSnip := raw[iTS:]
+	if len(tsSnip) > 2600 {
+		tsSnip = tsSnip[:2600]
+	}
+	if !strings.Contains(tsSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
+		t.Fatal("embed balance topup must window.open payment_url")
+	}
+	iEmbTR := strings.Index(raw, `topupRefreshBtn.addEventListener`)
+	if iEmbTR < 0 {
+		t.Fatal("embed topup refresh btn bind missing")
+	}
+	embTRSnip := raw[iEmbTR:]
+	if idx := strings.Index(embTRSnip, `document.querySelectorAll('.amt-quick')`); idx > 0 {
+		embTRSnip = embTRSnip[:idx]
+	}
+	if !strings.Contains(embTRSnip, `refreshAccountSnapshot(tok)`) {
+		t.Fatal("embed «Обновить баланс» must refresh via refreshAccountSnapshot(tok)")
+	}
 	if strings.Contains(raw, "Продлить") {
 		t.Fatal("renew button word must not appear")
 	}
