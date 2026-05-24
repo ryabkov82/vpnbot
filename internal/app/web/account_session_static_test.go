@@ -270,4 +270,20 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 			t.Fatalf("session UI leak %q", forbid)
 		}
 	}
+	for _, needle := range []string{
+		`id="logout-btn"`,
+		`>Выйти</button>`,
+		`localStorage.removeItem(STORAGE)`,
+		`'/account?logged_out=1'`,
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("session logout UI/JS missing %q", needle)
+		}
+	}
+	if strings.Count(s, `id="user-line"`) != 1 {
+		t.Fatal("session must expose exactly one #user-line for dashboard email")
+	}
+	if !strings.Contains(s, `if (!rawTok)`) || !strings.Contains(s, `show('no-token', true)`) {
+		t.Fatal("session must reveal no-token when URL and storage lack a token")
+	}
 }

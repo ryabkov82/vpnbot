@@ -19,6 +19,26 @@ func accountIndexHTMLPath(t *testing.T) string {
 	return filepath.Join(filepath.Dir(fname), "static", "account", "index.html")
 }
 
+func TestAccountIndexStatic_LoggedOutUX(t *testing.T) {
+	b, err := os.ReadFile(accountIndexHTMLPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `logged-out-msg`) {
+		t.Fatal("logged-out-msg id missing")
+	}
+	if !strings.Contains(s, `Вы вышли из личного кабинета.`) {
+		t.Fatal("logged-out copy missing")
+	}
+	if !strings.Contains(s, `params.get('logged_out') === '1'`) {
+		t.Fatal("logged_out query gate missing")
+	}
+	if !strings.Contains(s, `window.history.replaceState({}, document.title, '/account')`) {
+		t.Fatal("logged_out strip query via replaceState missing")
+	}
+}
+
 func TestAccountIndexStaticHasFaviconLinks(t *testing.T) {
 	b, err := os.ReadFile(accountIndexHTMLPath(t))
 	if err != nil {

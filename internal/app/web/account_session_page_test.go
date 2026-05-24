@@ -274,4 +274,18 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(emSnip, "/api/account/service/order") {
 		t.Fatal("embed NOT PAID strip must not call service/order path")
 	}
+	for _, needle := range []string{
+		`id="logout-btn"`,
+		`localStorage.removeItem(STORAGE)`,
+		`'/account?logged_out=1'`,
+		`if (!rawTok)`,
+		`show('no-token', true)`,
+	} {
+		if !strings.Contains(raw, needle) {
+			t.Fatalf("embed session missing %q", needle)
+		}
+	}
+	if strings.Count(raw, `id="user-line"`) != 1 {
+		t.Fatal("embed session must have single #user-line")
+	}
 }
