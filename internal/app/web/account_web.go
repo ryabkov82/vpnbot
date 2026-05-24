@@ -255,6 +255,46 @@ func accountDashboardCanShowConnect(cfg *config.Config, us models.UserService) b
 	return strings.HasPrefix(strings.TrimSpace(us.Category), "vpn-mz-")
 }
 
+// parseDashboardUserCostString читает стоимость из ответа SHM для user_service (поле cost — строка).
+func parseDashboardUserCostString(costStr string) float64 {
+	s := strings.TrimSpace(strings.ReplaceAll(costStr, ",", "."))
+	if s == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f <= 0 || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return math.Round(f*100) / 100
+}
+
+// dashboardTariffCostForUserService — сумма для пополнения баланса под тариф: user_service.cost иначе каталог по BaseServiceID.
+func dashboardTariffCostForUserService(app accountWebApp, us *models.UserService) float64 {
+	if us == nil {
+		return 0
+	}
+	c := parseDashboardUserCostString(us.Cost)
+	if c > 0 {
+		return c
+	}
+	if us.BaseServiceID <= 0 {
+		return 0
+	}
+	svc, err := app.GetServiceByID(us.BaseServiceID)
+	if err != nil || svc == nil {
+		return 0
+	}
+	preview := models.BuildServicePreview(svc)
+	v := preview.Cost
+	if v <= 0 {
+		v = svc.Cost
+	}
+	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	return math.Round(v*100) / 100
+}
+
 type accountServicesUserJSON struct {
 	Email    string  `json:"email"`
 	UserID   int     `json:"user_id"`
@@ -275,6 +315,7 @@ type accountServicesRowJSON struct {
 	ConnectApp    string   `json:"connect_app"`
 	Badges        []string `json:"badges"`
 	CanConnect    bool     `json:"can_connect"`
+	Cost          float64  `json:"cost,omitempty"`
 }
 
 type accountServicesOKJSON struct {
@@ -336,7 +377,7 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 			if badges == nil {
 				badges = []string{}
 			}
-			out = append(out, accountServicesRowJSON{
+			row := accountServicesRowJSON{
 				UserServiceID: us.ServiceID,
 				ServiceID:     us.BaseServiceID,
 				Name:          us.Name,
@@ -348,7 +389,11 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 				ConnectApp:    conn,
 				Badges:        badges,
 				CanConnect:    accountDashboardCanShowConnect(cfg, *us),
-			})
+			}
+			if pay := dashboardTariffCostForUserService(app, us); pay > 0 {
+				row.Cost = pay
+			}
+			out = append(out, row)
 		}
 
 		writeJSON(w, http.StatusOK, accountServicesOKJSON{

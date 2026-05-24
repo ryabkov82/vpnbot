@@ -162,6 +162,31 @@
 			cardRoot.querySelector('.catalog-card-spinner').classList.add('d-none');
 		}
 
+		function resetCatalogOrderState() {
+			document.querySelectorAll('.js-buy-catalog').forEach(function (btn) {
+				btn.disabled = false;
+				btn.textContent = 'Купить';
+			});
+			document.querySelectorAll('.catalog-card-spinner').forEach(function (el) {
+				el.classList.add('d-none');
+				el.classList.remove('d-flex');
+			});
+			document.querySelectorAll('.catalog-card-success').forEach(function (el) {
+				el.classList.add('d-none');
+			});
+			document.querySelectorAll('.js-catalog-success-text').forEach(function (el) {
+				el.textContent = '';
+			});
+			document.querySelectorAll('.js-card-pay').forEach(function (el) {
+				el.href = '#';
+				el.removeAttribute('target');
+			});
+			document.querySelectorAll('.catalog-card-err').forEach(function (el) {
+				el.classList.add('d-none');
+				el.textContent = '';
+			});
+		}
+
 		function loadAccountCatalog(tok) {
 			document.getElementById('catalog-err-box').classList.add('d-none');
 			document.getElementById('catalog-loading-msg').classList.remove('d-none');
@@ -221,7 +246,7 @@
 							'<p class="mb-2 mb-lg-3 js-catalog-success-text"></p>' +
 							'<div class="d-grid gap-2 d-sm-flex flex-sm-wrap">' +
 							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>' +
-							'<button type="button" class="btn btn-sm btn-outline-light js-card-reload">Обновить услуги</button>' +
+							'<button type="button" class="btn btn-sm btn-outline-light js-card-goto-my-services">Перейти к моим услугам</button>' +
 							'</div></div>' +
 							'</div></div>';
 						var spin = wrap.querySelector('.catalog-card-spinner');
@@ -230,10 +255,14 @@
 						var cardErr = wrap.querySelector('.catalog-card-err');
 						var cardOk = wrap.querySelector('.catalog-card-success');
 						var payA = wrap.querySelector('.js-card-pay');
-						var reloadB = wrap.querySelector('.js-card-reload');
+						var gotoMySvcsBtn = wrap.querySelector('.js-card-goto-my-services');
 						var cardOkMsg = wrap.querySelector('.js-catalog-success-text');
 
-						reloadB.addEventListener('click', function () { location.reload(); });
+						gotoMySvcsBtn.addEventListener('click', function () {
+							refreshAccountSnapshot(tok).then(function () {
+								showMyServicesTabScrollCards();
+							}).catch(function () {});
+						});
 
 						buyBtn.addEventListener('click', function () {
 							var cid = parseInt(buyBtn.getAttribute('data-service-id'), 10);
@@ -273,6 +302,7 @@
 										'. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.';
 									cardOkMsg.textContent = (y.j && y.j.existing_unpaid === true) ? dupMsg : neutralMsg;
 									cardOk.classList.remove('d-none');
+									refreshAccountSnapshot(tok).catch(function () {});
 									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 								})
 								.catch(function () {
@@ -438,6 +468,36 @@
 				});
 		}
 
+		function showMyServicesTabScrollCards() {
+			var svcTabBtn = document.getElementById('tab-services-tab');
+			if (svcTabBtn && window.bootstrap && bootstrap.Tab) {
+				bootstrap.Tab.getOrCreateInstance(svcTabBtn).show();
+			}
+			var cardsEl = document.getElementById('cards');
+			if (cardsEl) {
+				cardsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			}
+		}
+
+		function svcTopupAmountUsable(v) {
+			if (typeof v !== 'number' || !isFinite(v) || v < 50 || v > 10000) {
+				return false;
+			}
+			var norm = Math.round(v * 100) / 100;
+			return Math.abs(v - norm) < 1e-9;
+		}
+
+		function openBalanceTabWithTopupModal() {
+			var balTabBtn = document.getElementById('tab-balance-tab');
+			if (balTabBtn && window.bootstrap && bootstrap.Tab) {
+				bootstrap.Tab.getOrCreateInstance(balTabBtn).show();
+			}
+			var modalEl = document.getElementById('topupModal');
+			if (modalEl && window.bootstrap && bootstrap.Modal) {
+				bootstrap.Modal.getOrCreateInstance(modalEl).show();
+			}
+		}
+
 		function renderServiceCards(tok, services) {
 			var wrap = document.getElementById('cards');
 			wrap.innerHTML = '';
@@ -480,10 +540,35 @@
 				}
 				var cancelHtml = '';
 				if (!active) {
-					cancelHtml =
-						'<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">Отменить услугу</button>' +
+					if (notPaid) {
+						var payAmt = typeof s.cost === 'number' && isFinite(s.cost) ? s.cost : -1;
+						var payAmtAttr = payAmt >= 0 ? String(payAmt) : '';
+						cancelHtml =
+							'<div class="mt-2 d-grid gap-2 d-sm-flex flex-sm-wrap">' +
+							'<button type="button" class="btn btn-sm btn-success js-svc-balance-pay" data-pay-amt="' + escapeHtml(payAmtAttr) +
+							'">Перейти к оплате</button>' +
+							'<button type="button" class="btn btn-sm btn-outline-danger js-cancel-service" data-usid="' + usid + '">' +
+							'Отменить услугу</button>' +
+							'</div>' +
+							'<div class="svc-pay-err small text-danger mt-2 d-none" role="alert"></div>' +
+							'<div class="svc-pay-ok mt-2 d-none">' +
+							'<div class="small text-secondary js-svc-pay-ok-heading">' +
+							'Страница оплаты открыта в новой вкладке. После оплаты вернитесь в кабинет и обновите список услуг.</div>' +
+							'<div class="small text-secondary mt-2">' +
+							'После оплаты баланс будет пополнен. Если средств достаточно, услуга активируется автоматически.</div>' +
+							'<div class="small text-secondary mt-2 js-svc-pay-fallback-msg d-none">' +
+							'Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».</div>' +
+							'<div class="d-flex gap-2 flex-wrap mt-2">' +
+							'<a class="btn btn-sm btn-success js-svc-pay-fallback d-none" href="#">Открыть оплату</a>' +
+							'<button type="button" class="btn btn-sm btn-outline-light js-svc-pay-refresh">Обновить услуги</button>' +
+							'</div>' +
+							'</div>';
+					}
+					cancelHtml +=
 						'<div class="svc-cancel-err small text-danger mt-2 d-none" role="alert"></div>' +
-						'<div class="svc-cancel-ok small text-success mt-2 d-none" role="status"></div>';
+						'<div class="svc-cancel-ok small text-success mt-2 d-none" role="status"></div>' +
+						(notPaid ? '' : '<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">' +
+							'Отменить услугу</button>');
 				}
 				cardEl.innerHTML = '<div class="' + svcCardCls + '" style="background:var(--bs-secondary-bg)">' +
 					'<div class="card-body">' +
@@ -545,6 +630,7 @@
 									okBox.classList.remove('d-none');
 									document.getElementById('post-delete-buy-hint').classList.remove('d-none');
 									return refreshAccountSnapshot(tok).then(function () {
+										resetCatalogOrderState();
 										var buyTabBtn = document.getElementById('tab-buy-tab');
 										if (buyTabBtn && window.bootstrap && bootstrap.Tab) {
 											bootstrap.Tab.getOrCreateInstance(buyTabBtn).show();
@@ -560,6 +646,118 @@
 								});
 						});
 					})(String(s.name || ''), usid);
+				}
+				var payBtn = cardRoot.querySelector('.js-svc-balance-pay');
+				if (payBtn) {
+					(function (cr, baseTok, initBtn) {
+						var payErr = cr.querySelector('.svc-pay-err');
+						var payOk = cr.querySelector('.svc-pay-ok');
+						var payOkHeading = payOk ? payOk.querySelector('.js-svc-pay-ok-heading') : null;
+						var payFallbackMsg = payOk ? payOk.querySelector('.js-svc-pay-fallback-msg') : null;
+						var payFallbackA = payOk ? payOk.querySelector('.js-svc-pay-fallback') : null;
+						var payRf = cr.querySelector('.js-svc-pay-refresh');
+						var payInitLabel = initBtn.textContent || 'Перейти к оплате';
+						if (payRf) {
+							payRf.addEventListener('click', function () {
+								refreshAccountSnapshot(baseTok).catch(function () {});
+							});
+						}
+						initBtn.addEventListener('click', function () {
+							var rawAttr = String(initBtn.getAttribute('data-pay-amt') || '').trim().replace(',', '.');
+							var amt = parseFloat(rawAttr);
+							if (!svcTopupAmountUsable(amt)) {
+								openBalanceTabWithTopupModal();
+								return;
+							}
+							initBtn.disabled = true;
+							initBtn.textContent = 'Готовим оплату...';
+							if (payErr) {
+								payErr.textContent = '';
+								payErr.classList.add('d-none');
+							}
+							if (payOk) {
+								payOk.classList.add('d-none');
+							}
+							fetch('/api/account/balance/topup', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ token: baseTok, amount: amt })
+							})
+								.then(function (r) {
+									return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+								})
+								.then(function (op) {
+									initBtn.disabled = false;
+									initBtn.textContent = payInitLabel;
+									if (!op.ok) {
+										var msg = '';
+										var jErr = op.j;
+										if (jErr && jErr.error) {
+											msg = String(jErr.error);
+										}
+										if (!msg) {
+											msg = 'Ошибка платежа';
+										}
+										if (payErr) {
+											payErr.textContent = msg;
+											payErr.classList.remove('d-none');
+										}
+										return;
+									}
+									var u = op.j && op.j.payment_url ? String(op.j.payment_url).trim() : '';
+									if (!u) {
+										if (payErr) {
+											payErr.textContent = 'Ссылка на оплату недоступна';
+											payErr.classList.remove('d-none');
+										}
+										return;
+									}
+									initBtn.classList.add('d-none');
+									if (payFallbackMsg) {
+										payFallbackMsg.classList.add('d-none');
+									}
+									if (payFallbackA) {
+										payFallbackA.classList.add('d-none');
+										payFallbackA.href = '#';
+										payFallbackA.removeAttribute('target');
+										payFallbackA.removeAttribute('rel');
+									}
+									if (payOkHeading) {
+										payOkHeading.classList.remove('d-none');
+									}
+									var openedWin = window.open(u, '_blank', 'noopener');
+									if (!openedWin) {
+										if (payOkHeading) {
+											payOkHeading.classList.add('d-none');
+										}
+										if (payFallbackMsg) {
+											payFallbackMsg.classList.remove('d-none');
+										}
+										if (payFallbackA) {
+											payFallbackA.href = u;
+											payFallbackA.target = '_blank';
+											payFallbackA.rel = 'noopener noreferrer';
+											payFallbackA.classList.remove('d-none');
+										}
+									} else {
+										try {
+											openedWin.opener = null;
+										} catch (ew) {}
+									}
+									if (payOk) {
+										payOk.classList.remove('d-none');
+									}
+								})
+								.catch(function () {
+									initBtn.disabled = false;
+									initBtn.textContent = payInitLabel;
+									if (payErr) {
+										payErr.textContent = 'Сеть недоступна';
+										payErr.classList.remove('d-none');
+									}
+								});
+						});
+					})(cardRoot, tok, payBtn);
 				}
 			});
 		}

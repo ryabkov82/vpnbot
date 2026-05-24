@@ -616,6 +616,86 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	}
 }
 
+func TestServeAccountServices_NotPaidIncludesCostFromUser(t *testing.T) {
+	cfg := orderStartTestCfg()
+	secret := cfg.WebSales.OrderTokenSecret
+	tok, err := CreateAccountToken(secret, "paid@test.com", 77, "web_lp", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		balance: &models.UserBalance{Balance: 0, Forecast: 0},
+		services: []models.UserService{{
+			Name:          "Подписка",
+			ServiceID:     401,
+			BaseServiceID: 9,
+			Status:        "NOT PAID",
+			Cost:          "150,50",
+			Expire:        "—",
+			Period:        "1",
+			Category:      "vpn-mz-test",
+		}},
+		svcByID: map[int]*models.Service{},
+	}
+	h := serveAccountServices(cfg, st)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	raw := strings.TrimSpace(rec.Body.String())
+	var env accountServicesOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Services) != 1 || env.Services[0].Cost != 150.5 || env.Services[0].Status != "NOT PAID" {
+		t.Fatalf("services row: %+v", env.Services)
+	}
+	for _, forbid := range []string{"subscription_url", "internal_squad", "Remnawave", `"config"`} {
+		if strings.Contains(strings.ToLower(raw), strings.ToLower(forbid)) {
+			t.Fatalf("unexpected substring %q in %s", forbid, raw)
+		}
+	}
+}
+
+func TestServeAccountServices_NotPaidUsesCatalogFallbackWhenUserCostBlank(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "cat@test.com", 88, "web_lc", time.Hour)
+	st := &stubAccountWeb{
+		balance: &models.UserBalance{Balance: 0, Forecast: 0},
+		services: []models.UserService{{
+			Name:          "Подписка",
+			ServiceID:     402,
+			BaseServiceID: 5,
+			Status:        "NOT PAID",
+			Cost:          "",
+			Expire:        "—",
+			Period:        "1",
+			Category:      "vpn-mz-test",
+		}},
+		svcByID: map[int]*models.Service{
+			5: {
+				ServiceID:    5,
+				Name:         "Цифровой тариф",
+				Cost:         320,
+				AllowToOrder: 1,
+			},
+		},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	var env accountServicesOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Services) != 1 || env.Services[0].Cost != 320 || env.Services[0].ServiceID != 5 {
+		t.Fatalf("want catalog cost fallback, got %+v", env.Services[0])
+	}
+}
+
 func TestServeAccountConnect_ACTIVE_OK(t *testing.T) {
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret

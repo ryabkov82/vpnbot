@@ -76,6 +76,15 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte(`js-card-pay`)) {
 		t.Fatal("per-card pay button missing")
 	}
+	if !bytes.Contains(b, []byte(`Перейти к моим услугам`)) || !bytes.Contains(b, []byte(`js-card-goto-my-services`)) {
+		t.Fatal("post-order must link to my services tab without full reload")
+	}
+	if strings.Contains(raw, "location.reload") {
+		t.Fatal("session page must not use location.reload for refreshing services after purchase")
+	}
+	if !strings.Contains(raw, "refreshAccountSnapshot(tok).catch(function () {})") {
+		t.Fatal("success order handler should refresh snapshot in background")
+	}
 	if !strings.Contains(raw, "/api/account/service/delete") {
 		t.Fatal("delete endpoint missing")
 	}
@@ -93,5 +102,79 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	}
 	if !strings.Contains(raw, "post-delete-buy-hint") {
 		t.Fatal("post-delete buy tab hint missing")
+	}
+	if !strings.Contains(raw, "function resetCatalogOrderState") {
+		t.Fatal("embedded session must define resetCatalogOrderState for catalog staleness fix")
+	}
+	if !strings.Contains(raw, "resetCatalogOrderState()") {
+		t.Fatal("embedded session must call resetCatalogOrderState after delete refresh")
+	}
+	iDeleteAPI := strings.Index(raw, `'/api/account/service/delete'`)
+	if iDeleteAPI < 0 {
+		t.Fatal("delete endpoint string missing")
+	}
+	if !strings.Contains(raw[iDeleteAPI:], "refreshAccountSnapshot(tok).then(function () {") {
+		t.Fatal("delete success must chain refreshAccountSnapshot before catalog reset")
+	}
+	iAwait := strings.Index(raw, `'Ожидает оплаты'`)
+	if iAwait < 0 {
+		t.Fatal("post-order button literal missing")
+	}
+	iScr := strings.Index(raw[iAwait:], "wrap.scrollIntoView")
+	if iScr < 0 {
+		t.Fatal("expected order-success scroll anchor")
+	}
+	if strings.Contains(raw[iAwait:iAwait+iScr], "resetCatalogOrderState") {
+		t.Fatal("order success fragment must not call resetCatalogOrderState")
+	}
+	idxPayOk := strings.Index(raw, `"svc-pay-ok mt-2 d-none"`)
+	if idxPayOk < 0 {
+		t.Fatal("embed svc-pay-ok missing")
+	}
+	emPayOk := raw[idxPayOk:]
+	if len(emPayOk) > 920 {
+		emPayOk = emPayOk[:920]
+	}
+	if strings.Contains(emPayOk, `>Перейти к оплате`) {
+		t.Fatal("embed svc-pay-ok must not include duplicate Перейти к оплате")
+	}
+	if !strings.Contains(emPayOk, `Страница оплаты открыта в новой вкладке`) ||
+		!strings.Contains(emPayOk, `js-svc-pay-fallback`) ||
+		!strings.Contains(emPayOk, `Открыть оплату`) {
+		t.Fatal("embed svc-pay-ok copy/fallback mismatch")
+	}
+	if strings.Contains(raw, "js-svc-pay-open") {
+		t.Fatal("embed must not retain js-svc-pay-open")
+	}
+	for _, needle := range []string{
+		`btn-success js-svc-balance-pay`,
+		`Перейти к оплате</button>`,
+		`После оплаты баланс будет пополнен`,
+		`Обновить услуги`,
+	} {
+		if !strings.Contains(raw, needle) {
+			t.Fatalf("embed NOT PAID markup missing %q", needle)
+		}
+	}
+	idxEmbPay := strings.Index(raw, `var payBtn = cardRoot.querySelector('.js-svc-balance-pay')`)
+	if idxEmbPay < 0 {
+		t.Fatal("embed: NOT PAID pay handler anchor missing")
+	}
+	emSnip := raw[idxEmbPay:]
+	if len(emSnip) > 4500 {
+		emSnip = emSnip[:4500]
+	}
+	for _, needle := range []string{
+		"fetch('/api/account/balance/topup'",
+		"Готовим оплату...",
+		`JSON.stringify({ token: baseTok, amount: amt })`,
+		"window.open(u, '_blank', 'noopener')",
+	} {
+		if !strings.Contains(emSnip, needle) {
+			t.Fatalf("embed NOT PAID pay handler missing %q", needle)
+		}
+	}
+	if strings.Contains(emSnip, "/api/account/service/order") {
+		t.Fatal("embed NOT PAID strip must not call service/order path")
 	}
 }
