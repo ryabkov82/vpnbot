@@ -64,11 +64,19 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		t.Fatal("embed topup submit handler missing")
 	}
 	tsSnip := raw[iTS:]
-	if len(tsSnip) > 2600 {
-		tsSnip = tsSnip[:2600]
+	jEmbedTopEnd := strings.Index(tsSnip, "\n\t\tfunction refreshAccountSnapshot")
+	if jEmbedTopEnd > 0 {
+		tsSnip = tsSnip[:jEmbedTopEnd]
 	}
 	if !strings.Contains(tsSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
 		t.Fatal("embed balance topup must window.open payment_url")
+	}
+	if strings.Contains(tsSnip, `getElementById('tab-balance-tab')`) {
+		t.Fatal("embed topup success must not switch removed balance pill")
+	}
+	if !strings.Contains(tsSnip, `getElementById('balance-wrap')`) ||
+		!strings.Contains(tsSnip, `scrollIntoView`) {
+		t.Fatal("embed topup success must scroll the balance card after showing result")
 	}
 	iEmbTR := strings.Index(raw, `topupRefreshBtn.addEventListener`)
 	if iEmbTR < 0 {
@@ -105,8 +113,40 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte(`Купить VPN`)) {
 		t.Fatal("buy tab missing")
 	}
-	if !bytes.Contains(b, []byte(`Баланс</button>`)) || !bytes.Contains(b, []byte(`>Баланс<`)) {
-		t.Fatal("balance tab pill missing")
+	iBw := strings.Index(raw, `id="balance-wrap"`)
+	if iBw < 0 {
+		t.Fatal("embed balance-wrap missing")
+	}
+	iCt := strings.Index(raw, `id="cabinet-tabs"`)
+	iPaneSvc := strings.Index(raw, `id="tab-pane-services"`)
+	if iCt < 0 || iPaneSvc < 0 || !(iBw < iCt && iCt < iPaneSvc) {
+		t.Fatal("embed balance-wrap must sit above tabs and outside tab panes")
+	}
+	if strings.Count(raw, `data-bs-toggle="pill"`) != 2 {
+		t.Fatal("embed: cabinet must have exactly two pills (services + buy)")
+	}
+	for _, forbid := range []string{
+		`id="tab-balance-tab"`,
+		`id="tab-pane-balance"`,
+		`aria-controls="tab-pane-balance"`,
+		`data-bs-target="#tab-pane-balance"`,
+		`getElementById('tab-balance-tab')`,
+	} {
+		if strings.Contains(raw, forbid) {
+			t.Fatalf("embed must not retain balance tab %q", forbid)
+		}
+	}
+	iOpenBalMod := strings.Index(raw, `function openBalanceTabWithTopupModal()`)
+	if iOpenBalMod < 0 {
+		t.Fatal("openBalanceTabWithTopupModal missing in embed")
+	}
+	openBalModSnip := raw[iOpenBalMod:]
+	if k := strings.Index(openBalModSnip, `function renderServiceCards`); k > 0 {
+		openBalModSnip = openBalModSnip[:k]
+	}
+	if strings.Contains(openBalModSnip, `tab-balance-tab`) ||
+		strings.Contains(openBalModSnip, `bootstrap.Tab`) {
+		t.Fatal("openBalanceTabWithTopupModal must only open modal, not switch pills")
 	}
 	if !bytes.Contains(b, []byte(`Создаем...`)) || !bytes.Contains(b, []byte(`Создаем услугу`)) {
 		t.Fatal(`buy-flow loading strings missing`)

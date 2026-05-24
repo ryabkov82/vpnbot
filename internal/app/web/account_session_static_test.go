@@ -148,16 +148,58 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 			t.Fatalf("topup-result markup missing %q", needle)
 		}
 	}
+	iBalWrap := strings.Index(s, `id="balance-wrap"`)
+	iCabTabs := strings.Index(s, `id="cabinet-tabs"`)
+	iPaneSvcEarly := strings.Index(s, `id="tab-pane-services"`)
+	if iBalWrap < 0 || iCabTabs < 0 || iPaneSvcEarly < 0 {
+		t.Fatal("balance-wrap, cabinet-tabs, or tab-pane-services anchor missing")
+	}
+	if !(iBalWrap < iCabTabs && iCabTabs < iPaneSvcEarly) {
+		t.Fatal("balance card must precede pills and stay outside tab panes")
+	}
+	if strings.Count(s, `data-bs-toggle="pill"`) != 2 {
+		t.Fatal("cabinet must have exactly two pills (services + buy)")
+	}
+	for _, forbid := range []string{
+		`id="tab-balance-tab"`,
+		`id="tab-pane-balance"`,
+		`aria-controls="tab-pane-balance"`,
+		`data-bs-target="#tab-pane-balance"`,
+		`getElementById('tab-balance-tab')`,
+	} {
+		if strings.Contains(s, forbid) {
+			t.Fatalf("session must not retain balance-tab artefact %q", forbid)
+		}
+	}
+	iOpenBal := strings.Index(s, `function openBalanceTabWithTopupModal()`)
+	if iOpenBal < 0 {
+		t.Fatal("openBalanceTabWithTopupModal definition missing")
+	}
+	openBalFunc := s[iOpenBal:]
+	if jOpen := strings.Index(openBalFunc, `function renderServiceCards`); jOpen > 0 {
+		openBalFunc = openBalFunc[:jOpen]
+	}
+	if strings.Contains(openBalFunc, `tab-balance-tab`) || strings.Contains(openBalFunc, `bootstrap.Tab`) {
+		t.Fatal("openBalanceTabWithTopupModal must only open modal, not switch pills")
+	}
 	iTopSubmit := strings.Index(s, `getElementById('topup-submit').addEventListener`)
 	if iTopSubmit < 0 {
 		t.Fatal("topup submit handler missing")
 	}
 	topSubmitSnip := s[iTopSubmit:]
-	if len(topSubmitSnip) > 2600 {
-		topSubmitSnip = topSubmitSnip[:2600]
+	jTopSubmitEnd := strings.Index(topSubmitSnip, "\n\t\tfunction refreshAccountSnapshot")
+	if jTopSubmitEnd > 0 {
+		topSubmitSnip = topSubmitSnip[:jTopSubmitEnd]
 	}
 	if !strings.Contains(topSubmitSnip, `window.open(urlRaw, '_blank', 'noopener')`) {
 		t.Fatal("balance topup success must auto-open payment in a new tab")
+	}
+	if strings.Contains(topSubmitSnip, `getElementById('tab-balance-tab')`) {
+		t.Fatal("topup success must not force-switch removed balance pill")
+	}
+	if !strings.Contains(topSubmitSnip, `getElementById('balance-wrap')`) ||
+		!strings.Contains(topSubmitSnip, `scrollIntoView`) {
+		t.Fatal("topup success must reveal result and scroll the balance card into view")
 	}
 	iTopRefBind := strings.Index(s, `topupRefreshBtn.addEventListener`)
 	if iTopRefBind < 0 {
