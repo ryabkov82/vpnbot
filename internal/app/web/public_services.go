@@ -3,6 +3,7 @@ package web
 import (
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
@@ -62,7 +63,32 @@ func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service) [
 			Badges:      badges,
 		})
 	}
+	sortPublicTariffRowsPremiumLast(out)
 	return out
+}
+
+// sortPublicTariffRowsPremiumLast: сначала standard (tier ≠ premium), затем premium.
+// Внутри группы: period ↑, затем cost ↑, затем service_id ↑.
+func sortPublicTariffRowsPremiumLast(rows []publicServiceJSON) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		pi := isPublicTariffRowPremium(rows[i])
+		pj := isPublicTariffRowPremium(rows[j])
+		if pi != pj {
+			return !pi && pj
+		}
+		a, b := rows[i], rows[j]
+		if a.Period != b.Period {
+			return a.Period < b.Period
+		}
+		if a.Cost != b.Cost {
+			return a.Cost < b.Cost
+		}
+		return a.ServiceID < b.ServiceID
+	})
+}
+
+func isPublicTariffRowPremium(row publicServiceJSON) bool {
+	return strings.TrimSpace(row.Tier) == publicTierPremium
 }
 
 func servePublicServices(cfg *config.Config, app publicServicesApp) http.HandlerFunc {
