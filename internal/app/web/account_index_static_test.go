@@ -21,4 +21,10 @@ func TestAccountIndexMagicLinkSuccessCopy(t *testing.T) {
 	if !strings.Contains(s, "Если письма нет, проверьте папку «Спам» или попробуйте еще раз через пару минут.") {
 		t.Fatal("missing spam/minutes hint")
 	}
+	if strings.Contains(s, "с которым вы регистрировались") {
+		t.Fatal(`must not imply prior registration (“с которым вы регистрировались”)`)
+	}
+	if !strings.Contains(s, "Введите email — мы отправим ссылку для входа без пароля. Если вы здесь впервые, личный кабинет будет создан после подтверждения email.") {
+		t.Fatal("missing intro copy for new and returning users")
+	}
 }
