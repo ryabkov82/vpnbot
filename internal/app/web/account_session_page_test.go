@@ -15,6 +15,12 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, "Remnawave") || strings.Contains(raw, "check_exists_unpaid") {
 		t.Fatal("session embed must not contain internal terminology")
 	}
+	if !strings.Contains(raw, `Вы вошли как ' + String(j.user.email`) {
+		t.Fatal("embed user-line must show «Вы вошли как» email only")
+	}
+	if strings.Contains(raw, `j.user.login + ' · id '`) || strings.Contains(raw, "' · ' + j.user.login") {
+		t.Fatal("embed must not concatenate login or user_id into user-line")
+	}
 	if !bytes.Contains(b, []byte("Баланс:")) {
 		t.Fatal("balance label missing")
 	}

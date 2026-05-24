@@ -56,6 +56,15 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "scrollbar-gutter: stable") || !strings.Contains(s, "overflow-y: scroll") {
 		t.Fatal("session css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
 	}
+	if !strings.Contains(s, `Вы вошли как ' + String(j.user.email`) {
+		t.Fatal("user-line must show human-friendly email only (Вы вошли как …)")
+	}
+	if strings.Contains(s, `j.user.login + ' · id '`) || strings.Contains(s, "' · ' + j.user.login") {
+		t.Fatal("session UI must not concatenate login or user_id into user-line")
+	}
+	if strings.Contains(s, `getElementById('user-line').textContent =`) && strings.Contains(s, ` · id `) {
+		t.Fatal("user-line assignment must not expose internal id label")
+	}
 	if !strings.Contains(s, "Перейти к моим услугам") || !strings.Contains(s, "js-card-goto-my-services") {
 		t.Fatal("catalog success must offer 'go to my services' instead of full reload")
 	}

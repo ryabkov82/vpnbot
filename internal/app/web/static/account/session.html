@@ -519,7 +519,7 @@
 					var j = x.j;
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
-						j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
+						'Вы вошли как ' + String(j.user.email || '').trim();
 					renderServiceCards(tok, j.services || []);
 				});
 		}
@@ -840,7 +840,7 @@
 					show('dashboard-area', true);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
-						j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
+						'Вы вошли как ' + String(j.user.email || '').trim();
 					renderServiceCards(accountTok, j.services || []);
 					loadAccountCatalog(accountTok);
 					bindTopupHandlers(accountTok);
