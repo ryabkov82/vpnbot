@@ -678,13 +678,16 @@ func (c *APIClient) ServiceOrder(userID int, serviceID int) (*models.UserService
 }
 
 func (c *APIClient) GetUserPays(userID int) ([]models.UserPay, error) {
+	filterBytes, err := json.Marshal(map[string]any{"user_id": userID})
+	if err != nil {
+		return nil, fmt.Errorf("marshal user pays filter: %w", err)
+	}
 
-	// Формируем URL для запроса
-	filter := fmt.Sprintf(`{"user_id": %d}`, userID)
-	url := fmt.Sprintf("%s/shm/v1/admin/user/pay?filter=%s", c.ServerURL, url.QueryEscape(filter))
+	q := url.Values{}
+	q.Set("filter", string(filterBytes))
 
-	req, err := http.NewRequest("GET", url, nil)
-
+	fullURL := c.ServerURL + "/shm/v1/admin/user/pay?" + q.Encode()
+	req, err := http.NewRequest(http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -696,17 +699,16 @@ func (c *APIClient) GetUserPays(userID int) ([]models.UserPay, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("get user pays: API status %d", resp.StatusCode)
 	}
 
-	// Парсим ответ
-	type PaysResponse struct {
+	type paysResponse struct {
 		Data []models.UserPay `json:"data"`
 	}
 
-	var result PaysResponse
+	var result paysResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode user pays: %w", err)
 	}
 
 	return result.Data, nil

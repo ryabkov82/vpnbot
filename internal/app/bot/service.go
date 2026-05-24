@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -985,6 +986,13 @@ func (s *Service) handleHelp(c telebot.Context) error {
 	return err
 }
 
+func formatRubAmount(v float64) string {
+	if math.Abs(v-math.Round(v)) < 0.005 {
+		return fmt.Sprintf("%.0f ₽", v)
+	}
+	return fmt.Sprintf("%.2f ₽", v)
+}
+
 func (s *Service) handlePays(c telebot.Context) error {
 
 	if c.Callback() != nil {
@@ -997,42 +1005,45 @@ func (s *Service) handlePays(c telebot.Context) error {
 	// Получаем ID пользователя из контекста
 	userID := c.Sender().ID
 
-	// Делаем запрос к API для получения платежей
 	pays, err := s.service.GetUserPays(userID)
 	if err != nil {
 		log.Printf("Не удалось получить данные о платежах: %v", err)
 		return c.Send("⚠️ Не удалось получить данные о платежах")
 	}
 
-	// Создаем inline клавиатуру
-	var inlineKeys [][]telebot.InlineButton
+	visible := visibleUserPaysForBot(pays)
+	caption := paysListCaption(visible, len(pays))
+	backBtn := telebot.InlineButton{Text: "⇦ Назад", Data: "/menu"}
+	backRow := []telebot.InlineButton{backBtn}
 
-	// Добавляем кнопки для каждого платежа
-	for _, pay := range pays {
+	if len(visible) == 0 {
+		return c.Send(
+			s.logoPhoto(caption),
+			&telebot.SendOptions{
+				ReplyMarkup: &telebot.ReplyMarkup{InlineKeyboard: [][]telebot.InlineButton{backRow}},
+			},
+		)
+	}
+
+	var inlineKeys [][]telebot.InlineButton
+	for _, pay := range visible {
 		btn := telebot.InlineButton{
-			Text: fmt.Sprintf("Дата: %s, Сумма: %d руб.", pay.Date, pay.Money),
-			Data: "/menu", // В v3+ используется Data вместо CallbackData
+			Text: fmt.Sprintf("Дата: %s, Сумма: %s", pay.Date, formatRubAmount(pay.Money)),
+			Data: "/menu",
 		}
 		inlineKeys = append(inlineKeys, []telebot.InlineButton{btn})
 	}
 
-	// Добавляем кнопку "Назад"
-	backBtn := telebot.InlineButton{
-		Text: "⇦ Назад",
-		Data: "/menu",
-	}
-	inlineKeys = append(inlineKeys, []telebot.InlineButton{backBtn})
+	inlineKeys = append(inlineKeys, backRow)
 
-	// Отправляем сообщение с клавиатурой
 	return c.Send(
-		s.logoPhoto("Платежи"),
+		s.logoPhoto(caption),
 		&telebot.SendOptions{
 			ReplyMarkup: &telebot.ReplyMarkup{
 				InlineKeyboard: inlineKeys,
 			},
 		},
 	)
-
 }
 
 func generatePassword() string {

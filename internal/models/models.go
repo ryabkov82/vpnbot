@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 type User struct {
 	ID       int          `json:"user_id"`
 	Login    string       `json:"login"`
@@ -84,9 +86,15 @@ type Service struct {
 	Config       *ServiceConfig `json:"config"`
 }
 
+// UserPay — запись user/pay (SHM). money может быть дробным и отрицательным.
 type UserPay struct {
-	Date  string `json:"date"`
-	Money int    `json:"money"`
+	ID          int             `json:"id"`
+	UserID      int             `json:"user_id"`
+	Date        string          `json:"date"`
+	Money       float64         `json:"money"`
+	PaySystemID string          `json:"pay_system_id"`
+	UniqKey     string          `json:"uniq_key"`
+	Comment     json.RawMessage `json:"comment,omitempty"`
 }
 
 type UserKeyMarzban struct {
