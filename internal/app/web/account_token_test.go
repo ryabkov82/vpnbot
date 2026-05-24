@@ -72,3 +72,57 @@ func TestWebSalesOrderTokenTTLDefault(t *testing.T) {
 		t.Fatal("custom ttl")
 	}
 }
+
+func TestCreateAndVerifyAccountSignupToken(t *testing.T) {
+	secret := "signup-account-secret-xxxx"
+	em := "new-user@example.com"
+	login := "web_abcdef9012345678"
+	tok, err := CreateAccountSignupToken(secret, em, login, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := ParseAndVerifyAccountSignupToken(secret, tok)
+	if err != nil || cl.Email != em || cl.Login != login || cl.Typ != accountTokenTypSignup {
+		t.Fatalf("%+v err=%v", cl, err)
+	}
+}
+
+func TestAccountSignupTokenExpired(t *testing.T) {
+	tok, err := CreateAccountSignupToken("su-su-su-su-su", "a@b.c", "web_z", time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	_, err = ParseAndVerifyAccountSignupToken("su-su-su-su-su", tok)
+	if err != ErrAccountTokenExpired {
+		t.Fatalf("want expired, got %v", err)
+	}
+}
+
+func TestAccountSignupTokenWrongTyp(t *testing.T) {
+	secret := "order-token-secret-order-token-sec"
+	payload := AccountSignupTokenClaims{Typ: "account", Email: "e@f.g", Login: "web_x", Exp: time.Now().Add(time.Hour).Unix()}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	token := encPayload + "." + encSig
+	_, err = ParseAndVerifyAccountSignupToken(secret, token)
+	if err != ErrAccountTokenType {
+		t.Fatalf("want type err, got %v", err)
+	}
+}
+
+func TestAccountSignupTokenWrongSignature(t *testing.T) {
+	tok, err := CreateAccountSignupToken("aaa", "a@b.c", "web_xx", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ParseAndVerifyAccountSignupToken("bbb", tok)
+	if err != ErrAccountTokenSignature {
+		t.Fatalf("got %v", err)
+	}
+}

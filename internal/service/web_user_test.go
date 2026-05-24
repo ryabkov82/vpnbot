@@ -35,7 +35,7 @@ func TestFindOrCreateWebUser_FoundExisting(t *testing.T) {
 	existing := &models.User{ID: 7, Login: login}
 	reg := &testWebUserRegistrar{firstGet: existing, secondGet: existing}
 
-	u, err := findOrCreateWebUser(reg, "  Known@Example.COM ")
+	u, created, err := findOrCreateWebUser(reg, "  Known@Example.COM ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +45,9 @@ func TestFindOrCreateWebUser_FoundExisting(t *testing.T) {
 	if reg.getCalls != 1 {
 		t.Fatalf("GetUserByLogin calls: %d", reg.getCalls)
 	}
+	if created {
+		t.Fatal("want created=false")
+	}
 	if reg.lastReg != nil {
 		t.Fatal("RegisterUser must not be called")
 	}
@@ -52,13 +55,13 @@ func TestFindOrCreateWebUser_FoundExisting(t *testing.T) {
 
 func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 	login := webuser.WebLoginFromEmail("new@example.com")
-	created := &models.User{ID: 99, Login: login}
+	newUser := &models.User{ID: 99, Login: login}
 	reg := &testWebUserRegistrar{
 		firstGet:  nil,
-		secondGet: created,
+		secondGet: newUser,
 	}
 
-	u, err := findOrCreateWebUser(reg, "new@example.com")
+	u, registered, err := findOrCreateWebUser(reg, "new@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,8 +71,8 @@ func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 	if reg.getCalls != 2 {
 		t.Fatalf("GetUserByLogin calls: %d", reg.getCalls)
 	}
-	if reg.lastReg == nil {
-		t.Fatal("expected RegisterUser call")
+	if !registered {
+		t.Fatal("want registered=true")
 	}
 	if reg.lastReg.Login != login {
 		t.Fatalf("login: %q", reg.lastReg.Login)
@@ -90,7 +93,7 @@ func TestFindOrCreateWebUser_RegisterError(t *testing.T) {
 		firstGet: nil,
 		regErr:   errors.New("api down"),
 	}
-	_, err := findOrCreateWebUser(reg, "x@y.zz")
+	_, _, err := findOrCreateWebUser(reg, "x@y.zz")
 	if err == nil {
 		t.Fatal("want error")
 	}
@@ -101,7 +104,7 @@ func TestFindOrCreateWebUser_NotFoundAfterRegister(t *testing.T) {
 		firstGet:  nil,
 		secondGet: nil,
 	}
-	_, err := findOrCreateWebUser(reg, "gone@example.com")
+	_, _, err := findOrCreateWebUser(reg, "gone@example.com")
 	if err == nil {
 		t.Fatal("want error when reload returns nil")
 	}

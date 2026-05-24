@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/models"
+	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
 type stubAccountWeb struct {
@@ -39,6 +41,11 @@ type stubAccountWeb struct {
 	deleteErr               error
 	deleteLastUID           int
 	deleteLastUserServiceID string
+
+	findOrCreateRet     *models.User
+	findOrCreateErr     error
+	findOrCreateCalls   int
+	findOrCreateCreated bool
 }
 
 func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
@@ -53,6 +60,14 @@ func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
 		return nil, s.userByLoginErr
 	}
 	return s.userByLogin, nil
+}
+
+func (s *stubAccountWeb) FindOrCreateWebUser(email string) (*models.User, bool, error) {
+	s.findOrCreateCalls++
+	if s.findOrCreateErr != nil {
+		return nil, false, s.findOrCreateErr
+	}
+	return s.findOrCreateRet, s.findOrCreateCreated, nil
 }
 func (s *stubAccountWeb) GetUserServicesByUserID(userID int) ([]models.UserService, error) {
 	if s.servicesErr != nil {
@@ -103,6 +118,28 @@ func (s *stubAccountWeb) DeleteUserServiceByUserID(userID int, userServiceID str
 	return s.deleteErr
 }
 
+func extractMagicLinkTokenFromSMTPMsg(t *testing.T, msg []byte) string {
+	t.Helper()
+	s := string(msg)
+	idx := strings.Index(s, "/account/session?token=")
+	if idx < 0 {
+		t.Fatal("magic link missing in SMTP payload")
+	}
+	rest := s[idx+len("/account/session?token="):]
+	cut := len(rest)
+	for _, sep := range []string{"\r\n", "\n"} {
+		if p := strings.Index(rest, sep); p >= 0 && p < cut {
+			cut = p
+		}
+	}
+	enc := strings.TrimSpace(rest[:cut])
+	dec, err := url.QueryUnescape(enc)
+	if err != nil {
+		return enc
+	}
+	return strings.TrimSpace(dec)
+}
+
 func TestServeAccountLoginStart_Honeypot(t *testing.T) {
 	var smtpN int
 	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
@@ -125,25 +162,47 @@ func TestServeAccountLoginStart_Honeypot(t *testing.T) {
 	}
 }
 
-func TestServeAccountLoginStart_UnknownEmailNoSMTP(t *testing.T) {
+func TestServeAccountLoginStart_UnknownEmailSendsSignupTokenMail_NoWebUserYet(t *testing.T) {
+	var gotMail []byte
 	var smtpN int
 	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
 		smtpN++
+		gotMail = append([]byte(nil), msg...)
 		return nil
 	})
 	cfg := orderStartTestCfg()
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
 	st := &stubAccountWeb{}
 	h := serveAccountLoginStart(cfg, st, rl)
-	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"nouser@test.com","website":""}`))
+	rawEmail := `nouser@test.com`
+	normEmail, err := webuser.NormalizeEmail(rawEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+rawEmail+`","website":""}`))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || smtpN != 0 {
-		t.Fatalf("code=%d smtp=%d", rec.Code, smtpN)
+	if rec.Code != http.StatusOK || smtpN != 1 {
+		t.Fatalf("code=%d smtp=%d body=%s", rec.Code, smtpN, rec.Body.String())
+	}
+	if st.findOrCreateCalls != 0 {
+		t.Fatalf("FindOrCreateWebUser must not run at login/start, got %d calls", st.findOrCreateCalls)
 	}
 	var out accountLoginStartOKJSON
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil || out.Status != "email_sent" {
-		t.Fatalf("%#v", out)
+		t.Fatalf("%#v err=%v", out, err)
+	}
+	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
+	sc, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, rawTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ToLower(strings.TrimSpace(sc.Email)) != normEmail {
+		t.Fatalf("email claim %q vs %q", sc.Email, normEmail)
+	}
+	wantLogin := webuser.WebLoginFromEmail(normEmail)
+	if sc.Login != wantLogin {
+		t.Fatalf("login claim %q vs %q", sc.Login, wantLogin)
 	}
 }
 
@@ -156,10 +215,15 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.WebSales.PublicBaseURL = "https://shop.example"
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
-	u := &models.User{ID: 511, Login: "web_abc"}
+	em := `known@test.com`
+	wantNorm, nerr := webuser.NormalizeEmail(em)
+	if nerr != nil {
+		t.Fatal(nerr)
+	}
+	wantLogin := webuser.WebLoginFromEmail(wantNorm)
+	u := &models.User{ID: 511, Login: wantLogin}
 	st := &stubAccountWeb{userByLogin: u}
 	h := serveAccountLoginStart(cfg, st, rl)
-	em := `known@test.com`
 	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+em+`","website":""}`))
 	req.Host = "localhost:9090"
 	rec := httptest.NewRecorder()
@@ -171,6 +235,41 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	if !strings.Contains(raw, "/account/session?token=") {
 		t.Fatalf("missing magic link body: %s", raw[:min(600, len(raw))])
 	}
+	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
+	ac, err := ParseAndVerifyAccountToken(cfg.WebSales.OrderTokenSecret, rawTok)
+	if err != nil || ac.UserID != 511 || ac.Email != wantNorm || ac.Login != u.Login {
+		t.Fatalf("account claims %+v err=%v", ac, err)
+	}
+}
+
+func TestServeAccountLoginStart_KnownAndUnknownSameJSONBody(t *testing.T) {
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+
+	kRec := httptest.NewRecorder()
+	knownEmail := "knowntest@test.com"
+	kNorm, err := webuser.NormalizeEmail(knownEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kLogin := webuser.WebLoginFromEmail(kNorm)
+	serveAccountLoginStart(cfg, &stubAccountWeb{userByLogin: &models.User{ID: 77, Login: kLogin}}, rl).ServeHTTP(kRec,
+		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+knownEmail+`","website":""}`)))
+	if kRec.Code != http.StatusOK {
+		t.Fatalf("known email: %s", kRec.Body.String())
+	}
+	uRec := httptest.NewRecorder()
+	serveAccountLoginStart(cfg, &stubAccountWeb{}, rl).ServeHTTP(uRec,
+		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"unknowntest@test.com","website":""}`)))
+	if uRec.Code != http.StatusOK {
+		t.Fatalf("unknown email: %s", uRec.Body.String())
+	}
+	if strings.TrimSpace(kRec.Body.String()) != strings.TrimSpace(uRec.Body.String()) {
+		t.Fatalf("responses differ (enumeration leak?)\nk=%s\nu=%s", kRec.Body.String(), uRec.Body.String())
+	}
 }
 
 func TestServeAccountLoginStart_SMTPError(t *testing.T) {
@@ -179,7 +278,11 @@ func TestServeAccountLoginStart_SMTPError(t *testing.T) {
 	})
 	cfg := orderStartTestCfg()
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
-	st := &stubAccountWeb{userByLogin: &models.User{ID: 1, Login: "web_x"}}
+	un, err := webuser.NormalizeEmail("u@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{userByLogin: &models.User{ID: 1, Login: webuser.WebLoginFromEmail(un)}}
 	h := serveAccountLoginStart(cfg, st, rl)
 	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"u@test.com","website":""}`))
 	rec := httptest.NewRecorder()
@@ -188,6 +291,166 @@ func TestServeAccountLoginStart_SMTPError(t *testing.T) {
 		t.Fatalf("want 500 got %d", rec.Code)
 	}
 	assertJSONErrorField(t, rec.Body.String(), "email_send_failed")
+}
+
+func TestServeAccountSessionStart_InvalidToken(t *testing.T) {
+	cfg := orderStartTestCfg()
+	h := serveAccountSessionStart(cfg, &stubAccountWeb{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(`{"token":"not-a-valid-token"}`))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func accountSessionStartPostBody(t *testing.T, tok string) string {
+	t.Helper()
+	b, err := json.Marshal(accountSessionStartReqJSON{Token: tok})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestServeAccountSessionStart_AccountTokenReturnsSame(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	rawTok, err := CreateAccountToken(sec, "acc@test.com", 44, "web_acc44", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{}
+	h := serveAccountSessionStart(cfg, st)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, rawTok)))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out accountSessionStartOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "ok" || out.AccountToken != rawTok || out.IsNewUser {
+		t.Fatalf("%+v", out)
+	}
+	if st.findOrCreateCalls != 0 {
+		t.Fatalf("unexpected FindOrCreateWebUser calls: %d", st.findOrCreateCalls)
+	}
+}
+
+func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "signup-new@test.com"
+	norm, err := webuser.NormalizeEmail(em)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := webuser.WebLoginFromEmail(norm)
+	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &models.User{ID: 6600, Login: login}
+	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
+	h := serveAccountSessionStart(cfg, st)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, signupTok)))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out accountSessionStartOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.IsNewUser || out.Status != "ok" || out.AccountToken == "" || out.AccountToken == signupTok {
+		t.Fatalf("%+v", out)
+	}
+	if st.findOrCreateCalls != 1 {
+		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
+	}
+	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
+	if err != nil || ac.UserID != 6600 || ac.Login != login || ac.Email != norm {
+		t.Fatalf("%+v err=%v", ac, err)
+	}
+}
+
+func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "signup-old@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := &models.User{ID: 6611, Login: login}
+	st := &stubAccountWeb{
+		userByLogin: existing,
+	}
+	h := serveAccountSessionStart(cfg, st)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, signupTok)))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out accountSessionStartOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.IsNewUser {
+		t.Fatalf("expected existing user %+v", out)
+	}
+	if st.findOrCreateCalls != 0 {
+		t.Fatalf("FindOrCreateWebUser should not run, got %d", st.findOrCreateCalls)
+	}
+	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
+	if err != nil || ac.UserID != 6611 {
+		t.Fatalf("%+v err=%v", ac, err)
+	}
+}
+
+func TestServeAccountSessionStart_SignupTokenWebUserFails(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "fail-create@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	signupTok, _ := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	st := &stubAccountWeb{findOrCreateErr: errors.New("register failed")}
+	h := serveAccountSessionStart(cfg, st)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, signupTok)))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "web_user_failed")
+}
+
+func TestServeAccountSessionStart_SignupTokenLoginMismatch(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "mis@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	tok, err := CreateAccountSignupToken(sec, norm, "not_the_derived_login", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := serveAccountSessionStart(cfg, &stubAccountWeb{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, tok)))
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 got %d", rec.Code)
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
 }
 
 func TestServeAccountServices_InvalidToken(t *testing.T) {
@@ -470,12 +733,12 @@ func TestServeAccountConnect_Premium_NoSecret_NotRawSubscription(t *testing.T) {
 	cfg.PremiumLinkSigningSecret = ""
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
 	us := &models.UserService{
-		UserID:        10,
-		ServiceID:     442,
-		Status:        "ACTIVE",
-		Category:      "premium-antiblock",
-		ConfigRaw:     catalogPremiumConfigRaw("ps-web"),
-		KeyMarzban:    models.UserKeyMarzban{SubscriptionURL: "https://leak-this.example/forbidden"},
+		UserID:     10,
+		ServiceID:  442,
+		Status:     "ACTIVE",
+		Category:   "premium-antiblock",
+		ConfigRaw:  catalogPremiumConfigRaw("ps-web"),
+		KeyMarzban: models.UserKeyMarzban{SubscriptionURL: "https://leak-this.example/forbidden"},
 	}
 	st := &stubAccountWeb{single: map[int]*models.UserService{442: us}}
 	rec := httptest.NewRecorder()

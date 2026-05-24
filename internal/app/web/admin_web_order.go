@@ -18,7 +18,7 @@ import (
 // adminWebOrderApp — контракт для тестового admin web-order (в т.ч. stub в тестах).
 type adminWebOrderApp interface {
 	GetServiceByID(serviceID int) (*models.Service, error)
-	FindOrCreateWebUser(email string) (*models.User, error)
+	FindOrCreateWebUser(email string) (*models.User, bool, error)
 	ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error)
 }
 
@@ -120,7 +120,7 @@ func serveAdminWebOrderTest(cfg *config.Config, app adminWebOrderApp) http.Handl
 			return
 		}
 
-		user, err := app.FindOrCreateWebUser(req.Email)
+		user, _, err := app.FindOrCreateWebUser(req.Email)
 		if err != nil {
 			slog.Error("admin web-order test: FindOrCreateWebUser", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "web_user_failed")

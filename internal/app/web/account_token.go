@@ -12,7 +12,10 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
-const accountTokenTypAccount = "account"
+const (
+	accountTokenTypAccount = "account"
+	accountTokenTypSignup  = "account_signup"
+)
 
 // AccountTokenClaims — magic-link личного кабинета.
 type AccountTokenClaims struct {
@@ -23,6 +26,14 @@ type AccountTokenClaims struct {
 	Exp    int64  `json:"exp"`
 }
 
+// AccountSignupTokenClaims — одноразовый magic-link до создания shm user (нет user_id).
+type AccountSignupTokenClaims struct {
+	Typ   string `json:"typ"`
+	Email string `json:"email"`
+	Login string `json:"login"`
+	Exp   int64  `json:"exp"`
+}
+
 var (
 	ErrAccountTokenMalformed   = errors.New("malformed account token")
 	ErrAccountTokenSignature   = errors.New("invalid account token signature")
@@ -30,6 +41,37 @@ var (
 	ErrAccountTokenType        = errors.New("invalid account token type")
 	ErrAccountTokenEmptySecret = errors.New("account token secret is empty")
 )
+
+func verifyAccountMagicTokenPayload(secret, token string) ([]byte, error) {
+	if strings.TrimSpace(secret) == "" {
+		return nil, ErrAccountTokenEmptySecret
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrAccountTokenMalformed
+	}
+	dot := strings.IndexByte(token, '.')
+	if dot <= 0 || dot == len(token)-1 {
+		return nil, ErrAccountTokenMalformed
+	}
+	encPayload := token[:dot]
+	encSig := token[dot+1:]
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(encPayload)
+	if err != nil {
+		return nil, ErrAccountTokenMalformed
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(encSig)
+	if err != nil {
+		return nil, ErrAccountTokenMalformed
+	}
+	m := hmac.New(sha256.New, []byte(secret))
+	_, _ = m.Write(payloadJSON)
+	expected := m.Sum(nil)
+	if len(sig) != len(expected) || !hmac.Equal(sig, expected) {
+		return nil, ErrAccountTokenSignature
+	}
+	return payloadJSON, nil
+}
 
 // CreateAccountToken — base64url(JSON).base64url(HMAC-SHA256(JSON, secret)).
 func CreateAccountToken(secret string, email string, userID int, login string, ttl time.Duration) (string, error) {
@@ -59,34 +101,38 @@ func CreateAccountToken(secret string, email string, userID int, login string, t
 	return encPayload + "." + encSig, nil
 }
 
+// CreateAccountSignupToken — onboarding magic-link перед созданием web user в SHM.
+func CreateAccountSignupToken(secret, email, login string, ttl time.Duration) (string, error) {
+	if strings.TrimSpace(secret) == "" {
+		return "", ErrAccountTokenEmptySecret
+	}
+	if ttl <= 0 {
+		return "", errors.New("ttl must be positive")
+	}
+	if strings.TrimSpace(email) == "" || strings.TrimSpace(login) == "" {
+		return "", errors.New("invalid signup token fields")
+	}
+	payload := AccountSignupTokenClaims{
+		Typ:   accountTokenTypSignup,
+		Email: strings.TrimSpace(email),
+		Login: strings.TrimSpace(login),
+		Exp:   time.Now().Add(ttl).Unix(),
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	return encPayload + "." + encSig, nil
+}
+
 // ParseAndVerifyAccountToken проверяет подпись и срок токена кабинета.
 func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, error) {
-	if strings.TrimSpace(secret) == "" {
-		return nil, ErrAccountTokenEmptySecret
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return nil, ErrAccountTokenMalformed
-	}
-	dot := strings.IndexByte(token, '.')
-	if dot <= 0 || dot == len(token)-1 {
-		return nil, ErrAccountTokenMalformed
-	}
-	encPayload := token[:dot]
-	encSig := token[dot+1:]
-	payloadJSON, err := base64.RawURLEncoding.DecodeString(encPayload)
+	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
 	if err != nil {
-		return nil, ErrAccountTokenMalformed
-	}
-	sig, err := base64.RawURLEncoding.DecodeString(encSig)
-	if err != nil {
-		return nil, ErrAccountTokenMalformed
-	}
-	m := hmac.New(sha256.New, []byte(secret))
-	_, _ = m.Write(payloadJSON)
-	expected := m.Sum(nil)
-	if len(sig) != len(expected) || !hmac.Equal(sig, expected) {
-		return nil, ErrAccountTokenSignature
+		return nil, err
 	}
 	var claims AccountTokenClaims
 	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
@@ -99,6 +145,28 @@ func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, erro
 		return nil, ErrAccountTokenExpired
 	}
 	if claims.UserID <= 0 || strings.TrimSpace(claims.Email) == "" || strings.TrimSpace(claims.Login) == "" {
+		return nil, ErrAccountTokenMalformed
+	}
+	return &claims, nil
+}
+
+// ParseAndVerifyAccountSignupToken проверяет onboarding-токен (без user_id).
+func ParseAndVerifyAccountSignupToken(secret, token string) (*AccountSignupTokenClaims, error) {
+	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
+	if err != nil {
+		return nil, err
+	}
+	var claims AccountSignupTokenClaims
+	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
+		return nil, ErrAccountTokenMalformed
+	}
+	if claims.Typ != accountTokenTypSignup {
+		return nil, ErrAccountTokenType
+	}
+	if claims.Exp <= time.Now().Unix() {
+		return nil, ErrAccountTokenExpired
+	}
+	if strings.TrimSpace(claims.Email) == "" || strings.TrimSpace(claims.Login) == "" {
 		return nil, ErrAccountTokenMalformed
 	}
 	return &claims, nil

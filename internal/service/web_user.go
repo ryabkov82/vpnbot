@@ -16,25 +16,25 @@ type webUserRegistrar interface {
 	RegisterUser(user models.UserRegistrationRequest) error
 }
 
-func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, error) {
+func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, bool, error) {
 	normalizedEmail, err := webuser.NormalizeEmail(email)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	login := webuser.WebLoginFromEmail(normalizedEmail)
 
 	u, err := reg.GetUserByLogin(login)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if u != nil {
-		return u, nil
+		return u, false, nil
 	}
 
 	password, err := randomWebUserPassword()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	regReq := models.UserRegistrationRequest{
@@ -50,17 +50,17 @@ func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, erro
 	}
 
 	if err := reg.RegisterUser(regReq); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	u, err = reg.GetUserByLogin(login)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if u == nil {
-		return nil, fmt.Errorf("web user not found after registration (login=%s)", login)
+		return nil, false, fmt.Errorf("web user not found after registration (login=%s)", login)
 	}
-	return u, nil
+	return u, true, nil
 }
 
 func randomWebUserPassword() (string, error) {
@@ -71,7 +71,8 @@ func randomWebUserPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// FindOrCreateWebUser находит SHM-пользователя по web-login из email или создаёт нового.
-func (s *Service) FindOrCreateWebUser(email string) (*models.User, error) {
+// FindOrCreateWebUser находит SHM-пользователя по web-login из email или регистрирует нового.
+// Второй результат — RegisterUser действительно вызывался в этом запросе.
+func (s *Service) FindOrCreateWebUser(email string) (*models.User, bool, error) {
 	return findOrCreateWebUser(s.apiClient, email)
 }

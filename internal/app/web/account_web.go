@@ -22,6 +22,7 @@ import (
 // accountWebApp — кабинет (тесты через stub).
 type accountWebApp interface {
 	GetUserByLogin(login string) (*models.User, error)
+	FindOrCreateWebUser(email string) (*models.User, bool, error)
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
 	GetUserService(serviceID string) (*models.UserService, error)
 	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
@@ -85,28 +86,8 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			return
 		}
 
-		login := webuser.WebLoginFromEmail(normEmail)
-		user, err := app.GetUserByLogin(login)
-		if err != nil {
-			slog.Error("account login start: GetUserByLogin", "err", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal_error")
-			return
-		}
-		if user == nil {
-			writeJSON(w, http.StatusOK, accountLoginStartOKJSON{Status: "email_sent"})
-			return
-		}
-
 		if !email.IsConfigured(cfg) {
 			writeJSONError(w, http.StatusServiceUnavailable, "email_unavailable")
-			return
-		}
-
-		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		tok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
-		if err != nil {
-			slog.Error("account login start: CreateAccountToken", "err", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
 		}
 
@@ -115,7 +96,28 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
 		}
-		loginURL := base + "/account/session?token=" + url.QueryEscape(tok)
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+
+		login := webuser.WebLoginFromEmail(normEmail)
+		user, err := app.GetUserByLogin(login)
+		if err != nil {
+			slog.Error("account login start: GetUserByLogin", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+
+		var magicTok string
+		if user != nil {
+			magicTok, err = CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		} else {
+			magicTok, err = CreateAccountSignupToken(secret, normEmail, login, accountTokenTTL(cfg))
+		}
+		if err != nil {
+			slog.Error("account login start: magic token", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		loginURL := base + "/account/session?token=" + url.QueryEscape(magicTok)
 
 		if err := email.SendAccountLoginEmail(cfg, normEmail, loginURL); err != nil {
 			if errors.Is(err, email.ErrNotConfigured) {
@@ -128,6 +130,111 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 		}
 
 		writeJSON(w, http.StatusOK, accountLoginStartOKJSON{Status: "email_sent"})
+	}
+}
+
+type accountSessionStartReqJSON struct {
+	Token string `json:"token"`
+}
+
+type accountSessionStartOKJSON struct {
+	Status       string `json:"status"`
+	AccountToken string `json:"account_token"`
+	IsNewUser    bool   `json:"is_new_user"`
+}
+
+func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account/session/start" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !webSalesTokenFlowAvailable(cfg) {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+
+		const maxBody = 1 << 20
+		dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+		var req accountSessionStartReqJSON
+		if err := dec.Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+
+		raw := strings.TrimSpace(req.Token)
+		if raw == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_token")
+			return
+		}
+
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+
+		if _, err := ParseAndVerifyAccountToken(secret, raw); err == nil {
+			writeJSON(w, http.StatusOK, accountSessionStartOKJSON{
+				Status:       "ok",
+				AccountToken: raw,
+				IsNewUser:    false,
+			})
+			return
+		}
+
+		signup, err := ParseAndVerifyAccountSignupToken(secret, raw)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_token")
+			return
+		}
+
+		normEmail, err := webuser.NormalizeEmail(signup.Email)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_token")
+			return
+		}
+		wantLogin := webuser.WebLoginFromEmail(normEmail)
+		if strings.TrimSpace(signup.Login) != wantLogin {
+			writeJSONError(w, http.StatusBadRequest, "invalid_token")
+			return
+		}
+
+		existing, err := app.GetUserByLogin(wantLogin)
+		if err != nil {
+			slog.Error("account session start: GetUserByLogin", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+
+		isNewUser := false
+		var user *models.User
+		if existing != nil {
+			user = existing
+		} else {
+			u2, created, ferr := app.FindOrCreateWebUser(normEmail)
+			if ferr != nil || u2 == nil {
+				slog.Error("account session start: FindOrCreateWebUser", "err", ferr)
+				writeJSONError(w, http.StatusInternalServerError, "web_user_failed")
+				return
+			}
+			user = u2
+			isNewUser = created
+		}
+
+		acTok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		if err != nil {
+			slog.Error("account session start: CreateAccountToken", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, accountSessionStartOKJSON{
+			Status:       "ok",
+			AccountToken: acTok,
+			IsNewUser:    isNewUser,
+		})
 	}
 }
 

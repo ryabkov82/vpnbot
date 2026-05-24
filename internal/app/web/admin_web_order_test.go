@@ -29,11 +29,11 @@ func (s *stubAdminWebOrderApp) GetServiceByID(serviceID int) (*models.Service, e
 	return s.svc, nil
 }
 
-func (s *stubAdminWebOrderApp) FindOrCreateWebUser(email string) (*models.User, error) {
+func (s *stubAdminWebOrderApp) FindOrCreateWebUser(email string) (*models.User, bool, error) {
 	if s.userErr != nil {
-		return nil, s.userErr
+		return nil, false, s.userErr
 	}
-	return s.user, nil
+	return s.user, false, nil
 }
 
 func (s *stubAdminWebOrderApp) ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error) {

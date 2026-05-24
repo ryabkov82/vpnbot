@@ -536,24 +536,22 @@
 			});
 		}
 
-		var tok = tokenFromURL();
-		if (tok) {
-			try { localStorage.setItem(STORAGE, tok); } catch (e) {}
-		} else {
-			tok = tokenFromStorage();
+		function showInvalidSessionLink() {
+			show('err-box', true);
+			document.getElementById('err-box').innerHTML =
+				escapeHtml('Ссылка недействительна или устарела. Запросите новую ссылку для входа.') +
+				' <a href="/account">Страница входа</a>';
 		}
-		if (!tok) {
-			show('no-token', true);
-		} else {
+
+		function bootDashboardAfterExchange(accountTok) {
 			show('loading', true);
 			document.getElementById('post-delete-buy-hint').classList.add('d-none');
-			fetch('/api/account/services?token=' + encodeURIComponent(tok))
+			fetch('/api/account/services?token=' + encodeURIComponent(accountTok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
 					show('loading', false);
 					if (!x.ok) {
-						show('err-box', true);
-						document.getElementById('err-box').textContent = x.j && x.j.error ? x.j.error : 'Ошибка';
+						showInvalidSessionLink();
 						return;
 					}
 					var j = x.j;
@@ -561,14 +559,46 @@
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
 						j.user.email + ' · ' + j.user.login + ' · id ' + j.user.user_id;
-					renderServiceCards(tok, j.services || []);
-					loadAccountCatalog(tok);
-					bindTopupHandlers(tok);
+					renderServiceCards(accountTok, j.services || []);
+					loadAccountCatalog(accountTok);
+					bindTopupHandlers(accountTok);
 				}).catch(function () {
 					show('loading', false);
-					show('err-box', true);
-					document.getElementById('err-box').textContent = 'Сеть недоступна';
+					showInvalidSessionLink();
 				});
+		}
+
+		function bootFromRawToken(rawTok) {
+			show('loading', true);
+			show('err-box', false);
+			fetch('/api/account/session/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token: rawTok })
+			})
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+				.then(function (x) {
+					if (!x.ok || !x.j || x.j.status !== 'ok' || !x.j.account_token) {
+						show('loading', false);
+						showInvalidSessionLink();
+						return;
+					}
+					try { localStorage.setItem(STORAGE, String(x.j.account_token)); } catch (e2) {}
+					bootDashboardAfterExchange(String(x.j.account_token));
+				}).catch(function () {
+					show('loading', false);
+					showInvalidSessionLink();
+				});
+		}
+
+		var rawTok = tokenFromURL();
+		if (!rawTok) {
+			rawTok = tokenFromStorage();
+		}
+		if (!rawTok) {
+			show('no-token', true);
+		} else {
+			bootFromRawToken(rawTok);
 		}
 	})();
 	</script>
