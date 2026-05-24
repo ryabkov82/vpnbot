@@ -53,6 +53,9 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "overflow-x: auto") {
 		t.Fatal("account-tabs css should allow horizontal scroll")
 	}
+	if !strings.Contains(s, "scrollbar-gutter: stable") || !strings.Contains(s, "overflow-y: scroll") {
+		t.Fatal("session css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
+	}
 	if !strings.Contains(s, "Перейти к моим услугам") || !strings.Contains(s, "js-card-goto-my-services") {
 		t.Fatal("catalog success must offer 'go to my services' instead of full reload")
 	}
