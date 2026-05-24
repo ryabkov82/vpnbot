@@ -77,6 +77,15 @@ type Config struct {
 		PublicBaseURL      string `json:"public_base_url"`
 	} `json:"web_sales"`
 
+	// WebAccount — вход в личный кабинет (OAuth и т.п.), без секретов по умолчанию.
+	// Client secret задаётся только в production-config, не должен попадать в репозиторий.
+	WebAccount struct {
+		GoogleEnabled      bool   `json:"google_enabled"`
+		GoogleClientID     string `json:"google_client_id"`
+		GoogleClientSecret string `json:"google_client_secret"`
+		GoogleRedirectURL  string `json:"google_redirect_url"`
+	} `json:"web_account"`
+
 	Email struct {
 		SMTPHost     string `json:"smtp_host"`
 		SMTPPort     int    `json:"smtp_port"`
