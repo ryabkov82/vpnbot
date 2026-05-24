@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -238,6 +240,60 @@ func (c *APIClient) GetUserByLogin(login string) (*models.User, error) {
 	return nil, nil
 }
 
+func (c *APIClient) GetUserByLogin2(login2 string) (*models.User, error) {
+	login2 = strings.TrimSpace(login2)
+	if login2 == "" {
+		return nil, nil
+	}
+
+	filter := map[string]interface{}{
+		"login2": login2,
+	}
+	jsonBytes, err := json.Marshal(filter)
+	if err != nil {
+		return nil, err
+	}
+	encoded := url.QueryEscape(string(jsonBytes))
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("%s/shm/v1/admin/user?filter=%s", c.ServerURL, encoded),
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var users struct {
+		Data []models.User `json:"data"`
+	}
+	if err := json.Unmarshal(body, &users); err != nil {
+		return nil, err
+	}
+
+	want := login2
+	for i := range users.Data {
+		if strings.TrimSpace(users.Data[i].Login2) == want {
+			return &users.Data[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func (c *APIClient) RegisterUser(user models.UserRegistrationRequest) error {
 	jsonData, err := json.Marshal(user)
 	if err != nil {
@@ -288,6 +344,201 @@ func (c *APIClient) RegisterUser(user models.UserRegistrationRequest) error {
 	}
 
 	return nil
+}
+
+// FetchAdminUserRowRaw — строка shm admin/user для user_id с settings как JSON без потери неизвестных полей.
+func (c *APIClient) FetchAdminUserRowRaw(userID int) (login string, settingsRaw json.RawMessage, err error) {
+	if userID <= 0 {
+		return "", nil, fmt.Errorf("invalid user id")
+	}
+	filter := map[string]interface{}{
+		"user_id": userID,
+	}
+	jsonBytes, err := json.Marshal(filter)
+	if err != nil {
+		return "", nil, err
+	}
+	encoded := url.QueryEscape(string(jsonBytes))
+	req, err := http.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("%s/shm/v1/admin/user?filter=%s", c.ServerURL, encoded),
+		nil)
+	if err != nil {
+		return "", nil, err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, fmt.Errorf("get admin user raw: HTTP %d", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Data []struct {
+			UserID   int             `json:"user_id"`
+			Login    string          `json:"login"`
+			Settings json.RawMessage `json:"settings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return "", nil, fmt.Errorf("decode admin user envelope: %w", err)
+	}
+	for _, row := range envelope.Data {
+		if row.UserID != userID {
+			continue
+		}
+		return row.Login, row.Settings, nil
+	}
+	return "", nil, nil
+}
+
+func parseAdminUserUpdateBody(userID int, respBody []byte) (*models.User, bool) {
+	var out struct {
+		Data []models.User `json:"data"`
+	}
+	if len(respBody) == 0 || json.Unmarshal(respBody, &out) != nil || len(out.Data) == 0 {
+		return nil, false
+	}
+	for i := range out.Data {
+		if out.Data[i].ID == userID {
+			u := out.Data[i]
+			return &u, true
+		}
+	}
+	u := out.Data[0]
+	return &u, true
+}
+
+// verifyPersistedLogin2 делает один GET по login2 с тем же HTTPClient (уже задаёт timeout из конфигурации).
+func (c *APIClient) verifyPersistedLogin2(userID int, login2Want string) (*models.User, int64, error) {
+	want := strings.TrimSpace(login2Want)
+	if want == "" {
+		return nil, 0, fmt.Errorf("empty login2 for verification")
+	}
+	t0 := time.Now()
+	u, err := c.GetUserByLogin2(want)
+	durMs := time.Since(t0).Milliseconds()
+	if err != nil {
+		slog.Error("shm admin user verify login2", "stage", "shm_get_by_login2", "user_id", userID, "duration_ms", durMs, "err", err)
+		return nil, durMs, err
+	}
+	if u == nil {
+		slog.Info("shm admin user verify login2", "user_id", userID, "duration_ms", durMs, "ok", false)
+		return nil, durMs, fmt.Errorf("login2 verification: shm returned no row: %w", ErrLogin2NotPersistedSHM)
+	}
+	if u.ID != userID {
+		slog.Info("shm admin user verify login2", "user_id", userID, "duration_ms", durMs, "ok", false)
+		return nil, durMs, fmt.Errorf("login2 maps user_id=%d want=%d: %w", u.ID, userID, ErrLogin2NotPersistedSHM)
+	}
+	got := strings.TrimSpace(u.Login2)
+	if got != want {
+		slog.Info("shm admin user verify login2", "user_id", userID, "duration_ms", durMs, "ok", false)
+		return nil, durMs, fmt.Errorf("persisted login2 mismatch: %w", ErrLogin2NotPersistedSHM)
+	}
+	slog.Info("shm admin user verify login2", "user_id", userID, "duration_ms", durMs, "ok", true)
+	return u, durMs, nil
+}
+
+func (c *APIClient) adminUserUpdate(method string, userID int, raw []byte) (respBody []byte, statusCode int, durationMs int64, err error) {
+	endpoint := "/shm/v1/admin/user"
+	fullURL := fmt.Sprintf("%s%s", c.ServerURL, endpoint)
+	req, err := http.NewRequest(method, fullURL, bytes.NewReader(raw))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	t0 := time.Now()
+	resp, err := c.HTTPClient.Do(req)
+	durationMs = time.Since(t0).Milliseconds()
+	if err != nil {
+		slog.Error("shm admin user update",
+			"stage", "transport", "method", method, "user_id", userID, "duration_ms", durationMs, "err", err)
+		return nil, 0, durationMs, err
+	}
+	defer resp.Body.Close()
+	respBody, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if rerr != nil {
+		return nil, resp.StatusCode, durationMs, rerr
+	}
+	return respBody, resp.StatusCode, durationMs, nil
+}
+
+// PostAdminUserUpdateSettings выполняет POST /shm/v1/admin/user и при наличии login2 обязательно проверяет,
+// что второй логин реально сохранился (GET по login2). Если после POST связка отсутствует — пробуем один PUT с тем же телом (некоторые билды SHM принимают login2 только там).
+func (c *APIClient) PostAdminUserUpdateSettings(userID int, login2 string, settingsObj map[string]interface{}) (*models.User, error) {
+	if userID <= 0 || settingsObj == nil {
+		return nil, fmt.Errorf("invalid update user settings")
+	}
+	payload := map[string]interface{}{
+		"user_id":  userID,
+		"settings": settingsObj,
+	}
+	login2Trim := strings.TrimSpace(login2)
+	if login2Trim != "" {
+		payload["login2"] = login2Trim
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	respBody, status, durMs, err := c.adminUserUpdate(http.MethodPost, userID, raw)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		slog.Error("shm admin user update", "stage", "post_http_status", "user_id", userID, "status_code", status, "duration_ms", durMs, "body_bytes", len(respBody))
+		return nil, fmt.Errorf("post admin user settings: HTTP %d (duration_ms=%d)", status, durMs)
+	}
+
+	parsedFromBody, haveParsed := parseAdminUserUpdateBody(userID, respBody)
+
+	tryVerify := login2Trim != ""
+	if tryVerify {
+		persisted, _, vErr := c.verifyPersistedLogin2(userID, login2Trim)
+		if vErr == nil {
+			return persisted, nil
+		}
+		if !errors.Is(vErr, ErrLogin2NotPersistedSHM) {
+			return nil, vErr
+		}
+
+		slog.Warn("shm admin user: login2 not visible after POST, retry PUT", "user_id", userID)
+
+		respBodyPut, statusPut, durPut, errPut := c.adminUserUpdate(http.MethodPut, userID, raw)
+		if errPut != nil {
+			return nil, errPut
+		}
+		if statusPut != http.StatusOK {
+			slog.Error("shm admin user update", "stage", "put_http_status", "user_id", userID, "status_code", statusPut, "duration_ms", durPut, "body_bytes", len(respBodyPut))
+			return nil, fmt.Errorf("put admin user settings: HTTP %d (duration_ms=%d)", statusPut, durPut)
+		}
+		_, _ = parseAdminUserUpdateBody(userID, respBodyPut) // проверку делаем по login2, не по телу ответа PUT
+
+		persisted, _, vErr = c.verifyPersistedLogin2(userID, login2Trim)
+		if vErr != nil {
+			return nil, vErr
+		}
+		return persisted, nil
+	}
+
+	if haveParsed {
+		return parsedFromBody, nil
+	}
+	u := &models.User{ID: userID}
+	if login2Trim != "" {
+		u.Login2 = login2Trim
+	}
+	return u, nil
 }
 
 func (c *APIClient) StartSessionRefresher() {

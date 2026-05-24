@@ -12,6 +12,7 @@ import (
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	appService "github.com/ryabkov82/vpnbot/internal/service"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
@@ -179,6 +180,44 @@ func TestGETGoogleOAuthStart_Enabled_RedirectSetsStateCookieAndURL(t *testing.T)
 	if !oauthCookie.HttpOnly || !oauthCookie.Secure || oauthCookie.MaxAge <= 0 ||
 		oauthCookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie flags %+v", oauthCookie)
+	}
+}
+
+func TestGETGoogleOAuthStart_InvalidLinkToken(t *testing.T) {
+	sec := strings.Repeat("c", 40)
+	cfg := testGoogleOAuthMinimalCfg(sec, true,
+		"my-client-id.apps.googleusercontent.com",
+		"https://connect.vpn-for-friends.com/api/account/google/callback",
+		"client-secret-val")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start?link_token=bad", nil)
+	serveGoogleOAuthStart(cfg)(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_link_token") {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGETGoogleOAuthStart_ValidLinkTokenSetsCookie(t *testing.T) {
+	sec := strings.Repeat("c", 41)
+	cfg := testGoogleOAuthMinimalCfg(sec, true,
+		"my-client-id.apps.googleusercontent.com",
+		"https://connect.vpn-for-friends.com/api/account/google/callback",
+		"client-secret-val")
+	linkTok, err := CreateAccountTelegramLinkToken(sec, 701, 999999991, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	rawPath := "/api/account/google/start?link_token=" + url.QueryEscape(linkTok)
+	req := httptest.NewRequest(http.MethodGet, rawPath, nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	serveGoogleOAuthStart(cfg)(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	got := findCookieValue(rec.Header(), googleOAuthCookieLinkToken)
+	if got != linkTok {
+		t.Fatalf("link cookie mismatch got %q", got)
 	}
 }
 
@@ -384,5 +423,219 @@ func TestRenderedAccountLogin_GoogleLinkWhenConfigured(t *testing.T) {
 	if !strings.Contains(html, "Откройте письмо и перейдите по ссылке") ||
 		!strings.Contains(html, "Введите email — мы отправим ссылку для входа без пароля") {
 		t.Fatal("email magic-link copy must stay intact")
+	}
+}
+
+func startGoogleOAuthForLinkFlow(t *testing.T, cfg *config.Config, linkTok string) (stateCookie, linkCookieVal string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	rawPath := "/api/account/google/start?link_token=" + url.QueryEscape(linkTok)
+	req := httptest.NewRequest(http.MethodGet, rawPath, nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	serveGoogleOAuthStart(cfg)(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("start code=%d", rec.Code)
+	}
+	state := findCookieValue(rec.Header(), googleOAuthCookieName)
+	linkCk := findCookieValue(rec.Header(), googleOAuthCookieLinkToken)
+	if state == "" || linkCk != linkTok {
+		t.Fatalf("cookies: state=%q link=%q wantLink=%q", state, linkCk, linkTok)
+	}
+	return state, linkCk
+}
+
+func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheckRedirects(t *testing.T) {
+	const shmLinkUser = 701
+	secret := strings.Repeat("L", 40)
+	validTS := httptest.NewServer(googleOAuthTestMockHandler("Taken.ByOther@example.com", true, false))
+	t.Cleanup(validTS.Close)
+	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
+
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
+		"https://connect.vpn-for-friends.com/api/account/google/callback",
+		"secret")
+	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 111222333, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, linkCk := startGoogleOAuthForLinkFlow(t, cfg, linkTok)
+
+	normWant, err := webuser.NormalizeEmail("Taken.ByOther@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := stubAccountWeb{
+		findUserByWebEmailRet: &models.User{ID: 512, Login: webuser.WebLoginFromEmail(normWant)},
+		linkWebEmailRet:       &models.User{ID: shmLinkUser, Login: "web_x"},
+	}
+
+	rec := httptest.NewRecorder()
+	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
+	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d body=%s want redirect", rec.Code, rec.Body.String())
+	}
+	loc := rec.Header().Get("Location")
+	q, qerr := url.Parse(loc)
+	if qerr != nil || q.Path != "/account" || q.Query().Get("error") != "email_already_linked" {
+		t.Fatalf("bad redirect %q parsed=%v", loc, qerr)
+	}
+	if st.linkWebEmailCalls != 0 {
+		t.Fatalf("LinkWebEmailForTelegramUser calls=%d want 0", st.linkWebEmailCalls)
+	}
+}
+
+func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_JSON409(t *testing.T) {
+	const shmLinkUser = 702
+	secret := strings.Repeat("M", 41)
+	validTS := httptest.NewServer(googleOAuthTestMockHandler("Taken.Json@Example.COM", true, false))
+	t.Cleanup(validTS.Close)
+	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
+
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
+		"https://callback/x",
+		"secret")
+	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 998877, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, linkCk := startGoogleOAuthForLinkFlow(t, cfg, linkTok)
+	normWant, err := webuser.NormalizeEmail("Taken.Json@Example.COM")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := stubAccountWeb{
+		findUserByWebEmailRet: &models.User{ID: 9001, Login: webuser.WebLoginFromEmail(normWant)},
+	}
+
+	rec := httptest.NewRecorder()
+	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
+	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if jerr := json.Unmarshal(rec.Body.Bytes(), &body); jerr != nil {
+		t.Fatal(jerr)
+	}
+	if body["error"] != accountErrorEmailAlreadyLinked {
+		t.Fatalf("body=%v", body)
+	}
+	if st.linkWebEmailCalls != 0 {
+		t.Fatalf("LinkWebEmailForTelegramUser calls=%d want 0", st.linkWebEmailCalls)
+	}
+}
+
+func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_JSON409(t *testing.T) {
+	const shmLinkUser = 703
+	secret := strings.Repeat("N", 42)
+	validTS := httptest.NewServer(googleOAuthTestMockHandler("Edge.Case@example.com", true, false))
+	t.Cleanup(validTS.Close)
+	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
+
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "secret")
+	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 445566, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, linkCk := startGoogleOAuthForLinkFlow(t, cfg, linkTok)
+
+	st := stubAccountWeb{
+		findUserByWebEmailRet: nil,
+		linkWebEmailErr:       appService.ErrWebEmailUsedByOtherAccount,
+	}
+
+	rec := httptest.NewRecorder()
+	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
+	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if jerr := json.Unmarshal(rec.Body.Bytes(), &body); jerr != nil {
+		t.Fatal(jerr)
+	}
+	if body["error"] != accountErrorEmailAlreadyLinked {
+		t.Fatalf("body=%v", body)
+	}
+	if st.linkWebEmailCalls != 1 {
+		t.Fatalf("link calls=%d want 1", st.linkWebEmailCalls)
+	}
+}
+
+func TestGoogleOAuthCallback_LinkFlow_LinkOK_RedirectSession_NoFindOrCreate(t *testing.T) {
+	const shmUID = 27
+	secret := strings.Repeat("O", 42)
+	emGoogle := `link.good@Demo.org`
+	validTS := httptest.NewServer(googleOAuthTestMockHandler(emGoogle, true, false))
+	t.Cleanup(validTS.Close)
+	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
+
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
+		"https://cb.example/link", "oauth-secret")
+
+	linkTok, err := CreateAccountTelegramLinkToken(secret, shmUID, 8844220011, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, linkCk := startGoogleOAuthForLinkFlow(t, cfg, linkTok)
+
+	normWant, err := webuser.NormalizeEmail(emGoogle)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st := stubAccountWeb{
+		findUserByWebEmailRet: nil,
+		linkWebEmailRet: &models.User{
+			ID:     shmUID,
+			Login:  "@telegram_login",
+			Login2: "web_9f1b113a91c4b2f6",
+		},
+		findOrCreateRet: &models.User{ID: 999999, Login: "must_not_be_used"},
+	}
+
+	rec := httptest.NewRecorder()
+	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
+	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d body=%s want redirect", rec.Code, rec.Body.String())
+	}
+	loc := rec.Header().Get("Location")
+	to, err := url.Parse(loc)
+	if err != nil || to.Path != "/account/session" {
+		t.Fatalf("bad redirect %q err=%v", loc, err)
+	}
+	rawTok := strings.TrimSpace(to.Query().Get("token"))
+	if rawTok == "" {
+		t.Fatal("missing session token")
+	}
+	claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+	if err != nil || claims.Email != normWant || claims.UserID != shmUID || claims.Login != "@telegram_login" {
+		t.Fatalf("claims=%+v err=%v", claims, err)
+	}
+	if st.findOrCreateCalls != 0 {
+		t.Fatalf("FindOrCreateWebUser calls=%d want 0", st.findOrCreateCalls)
+	}
+	if st.linkWebEmailCalls != 1 {
+		t.Fatalf("LinkWebEmailForTelegramUser calls=%d want 1", st.linkWebEmailCalls)
 	}
 }

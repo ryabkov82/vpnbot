@@ -156,6 +156,16 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	btnHelp := inlineMenu.Data("🗓 Помощь", "/help")
 	btnSupport := inlineMenu.URL("🛟 Поддержка", s.config.Telegram.SupportChat)
 
+	var webCabBtn *telebot.Btn
+	if u, uerr := s.service.GetUser(c.Chat().ID); uerr != nil && !errors.Is(uerr, service.ErrUserNotFound) {
+		log.Printf("telegram web cabinet link: get user %v", uerr)
+	} else if u != nil {
+		if cabinetURL := s.telegramWebCabinetURL(c.Chat().ID, u.ID); cabinetURL != "" {
+			b := inlineMenu.URL("🌐 Личный кабинет", cabinetURL)
+			webCabBtn = &b
+		}
+	}
+
 	// Кнопка «Новости», если задана ссылка
 	var btnNews *telebot.Btn
 	if s.config.Telegram.NewsChannel != "" {
@@ -166,6 +176,9 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	// Компоновка клавиатуры
 	var rows []telebot.Row
 	rows = append(rows, inlineMenu.Row(btnBalance))
+	if webCabBtn != nil {
+		rows = append(rows, inlineMenu.Row(*webCabBtn))
+	}
 	rows = append(rows, inlineMenu.Row(btnKeys))
 
 	if trialRow, ok, err := s.buildTrialRow(c, inlineMenu); err != nil {
@@ -1083,4 +1096,18 @@ func (s *Service) buildTrialRow(c telebot.Context, m *telebot.ReplyMarkup) (tele
 	// 4) Готовим кнопку
 	btn := m.Data(svc.Name, "/trial")
 	return m.Row(btn), true, nil
+}
+
+func (s *Service) telegramWebCabinetURL(chatID int64, shmUserID int) string {
+	base := strings.TrimRight(strings.TrimSpace(s.config.WebSales.PublicBaseURL), "/")
+	secret := strings.TrimSpace(s.config.WebSales.OrderTokenSecret)
+	if base == "" || secret == "" || chatID <= 0 || shmUserID <= 0 {
+		return ""
+	}
+	tok, err := web.CreateAccountTelegramLinkToken(secret, shmUserID, chatID, s.config)
+	if err != nil {
+		log.Printf("CreateAccountTelegramLinkToken: %v", err)
+		return ""
+	}
+	return base + "/account/link?token=" + url.QueryEscape(tok)
 }

@@ -112,6 +112,10 @@ func (s *Service) GetUserByLogin(login string) (*models.User, error) {
 	return s.apiClient.GetUserByLogin(login)
 }
 
+func (s *Service) GetUserByLogin2(login2 string) (*models.User, error) {
+	return s.apiClient.GetUserByLogin2(login2)
+}
+
 // GetUserServicesByUserID возвращает услуги по числовому SHM user_id (без привязки к Telegram chat id).
 func (s *Service) GetUserServicesByUserID(userID int) ([]models.UserService, error) {
 	if userID <= 0 {

@@ -21,8 +21,11 @@ import (
 
 // accountWebApp — кабинет (тесты через stub).
 type accountWebApp interface {
+	GetUserByID(userID int) (*models.User, error)
 	GetUserByLogin(login string) (*models.User, error)
+	FindUserByWebEmail(email string) (*models.User, error)
 	FindOrCreateWebUser(email string) (*models.User, bool, error)
+	LinkWebEmailForTelegramUser(userID int, telegramChatID int64, email string, source string) (*models.User, error)
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
 	GetUserService(serviceID string) (*models.UserService, error)
 	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
@@ -99,17 +102,29 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 
-		login := webuser.WebLoginFromEmail(normEmail)
-		user, err := app.GetUserByLogin(login)
+		linkByEmail, err := app.FindUserByWebEmail(normEmail)
 		if err != nil {
-			slog.Error("account login start: GetUserByLogin", "err", err)
+			slog.Error("account login start: FindUserByWebEmail", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
 		}
 
+		login := webuser.WebLoginFromEmail(normEmail)
+		var shmUser *models.User
+		if linkByEmail != nil {
+			shmUser = linkByEmail
+		} else {
+			shmUser, err = app.GetUserByLogin(login)
+			if err != nil {
+				slog.Error("account login start: GetUserByLogin", "err", err)
+				writeJSONError(w, http.StatusInternalServerError, "internal_error")
+				return
+			}
+		}
+
 		var magicTok string
-		if user != nil {
-			magicTok, err = CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		if shmUser != nil {
+			magicTok, err = CreateAccountToken(secret, normEmail, shmUser.ID, shmUser.Login, accountTokenTTL(cfg))
 		} else {
 			magicTok, err = CreateAccountSignupToken(secret, normEmail, login, accountTokenTTL(cfg))
 		}
@@ -202,28 +217,14 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		existing, err := app.GetUserByLogin(wantLogin)
-		if err != nil {
-			slog.Error("account session start: GetUserByLogin", "err", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+		u2, created, ferr := app.FindOrCreateWebUser(normEmail)
+		if ferr != nil || u2 == nil {
+			slog.Error("account session start: FindOrCreateWebUser", "err", ferr)
+			writeJSONError(w, http.StatusInternalServerError, "web_user_failed")
 			return
 		}
-
-		isNewUser := false
-		var user *models.User
-		fromExisting := existing != nil
-		if existing != nil {
-			user = existing
-		} else {
-			u2, created, ferr := app.FindOrCreateWebUser(normEmail)
-			if ferr != nil || u2 == nil {
-				slog.Error("account session start: FindOrCreateWebUser", "err", ferr)
-				writeJSONError(w, http.StatusInternalServerError, "web_user_failed")
-				return
-			}
-			user = u2
-			isNewUser = created
-		}
+		user := u2
+		isNewUser := created
 
 		acTok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 		if err != nil {
@@ -232,7 +233,7 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		if !fromExisting && isNewUser {
+		if isNewUser {
 			sendAccountUserRegisteredTelegramNotification(cfg, normEmail, user.ID, user.Login, ClientIPFromRequest(r))
 		}
 

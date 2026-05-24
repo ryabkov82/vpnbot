@@ -29,6 +29,15 @@ func renderedAccountLoginPageHTML(cfg *config.Config) []byte {
 //go:embed static/account/session.html
 var accountSessionPageHTML []byte
 
+//go:embed static/account/link_invalid.html
+var accountLinkInvalidHTML []byte
+
+//go:embed static/account/link_start.html
+var accountLinkStartHTML []byte
+
+//go:embed static/account/link_standalone_conflict.html
+var accountLinkStandaloneConflictHTML []byte
+
 func serveAccount(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

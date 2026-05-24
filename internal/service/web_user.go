@@ -13,7 +13,17 @@ const webUserSource = "vpn-for-friends.com"
 
 type webUserRegistrar interface {
 	GetUserByLogin(login string) (*models.User, error)
+	GetUserByLogin2(login2 string) (*models.User, error)
 	RegisterUser(user models.UserRegistrationRequest) error
+}
+
+func findUserByWebLoginKeys(reg webUserRegistrar, normalizedEmail string) (*models.User, error) {
+	webLogin := webuser.WebLoginFromEmail(normalizedEmail)
+	u, err := reg.GetUserByLogin(webLogin)
+	if err != nil || u != nil {
+		return u, err
+	}
+	return reg.GetUserByLogin2(webLogin)
 }
 
 func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, bool, error) {
@@ -22,15 +32,15 @@ func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, bool
 		return nil, false, err
 	}
 
-	login := webuser.WebLoginFromEmail(normalizedEmail)
-
-	u, err := reg.GetUserByLogin(login)
+	uKnown, err := findUserByWebLoginKeys(reg, normalizedEmail)
 	if err != nil {
 		return nil, false, err
 	}
-	if u != nil {
-		return u, false, nil
+	if uKnown != nil {
+		return uKnown, false, nil
 	}
+
+	login := webuser.WebLoginFromEmail(normalizedEmail)
 
 	password, err := randomWebUserPassword()
 	if err != nil {
@@ -53,7 +63,7 @@ func findOrCreateWebUser(reg webUserRegistrar, email string) (*models.User, bool
 		return nil, false, err
 	}
 
-	u, err = reg.GetUserByLogin(login)
+	u, err := reg.GetUserByLogin(login)
 	if err != nil {
 		return nil, false, err
 	}
@@ -71,8 +81,17 @@ func randomWebUserPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// FindOrCreateWebUser находит SHM-пользователя по web-login из email или регистрирует нового.
+// FindOrCreateWebUser находит SHM-пользователя по login (=web_<hash>) или по login2 (=web_<hash> у telegram-профиля), иначе регистрирует web-only пользователя.
 // Второй результат — RegisterUser действительно вызывался в этом запросе.
 func (s *Service) FindOrCreateWebUser(email string) (*models.User, bool, error) {
 	return findOrCreateWebUser(s.apiClient, email)
+}
+
+// FindUserByWebEmail находит shm user только по связке login/login2 = web_<hash(email)> (без фильтров по nested settings.web — SHM на них даёт ISE).
+func (s *Service) FindUserByWebEmail(email string) (*models.User, error) {
+	normEmail, err := webuser.NormalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	return findUserByWebLoginKeys(s.apiClient, normEmail)
 }

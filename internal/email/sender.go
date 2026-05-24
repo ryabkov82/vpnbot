@@ -90,3 +90,18 @@ func SendAccountLoginEmail(cfg *config.Config, to, loginURL string) error {
 `, strings.TrimSpace(loginURL))
 	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
 }
+
+// SendAccountLinkConfirmEmail — письмо для завершения привязки Telegram → web после ввода email на /account/link.
+func SendAccountLinkConfirmEmail(cfg *config.Config, to, confirmURL string) error {
+	subject := "VPN for Friends — подтвердите привязку личного кабинета"
+	body := fmt.Sprintf(`VPN for Friends
+
+Подтвердите email, чтобы связать ваш web-личный кабинет с текущим аккаунтом в Telegram и видеть ваши услуги и баланс на сайте.
+
+Откройте ссылку:
+%s
+
+Если вы не запрашивали привязку, проигнорируйте письмо.
+`, strings.TrimSpace(confirmURL))
+	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
+}

@@ -45,6 +45,16 @@
 				window.history.replaceState({}, document.title, '/account');
 			} catch (e) {}
 		}
+		if (params.get('error') === 'email_already_linked') {
+			var er = document.getElementById('err-msg');
+			if (er) {
+				er.textContent = 'Этот email уже привязан к другому аккаунту. Войдите с другим email или обратитесь в поддержку.';
+				er.classList.remove('d-none');
+			}
+			try {
+				window.history.replaceState({}, document.title, '/account');
+			} catch (e2) {}
+		}
 	})();
 	</script>
 	<script>

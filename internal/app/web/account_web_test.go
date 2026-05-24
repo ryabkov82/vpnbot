@@ -51,6 +51,46 @@ type stubAccountWeb struct {
 	findOrCreateErr     error
 	findOrCreateCalls   int
 	findOrCreateCreated bool
+
+	findUserByWebEmailRet *models.User
+	findUserByWebEmailErr error
+
+	linkWebEmailCalls int
+	linkWebEmailRet   *models.User
+	linkWebEmailErr   error
+
+	getUserByIDCalls int
+	getUserByIDArg   int
+	getUserByIDRets  map[int]*models.User
+	getUserByIDRet   *models.User
+	getUserByIDErr   error
+}
+
+func (s *stubAccountWeb) GetUserByID(userID int) (*models.User, error) {
+	s.getUserByIDCalls++
+	s.getUserByIDArg = userID
+	if s.getUserByIDErr != nil {
+		return nil, s.getUserByIDErr
+	}
+	if len(s.getUserByIDRets) > 0 {
+		return s.getUserByIDRets[userID], nil
+	}
+	return s.getUserByIDRet, nil
+}
+
+func (s *stubAccountWeb) FindUserByWebEmail(email string) (*models.User, error) {
+	if s.findUserByWebEmailErr != nil {
+		return nil, s.findUserByWebEmailErr
+	}
+	return s.findUserByWebEmailRet, nil
+}
+
+func (s *stubAccountWeb) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, email string, source string) (*models.User, error) {
+	s.linkWebEmailCalls++
+	if s.linkWebEmailErr != nil {
+		return nil, s.linkWebEmailErr
+	}
+	return s.linkWebEmailRet, nil
 }
 
 func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
@@ -254,6 +294,44 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	}
 }
 
+func TestServeAccountLoginStart_PrefersSettingsWebEmailUser(t *testing.T) {
+	var gotMail []byte
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		gotMail = append([]byte(nil), msg...)
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+	em := `linked@test.com`
+	normWant, err := webuser.NormalizeEmail(em)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := models.User{ID: 918, Login: `@918`}
+	st := &stubAccountWeb{
+		findUserByWebEmailRet: &linked,
+		userByLogin:           nil,
+	}
+	rec := httptest.NewRecorder()
+	serveAccountLoginStart(cfg, st, rl).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+em+`","website":""}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
+	sec := cfg.WebSales.OrderTokenSecret
+	ac, err := ParseAndVerifyAccountToken(sec, rawTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ac.UserID != 918 || ac.Email != normWant || ac.Login != linked.Login {
+		t.Fatalf("claims %+v", ac)
+	}
+	if _, err := ParseAndVerifyAccountSignupToken(sec, rawTok); err == nil {
+		t.Fatal("expected signup decode to fail (account magic link)")
+	}
+}
+
 func TestServeAccountLoginStart_KnownAndUnknownSameJSONBody(t *testing.T) {
 	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
 		return nil
@@ -421,7 +499,8 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	}
 	existing := &models.User{ID: 6611, Login: login}
 	st := &stubAccountWeb{
-		userByLogin: existing,
+		findOrCreateRet:     existing,
+		findOrCreateCreated: false,
 	}
 	h := serveAccountSessionStart(cfg, st)
 	rec := httptest.NewRecorder()
@@ -437,8 +516,8 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	if out.IsNewUser {
 		t.Fatalf("expected existing user %+v", out)
 	}
-	if st.findOrCreateCalls != 0 {
-		t.Fatalf("FindOrCreateWebUser should not run, got %d", st.findOrCreateCalls)
+	if st.findOrCreateCalls != 1 {
+		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
 	}
 	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
 	if err != nil || ac.UserID != 6611 {

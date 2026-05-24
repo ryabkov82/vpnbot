@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	accountTokenTypAccount = "account"
-	accountTokenTypSignup  = "account_signup"
+	accountTokenTypAccount       = "account"
+	accountTokenTypSignup       = "account_signup"
+	accountTokenTypTelegramLink = "account_telegram_link"
+	accountTokenTypLinkEmail    = "account_link_email"
 )
 
 // AccountTokenClaims — magic-link личного кабинета.
@@ -32,6 +34,23 @@ type AccountSignupTokenClaims struct {
 	Email string `json:"email"`
 	Login string `json:"login"`
 	Exp   int64  `json:"exp"`
+}
+
+// AccountTelegramLinkClaims — короткий токен из бота до привязки web-email.
+type AccountTelegramLinkClaims struct {
+	Typ            string `json:"typ"`
+	ShmUserID      int    `json:"shm_user_id"`
+	TelegramChatID int64  `json:"telegram_chat_id"`
+	Exp            int64  `json:"exp"`
+}
+
+// AccountLinkEmailClaims — переход из письма после ввода email на странице /account/link.
+type AccountLinkEmailClaims struct {
+	Typ            string `json:"typ"`
+	ShmUserID      int    `json:"shm_user_id"`
+	TelegramChatID int64  `json:"telegram_chat_id"`
+	Email          string `json:"email"`
+	Exp            int64  `json:"exp"`
 }
 
 var (
@@ -126,6 +145,116 @@ func CreateAccountSignupToken(secret, email, login string, ttl time.Duration) (s
 	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
 	encSig := base64.RawURLEncoding.EncodeToString(sig)
 	return encPayload + "." + encSig, nil
+}
+
+func accountTelegramLinkTTL(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.WebSales.TelegramLinkTokenTTLMinutes > 0 {
+		return time.Duration(cfg.WebSales.TelegramLinkTokenTTLMinutes) * time.Minute
+	}
+	return 30 * time.Minute
+}
+
+func accountLinkEmailMagicTTL(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.WebSales.LinkConfirmEmailTTLMinutes > 0 {
+		return time.Duration(cfg.WebSales.LinkConfirmEmailTTLMinutes) * time.Minute
+	}
+	return 60 * time.Minute
+}
+
+// CreateAccountTelegramLinkToken — короткая ссылка из Telegram («Личный кабинет»).
+func CreateAccountTelegramLinkToken(secret string, userID int, chatID int64, cfg *config.Config) (string, error) {
+	if strings.TrimSpace(secret) == "" {
+		return "", ErrAccountTokenEmptySecret
+	}
+	if userID <= 0 || chatID <= 0 {
+		return "", errors.New("invalid telegram link payload")
+	}
+	ttl := accountTelegramLinkTTL(cfg)
+	payload := AccountTelegramLinkClaims{
+		Typ:            accountTokenTypTelegramLink,
+		ShmUserID:      userID,
+		TelegramChatID: chatID,
+		Exp:            time.Now().Add(ttl).Unix(),
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	return encPayload + "." + encSig, nil
+}
+
+// VerifyAccountTelegramLinkToken проверяет токен привязки из бота.
+func VerifyAccountTelegramLinkToken(secret, token string) (*AccountTelegramLinkClaims, error) {
+	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
+	if err != nil {
+		return nil, err
+	}
+	var claims AccountTelegramLinkClaims
+	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
+		return nil, ErrAccountTokenMalformed
+	}
+	if claims.Typ != accountTokenTypTelegramLink {
+		return nil, ErrAccountTokenType
+	}
+	if claims.Exp <= time.Now().Unix() {
+		return nil, ErrAccountTokenExpired
+	}
+	if claims.ShmUserID <= 0 || claims.TelegramChatID <= 0 {
+		return nil, ErrAccountTokenMalformed
+	}
+	return &claims, nil
+}
+
+// CreateAccountLinkEmailToken — продолжение flow после запроса письма с /account/link.
+func CreateAccountLinkEmailToken(secret string, shmUserID int, chatID int64, normEmail string, cfg *config.Config) (string, error) {
+	if strings.TrimSpace(secret) == "" {
+		return "", ErrAccountTokenEmptySecret
+	}
+	normEmail = strings.TrimSpace(normEmail)
+	if shmUserID <= 0 || chatID <= 0 || normEmail == "" {
+		return "", errors.New("invalid link-email token fields")
+	}
+	ttl := accountLinkEmailMagicTTL(cfg)
+	payload := AccountLinkEmailClaims{
+		Typ:            accountTokenTypLinkEmail,
+		ShmUserID:      shmUserID,
+		TelegramChatID: chatID,
+		Email:          normEmail,
+		Exp:            time.Now().Add(ttl).Unix(),
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	return encPayload + "." + encSig, nil
+}
+
+// VerifyAccountLinkEmailToken проверяет одноразовую ссылку из письма привязки.
+func VerifyAccountLinkEmailToken(secret, token string) (*AccountLinkEmailClaims, error) {
+	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
+	if err != nil {
+		return nil, err
+	}
+	var claims AccountLinkEmailClaims
+	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
+		return nil, ErrAccountTokenMalformed
+	}
+	if claims.Typ != accountTokenTypLinkEmail {
+		return nil, ErrAccountTokenType
+	}
+	if claims.Exp <= time.Now().Unix() {
+		return nil, ErrAccountTokenExpired
+	}
+	if claims.ShmUserID <= 0 || claims.TelegramChatID <= 0 || strings.TrimSpace(claims.Email) == "" {
+		return nil, ErrAccountTokenMalformed
+	}
+	return &claims, nil
 }
 
 // ParseAndVerifyAccountToken проверяет подпись и срок токена кабинета.

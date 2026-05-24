@@ -75,6 +75,10 @@ type Config struct {
 		OrderTokenSecret   string `json:"order_token_secret"`
 		OrderTokenTTLHours int    `json:"order_token_ttl_hours"`
 		PublicBaseURL      string `json:"public_base_url"`
+		// TTL токена «Личный кабинет» из Telegram (/account/link?token=...)
+		TelegramLinkTokenTTLMinutes int `json:"telegram_link_token_ttl_minutes"`
+		// TTL письма подтверждения привязки email (account_link_email)
+		LinkConfirmEmailTTLMinutes int `json:"link_confirm_email_ttl_minutes"`
 	} `json:"web_sales"`
 
 	// WebAccount — вход в личный кабинет (OAuth и т.п.), без секретов по умолчанию.
