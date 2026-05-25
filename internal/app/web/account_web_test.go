@@ -787,7 +787,7 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &stubAccountWeb{
-		balance: &models.UserBalance{Balance: 0.93, Forecast: 0},
+		balance: &models.UserBalance{Balance: 0.93, Forecast: 280},
 		services: []models.UserService{{
 			Name:          "1 мес",
 			ServiceID:     336,
@@ -831,7 +831,7 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &env); err != nil {
 		t.Fatal(err)
 	}
-	if env.User.Email != "ok@test.com" || env.User.ID != 99 || env.User.Balance != 0.93 || env.User.Forecast != 0 {
+	if env.User.Email != "ok@test.com" || env.User.ID != 99 || env.User.Balance != 0.93 || env.User.Forecast != 280 {
 		t.Fatalf("user %+v", env.User)
 	}
 	if len(env.Services) != 1 || !env.Services[0].CanConnect || env.Services[0].UserServiceID != 336 || env.Services[0].ServiceID != 3 {

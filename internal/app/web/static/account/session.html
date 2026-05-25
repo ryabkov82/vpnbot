@@ -151,6 +151,7 @@
 						<div class="mb-3">
 							<label for="topup-custom" class="form-label">Другая сумма: 50–10 000 ₽, до 2 знаков после запятой</label>
 							<input type="number" class="form-control" id="topup-custom" min="50" max="10000" step="0.01" placeholder="Например 250">
+							<div id="topup-forecast-hint" class="form-text text-secondary small d-none">Сумма рассчитана по данным биллинга для оплаты/продления услуг.</div>
 						</div>
 						<div class="alert alert-danger py-2 small d-none" id="topup-modal-err"></div>
 						<button type="button" class="btn my-btn w-100" id="topup-submit">Перейти к оплате</button>
@@ -172,7 +173,16 @@
 		var dashboardToken = '';
 		var paymentsLoaded = false;
 		var accountPaymentsCache = [];
+		var accountForecast = 0;
 
+		function setAccountForecastFromServicesPayload(j) {
+			var raw = j && j.user ? j.user.forecast : null;
+			var n = typeof raw === 'number' ? raw : Number(raw);
+			if (typeof n !== 'number' || !isFinite(n)) {
+				n = 0;
+			}
+			accountForecast = n;
+		}
 		function escapeHtml(s) {
 			var t = String(s);
 			return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -481,11 +491,39 @@
 
 		var topupHandlersBound = false;
 
+		function applyTopupModalForecastDefaults() {
+			var customIn = document.getElementById('topup-custom');
+			var hintEl = document.getElementById('topup-forecast-hint');
+			if (!customIn || !hintEl) {
+				return;
+			}
+			var f = accountForecast;
+			if (typeof f !== 'number' || !isFinite(f) || f <= 0) {
+				hintEl.classList.add('d-none');
+				return;
+			}
+			var norm = Math.round(f * 100) / 100;
+			var amt = norm < 50 ? 50 : norm;
+			if (amt > 10000) {
+				amt = 10000;
+			}
+			amt = Math.round(amt * 100) / 100;
+			customIn.value = String(amt);
+			hintEl.classList.remove('d-none');
+		}
+
 		function bindTopupHandlers(tok) {
 			if (topupHandlersBound) {
 				return;
 			}
 			topupHandlersBound = true;
+			var modalEl = document.getElementById('topupModal');
+			if (modalEl && modalEl.dataset.forecastShownBound !== '1') {
+				modalEl.dataset.forecastShownBound = '1';
+				modalEl.addEventListener('shown.bs.modal', function () {
+					applyTopupModalForecastDefaults();
+				});
+			}
 			var customIn = document.getElementById('topup-custom');
 			var topupRefreshBtn = document.getElementById('topup-result-refresh');
 			if (topupRefreshBtn && topupRefreshBtn.dataset.bound !== '1') {
@@ -497,6 +535,10 @@
 			document.querySelectorAll('.amt-quick').forEach(function (b) {
 				b.addEventListener('click', function () {
 					customIn.value = b.getAttribute('data-amt');
+					var qh = document.getElementById('topup-forecast-hint');
+					if (qh) {
+						qh.classList.add('d-none');
+					}
 				});
 			});
 			document.getElementById('topup-submit').addEventListener('click', function () {
@@ -669,6 +711,7 @@
 						throw new Error('refresh_failed');
 					}
 					var j = x.j;
+					setAccountForecastFromServicesPayload(j);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
 						'Вы вошли как ' + String(j.user.email || '').trim();
@@ -986,6 +1029,7 @@
 					}
 					var j = x.j;
 					show('dashboard-area', true);
+					setAccountForecastFromServicesPayload(j);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
 						'Вы вошли как ' + String(j.user.email || '').trim();

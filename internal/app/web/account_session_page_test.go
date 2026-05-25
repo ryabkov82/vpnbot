@@ -64,6 +64,17 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !strings.Contains(raw, `50–10 000 ₽, до 2 знаков после запятой`) {
 		t.Fatal("embed: topup label must clarify decimal places")
 	}
+	for _, fcNeedle := range []string{
+		`id="topup-forecast-hint"`,
+		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
+		`setAccountForecastFromServicesPayload`,
+		`applyTopupModalForecastDefaults`,
+		`'shown.bs.modal'`,
+	} {
+		if !strings.Contains(raw, fcNeedle) {
+			t.Fatalf("embed session forecast topup wiring missing %q", fcNeedle)
+		}
+	}
 	iER := strings.Index(raw, `id="topup-result" class="alert`)
 	if iER < 0 {
 		t.Fatal("embed topup-result missing")

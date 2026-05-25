@@ -198,6 +198,19 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, `50–10 000 ₽, до 2 знаков после запятой`) {
 		t.Fatal("topup modal must say «после запятой» for fractional amounts")
 	}
+	for _, fcNeedle := range []string{
+		`id="topup-forecast-hint"`,
+		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
+		`var accountForecast = 0`,
+		`function setAccountForecastFromServicesPayload`,
+		`function applyTopupModalForecastDefaults`,
+		`'shown.bs.modal'`,
+		`setAccountForecastFromServicesPayload(j)`,
+	} {
+		if !strings.Contains(s, fcNeedle) {
+			t.Fatalf("session forecast topup wiring missing %q", fcNeedle)
+		}
+	}
 	iTopRes := strings.Index(s, `id="topup-result" class="alert`)
 	if iTopRes < 0 {
 		t.Fatal("topup-result block missing")
