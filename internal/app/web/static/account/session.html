@@ -175,6 +175,7 @@
 		var paymentsLoaded = false;
 		var accountPaymentsCache = [];
 		var accountForecast = 0;
+		var suppressNextTopupForecastApply = false;
 
 		function setAccountForecastFromServicesPayload(j) {
 			var raw = j && j.user ? j.user.forecast : null;
@@ -376,24 +377,29 @@
 										return;
 									}
 									buyBtn.textContent = 'Ожидает оплаты';
-									var payUrl = y.j && y.j.payment_url ? String(y.j.payment_url).trim() : '';
-									if (payUrl) {
-										payA.href = payUrl;
-									} else {
-										payA.href = '#';
+									var orderAmtNum = NaN;
+									if (y.j && typeof y.j.amount === 'number' && isFinite(y.j.amount)) {
+										orderAmtNum = y.j.amount;
 									}
-									payA.target = '_blank';
-									payA.rel = 'noopener';
 									var rn = '';
 									if (y.j && y.j.returned_service_name !== undefined && y.j.returned_service_name !== null) {
 										rn = String(y.j.returned_service_name).trim();
 									}
 									if (!rn) { rn = 'Тариф'; }
-									var neutralMsg = 'Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.';
-									var dupMsg =
+									var serverMsg = (y.j && y.j.message) ? String(y.j.message).trim() : '';
+									var dupMsgFallback =
 										'У вас уже есть услуга, ожидающая оплаты: ' + rn +
 										'. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.';
-									cardOkMsg.textContent = (y.j && y.j.existing_unpaid === true) ? dupMsg : neutralMsg;
+									var neutralMsgFallback = 'Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.';
+									var cardTxt = serverMsg || ((y.j && y.j.existing_unpaid === true) ? dupMsgFallback : neutralMsgFallback);
+									cardOkMsg.textContent = cardTxt;
+									payA.classList.add('d-none');
+									payA.href = '#';
+									payA.removeAttribute('target');
+									payA.removeAttribute('rel');
+									if (typeof orderAmtNum === 'number' && isFinite(orderAmtNum) && orderAmtNum > 0) {
+										openTopupModalSuggestingOrderAmount(orderAmtNum);
+									}
 									cardOk.classList.remove('d-none');
 									refreshAccountSnapshot(tok).catch(function () {});
 									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -522,6 +528,10 @@
 			if (modalEl && modalEl.dataset.forecastShownBound !== '1') {
 				modalEl.dataset.forecastShownBound = '1';
 				modalEl.addEventListener('shown.bs.modal', function () {
+					if (suppressNextTopupForecastApply) {
+						suppressNextTopupForecastApply = false;
+						return;
+					}
 					applyTopupModalForecastDefaults();
 				});
 				modalEl.addEventListener('hidden.bs.modal', function () {
@@ -529,6 +539,7 @@
 					if (noFc) {
 						noFc.classList.add('d-none');
 					}
+					suppressNextTopupForecastApply = false;
 				});
 			}
 			var customIn = document.getElementById('topup-custom');
@@ -756,7 +767,26 @@
 			}
 		}
 
-		function openTopupModalForNotPaidService() {
+		function openTopupModalSuggestingOrderAmount(amtOrder) {
+			document.getElementById('topup-modal-err').classList.add('d-none');
+			var noForecastElAmt = document.getElementById('topup-no-forecast-msg');
+			if (noForecastElAmt) {
+				noForecastElAmt.classList.add('d-none');
+			}
+			var hintAmt = document.getElementById('topup-forecast-hint');
+			if (hintAmt) {
+				hintAmt.classList.add('d-none');
+			}
+			var ciAmt = document.getElementById('topup-custom');
+			if (ciAmt && typeof amtOrder === 'number' && isFinite(amtOrder) && amtOrder > 0) {
+				var normalizedOrderAmt = Math.round(amtOrder * 100) / 100;
+				ciAmt.value = String(normalizedOrderAmt);
+			}
+			suppressNextTopupForecastApply = true;
+			openBalanceTabWithTopupModal();
+		}
+
+		function openTopupModalForBillingForecast() {
 			document.getElementById('topup-modal-err').classList.add('d-none');
 			var noForecastEl = document.getElementById('topup-no-forecast-msg');
 			if (noForecastEl) {
@@ -765,8 +795,8 @@
 			var modalEl = document.getElementById('topupModal');
 			var f = accountForecast;
 			if (!(typeof f === 'number' && isFinite(f) && f > 0)) {
-				function clearNotPaidNoForecastShown() {
-					modalEl.removeEventListener('shown.bs.modal', clearNotPaidNoForecastShown);
+				function billingForecastMissingOnShown() {
+					modalEl.removeEventListener('shown.bs.modal', billingForecastMissingOnShown);
 					var ci = document.getElementById('topup-custom');
 					if (ci) {
 						ci.value = '';
@@ -779,7 +809,7 @@
 						noForecastEl.classList.remove('d-none');
 					}
 				}
-				modalEl.addEventListener('shown.bs.modal', clearNotPaidNoForecastShown);
+				modalEl.addEventListener('shown.bs.modal', billingForecastMissingOnShown);
 			}
 			openBalanceTabWithTopupModal();
 		}
@@ -791,6 +821,8 @@
 				var stUp = String(s.status || '').toUpperCase();
 				var active = stUp === 'ACTIVE';
 				var notPaid = stUp === 'NOT PAID';
+				var blocked = stUp === 'BLOCK';
+				var forecastBilling = notPaid || blocked;
 				var cardEl = document.createElement('div');
 				cardEl.className = 'col-12';
 				var nm = escapeHtml(String(s.name || 'Услуга'));
@@ -823,14 +855,17 @@
 				} else if (notPaid) {
 					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.</div>' +
 						'<div class="small text-secondary mt-2">Если хотите выбрать другой тариф, сначала отмените эту услугу.</div>';
+				} else if (blocked) {
+					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет продлена автоматически, когда средств будет достаточно.</div>';
 				}
 				var cancelHtml = '';
 				if (!active) {
-					if (notPaid) {
+					if (forecastBilling) {
+						var payTopupLbl = notPaid ? 'Пополнить для активации' : 'Пополнить для продления';
 						cancelHtml =
 							'<div class="mt-2 d-grid gap-2 d-sm-flex flex-sm-wrap">' +
 							'<button type="button" class="btn btn-sm btn-success js-svc-balance-pay">' +
-							'Перейти к оплате</button>' +
+							payTopupLbl + '</button>' +
 							'<button type="button" class="btn btn-sm btn-outline-danger js-cancel-service" data-usid="' + usid + '">' +
 							'Отменить услугу</button>' +
 							'</div>' +
@@ -851,7 +886,7 @@
 					cancelHtml +=
 						'<div class="svc-cancel-err small text-danger mt-2 d-none" role="alert"></div>' +
 						'<div class="svc-cancel-ok small text-success mt-2 d-none" role="status"></div>' +
-						(notPaid ? '' : '<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">' +
+						(forecastBilling ? '' : '<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">' +
 							'Отменить услугу</button>');
 				}
 				cardEl.innerHTML = '<div class="' + svcCardCls + '" style="background:var(--bs-secondary-bg)">' +
@@ -941,7 +976,7 @@
 							});
 						}
 						payBtn.addEventListener('click', function () {
-							openTopupModalForNotPaidService();
+							openTopupModalForBillingForecast();
 						});
 					})(cardRoot, tok);
 				}

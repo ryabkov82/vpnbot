@@ -262,9 +262,11 @@ func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@buy.com", 3381, "web_b3381", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
-			3: {ServiceID: 3, Name: "1 месяц", Descr: "x", Cost: 150, Period: 1, AllowToOrder: 1},
+			// Cost выше суммы платежа: оплата идёт по SHM Forecast после заказа, не по тарифу.
+			3: {ServiceID: 3, Name: "1 месяц", Descr: "x", Cost: 390, Period: 1, AllowToOrder: 1},
 		},
 		serviceOrderRet: &models.UserService{ServiceID: 338, BaseServiceID: 3, Status: "NOT PAID"},
+		balance:         &models.UserBalance{Balance: 234.06, Forecast: 155.94},
 	}
 	h := serveAccountServiceOrder(cfg, st)
 	rec := httptest.NewRecorder()
@@ -281,7 +283,8 @@ func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if out.Status != "created" || out.ServiceID != 3 || out.UserServiceID != 338 ||
-		out.UserServiceStatus != "NOT PAID" || out.Amount != 150 || out.PaymentURL == "" {
+		out.UserServiceStatus != "NOT PAID" || out.Amount != 155.94 ||
+		strings.TrimSpace(out.PaymentURL) != "" {
 		t.Fatalf("%#v", out)
 	}
 	if out.ExistingUnpaid != false {
@@ -292,10 +295,6 @@ func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 	}
 	if !strings.Contains(out.Message, "Услуга ожидает оплаты") || strings.Contains(out.Message, "создана") {
 		t.Fatalf("unexpected message: %q", out.Message)
-	}
-	if !strings.Contains(out.PaymentURL, "yookassa.cgi") ||
-		!strings.Contains(out.PaymentURL, "3381") || !strings.Contains(out.PaymentURL, "amount=150") {
-		t.Fatal(out.PaymentURL)
 	}
 }
 
@@ -313,6 +312,7 @@ func TestServeAccountServiceOrder_ExistingUnpaidOtherTariffReturned(t *testing.T
 			Status:        "NOT PAID",
 			Name:          "1 месяц",
 		},
+		balance: &models.UserBalance{Forecast: 399},
 	}
 	h := serveAccountServiceOrder(cfg, st)
 	rec := httptest.NewRecorder()
@@ -343,11 +343,11 @@ func TestServeAccountServiceOrder_ExistingUnpaidOtherTariffReturned(t *testing.T
 	if strings.Contains(strings.ToUpper(out.Message), "SHM") {
 		t.Fatalf("message leaked SHM: %q", out.Message)
 	}
-	if out.PaymentURL == "" {
-		t.Fatal("missing payment_url")
+	if out.Amount != 399 {
+		t.Fatalf("want amount from forecast=399 got %v", out.Amount)
 	}
-	if !strings.Contains(out.PaymentURL, "501") || !strings.Contains(out.PaymentURL, "399") {
-		t.Fatal(out.PaymentURL)
+	if strings.TrimSpace(out.PaymentURL) != "" {
+		t.Fatalf("unexpected payment_url: %q", out.PaymentURL)
 	}
 }
 
@@ -371,7 +371,7 @@ func TestServeAccountServiceOrder_ServiceOrderFails(t *testing.T) {
 	assertJSONErrorField(t, rec.Body.String(), "order_failed")
 }
 
-func TestServeAccountServiceOrder_PaymentURLFailed(t *testing.T) {
+func TestServeAccountServiceOrder_NoPaymentURL_WithForecast_EmptyAPIBaseOK(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = ""
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 701, "w701", time.Hour)
@@ -380,13 +380,20 @@ func TestServeAccountServiceOrder_PaymentURLFailed(t *testing.T) {
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 120},
 		},
 		serviceOrderRet: &models.UserService{ServiceID: 999, Status: "NOT PAID"},
+		balance:         &models.UserBalance{Forecast: 120},
 	}
 	h := serveAccountServiceOrder(cfg, st)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/account/service/order",
 		strings.NewReader(`{"token":"`+tok+`","service_id":3}`)))
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("want 500 got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d", rec.Code)
 	}
-	assertJSONErrorField(t, rec.Body.String(), "payment_url_failed")
+	var out accountServiceOrderOKJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Amount != 120 || strings.TrimSpace(out.PaymentURL) != "" {
+		t.Fatalf("%#v", out)
+	}
 }

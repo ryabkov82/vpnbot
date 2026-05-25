@@ -60,6 +60,9 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		!strings.Contains(s, `getElementById('tab-payments-tab')`) {
 		t.Fatal("session must wire shown.bs.tab on tab-payments-tab for lazy payments load")
 	}
+	if !strings.Contains(s, "var suppressNextTopupForecastApply") {
+		t.Fatal("session must declare suppressNextTopupForecastApply for catalog top-up prefill")
+	}
 	if !strings.Contains(s, "var paymentsLoaded") || !strings.Contains(s, "var accountPaymentsCache") || !strings.Contains(s, "var dashboardToken") {
 		t.Fatal("session must declare paymentsLoaded, accountPaymentsCache, dashboardToken")
 	}
@@ -192,6 +195,16 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(orderOkFragment, "resetCatalogOrderState") {
 		t.Fatal("order success must not reset catalog order state immediately after purchase")
 	}
+	if !strings.Contains(orderOkFragment, `openTopupModalSuggestingOrderAmount`) {
+		t.Fatal("catalog order with positive amount must open standard top-up modal prefilled from response.amount")
+	}
+	if strings.Contains(orderOkFragment, `openTopupModalForPreparedPayment`) ||
+		strings.Contains(orderOkFragment, `pendingDirectPaymentUrl`) {
+		t.Fatal("catalog order must not use prepared-payment direct URL flow")
+	}
+	if strings.Contains(orderOkFragment, `payA.href = payUrl`) {
+		t.Fatal("catalog order success must not assign pay link href directly; reuse top-up modal confirmation")
+	}
 	if strings.Contains(s, `(50–10 000 ₽, до 2 знаков)</label>`) {
 		t.Fatal("ambiguous topup custom amount label must clarify decimal digits")
 	}
@@ -201,6 +214,8 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	for _, fcNeedle := range []string{
 		`id="topup-forecast-hint"`,
 		`id="topup-no-forecast-msg"`,
+		`var suppressNextTopupForecastApply`,
+		`function openTopupModalSuggestingOrderAmount`,
 		`Не удалось рассчитать сумму оплаты`,
 		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
 		`var accountForecast = 0`,
@@ -208,12 +223,16 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		`function applyTopupModalForecastDefaults`,
 		`'shown.bs.modal'`,
 		`hidden.bs.modal`,
+		`if (suppressNextTopupForecastApply)`,
 		`setAccountForecastFromServicesPayload(j)`,
-		`function openTopupModalForNotPaidService`,
+		`function openTopupModalForBillingForecast`,
 	} {
 		if !strings.Contains(s, fcNeedle) {
 			t.Fatalf("session forecast topup wiring missing %q", fcNeedle)
 		}
+	}
+	if strings.Contains(s, `openTopupModalForNotPaidService`) {
+		t.Fatal("session.html must rename openTopupModalForNotPaidService to openTopupModalForBillingForecast")
 	}
 	iTopRes := strings.Index(s, `id="topup-result" class="alert`)
 	if iTopRes < 0 {
@@ -289,6 +308,14 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if jTopSubmitEnd > 0 {
 		topSubmitSnip = topSubmitSnip[:jTopSubmitEnd]
 	}
+	if strings.Contains(topSubmitSnip, `pendingDirectPaymentUrl`) {
+		t.Fatal("topup-submit must only create payment via /balance/topup, not prepared direct URL")
+	}
+	iRawTop := strings.Index(topSubmitSnip, `String(customIn.value`)
+	iFetchTop := strings.Index(topSubmitSnip, `fetch('/api/account/balance/topup'`)
+	if iRawTop < 0 || iFetchTop < 0 || iRawTop >= iFetchTop {
+		t.Fatal("topup-submit must read #topup-custom before POST /balance/topup")
+	}
 	if !strings.Contains(topSubmitSnip, `openPaymentWindow()`) ||
 		!strings.Contains(topSubmitSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||
 		!strings.Contains(topSubmitSnip, `closePaymentWindow(payWin)`) {
@@ -332,11 +359,22 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("legacy js-svc-pay-open link removed from unpaid service payment block")
 	}
 	if strings.Contains(s, `data-pay-amt`) {
-		t.Fatal("session must not use data-pay-amt for NOT PAID amount (use SHM forecast via modal)")
+		t.Fatal("session must not use data-pay-amt for balance forecast billing (use SHM forecast via modal)")
+	}
+	if !strings.Contains(s, `var forecastBilling = notPaid || blocked`) {
+		t.Fatal("session must tie NOT PAID and BLOCK cards to forecast-based balance top-up")
+	}
+	if !strings.Contains(s, `var blocked = stUp === 'BLOCK'`) {
+		t.Fatal("session renderServiceCards must detect BLOCK status for forecast billing")
+	}
+	if !strings.Contains(s, `Пополнить для активации`) || !strings.Contains(s, `Пополнить для продления`) {
+		t.Fatal("session must expose distinct forecast top-up labels for NOT PAID vs BLOCK")
+	}
+	if !strings.Contains(s, `продлена автоматически, когда средств будет достаточно`) {
+		t.Fatal("session BLOCK helper copy for balance renewal missing")
 	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
-		`Перейти к оплате</button>`,
 		`После оплаты баланс будет пополнен`,
 		`Обновить услуги`,
 		`Отменить услугу`,
@@ -344,33 +382,33 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		`openBalanceTabWithTopupModal`,
 	} {
 		if !strings.Contains(s, needle) {
-			t.Fatalf("session NOT PAID markup missing %q", needle)
+			t.Fatalf("session forecast-billing card markup missing %q", needle)
 		}
 	}
 	idxSvcPayHandler := strings.Index(s, `var payBtn = cardRoot.querySelector('.js-svc-balance-pay')`)
 	if idxSvcPayHandler < 0 {
-		t.Fatal("NOT PAID service card missing pay-button handler anchor")
+		t.Fatal("service cards with forecast billing missing pay-button handler anchor")
 	}
 	svcPaySnip := s[idxSvcPayHandler:]
 	if len(svcPaySnip) > 1500 {
 		svcPaySnip = svcPaySnip[:1500]
 	}
 	for _, needle := range []string{
-		`openTopupModalForNotPaidService`,
+		`openTopupModalForBillingForecast`,
 		`payBtn.addEventListener('click'`,
 	} {
 		if !strings.Contains(svcPaySnip, needle) {
-			t.Fatalf("NOT PAID pay handler missing %q", needle)
+			t.Fatalf("NOT PAID/BLOCK forecast pay handler missing %q", needle)
 		}
 	}
 	if strings.Contains(svcPaySnip, `getAttribute('data-pay-amt')`) {
-		t.Fatal("NOT PAID pay must not read amount from tariff data-pay-amt")
+		t.Fatal("forecast billing pay must not read amount from tariff data-pay-amt")
 	}
 	if strings.Contains(svcPaySnip, `fetch('/api/account/balance/topup'`) {
-		t.Fatal("NOT PAID pay must not POST topup from card handler; use balance modal")
+		t.Fatal("forecast billing pay must not POST topup from card handler; use balance modal")
 	}
 	if strings.Contains(svcPaySnip, "/api/account/service/order") {
-		t.Fatal("NOT PAID service pay flow must not call service/order")
+		t.Fatal("service card forecast pay flow must not call service/order")
 	}
 	idxCatBuy := strings.Index(s, `buyBtn.addEventListener('click',`)
 	if idxCatBuy < 0 {
@@ -398,6 +436,15 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("session logout UI/JS missing %q", needle)
+		}
+	}
+	for _, forbidSession := range []string{
+		`openTopupModalForPreparedPayment`,
+		`pendingDirectPaymentUrl`,
+		`topup-prepared-msg`,
+	} {
+		if strings.Contains(s, forbidSession) {
+			t.Fatalf("session must not retain prepared-payment artefact %q", forbidSession)
 		}
 	}
 	if strings.Count(s, `id="user-line"`) != 1 {

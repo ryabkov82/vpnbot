@@ -605,6 +605,28 @@ func accountTopupAmountValid(amount float64) bool {
 	return math.Abs(amount-norm) < 1e-9
 }
 
+// accountOrderPaymentFromSHMForecast нормализует Forecast после создания услуги:
+// рекомендованная сумма пополнения (как для /balance/topup), флаг нужна ли оплата, ошибка если forecast > 0, но сумма не проходит те же ограничения 50–10 000 ₽ что и топап.
+// Сама ссылка на ЮKassa для заказа услуги не строится — клиент создаёт платеж через POST /api/account/balance/topup.
+func accountOrderPaymentFromSHMForecast(forecastRaw float64) (amount float64, needsTopUp bool, invalid bool) {
+	f := forecastRaw
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		f = 0
+	}
+	fc := math.Round(f*100) / 100
+	if fc <= 0 {
+		return 0, false, false
+	}
+	amt := fc
+	if amt < 50 {
+		amt = 50
+	}
+	if !accountTopupAmountValid(amt) {
+		return 0, false, true
+	}
+	return math.Round(amt*100) / 100, true, false
+}
+
 type accountBalanceTopupRequestJSON struct {
 	Token  string  `json:"token"`
 	Amount float64 `json:"amount"`
@@ -680,8 +702,9 @@ func serveAccountBalanceTopup(cfg *config.Config, _ accountWebApp) http.HandlerF
 }
 
 const (
-	accountServiceOrderExistingUnpaidMessage = "У вас уже есть услуга, ожидающая оплаты. Новая услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически."
-	accountServiceOrderPendingMessage        = "Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически."
+	accountServiceOrderExistingUnpaidMessage   = "У вас уже есть услуга, ожидающая оплаты. Новая услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически."
+	accountServiceOrderPendingMessage          = "Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически."
+	accountServiceOrderCreatedNoPaymentMessage = "Услуга создана. Если средств достаточно, она будет активирована автоматически."
 )
 
 func serveAccountCatalogServices(cfg *config.Config, app accountWebApp) http.HandlerFunc {
@@ -818,20 +841,19 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		preview := models.BuildServicePreview(svc)
-		amount := preview.Cost
-		if amount <= 0 {
-			amount = svc.Cost
-		}
-
-		baseURL := ""
-		if cfg != nil {
-			baseURL = cfg.API.BaseURL
-		}
-		paymentURL, err := payments.BuildYooKassaPaymentURL(baseURL, claims.UserID, amount, time.Now().Unix())
+		bal, err := app.GetUserBalanceByUserID(claims.UserID)
 		if err != nil {
-			slog.Error("account service order: BuildYooKassaPaymentURL", "err", err)
-			writeJSONError(w, http.StatusInternalServerError, "payment_url_failed")
+			slog.Error("account service order: GetUserBalanceByUserID", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "balance_failed")
+			return
+		}
+		var forecastRaw float64
+		if bal != nil {
+			forecastRaw = bal.Forecast
+		}
+		amount, needsTopUp, badAmt := accountOrderPaymentFromSHMForecast(forecastRaw)
+		if badAmt {
+			writeJSONError(w, http.StatusBadRequest, "invalid_payment_amount")
 			return
 		}
 
@@ -840,7 +862,10 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 		msg := accountServiceOrderPendingMessage
 		if existingUnpaid {
 			msg = accountServiceOrderExistingUnpaidMessage
+		} else if !needsTopUp {
+			msg = accountServiceOrderCreatedNoPaymentMessage
 		}
+
 		retName := strings.TrimSpace(order.Name)
 		if retName == "" {
 			retName = "Тариф"
@@ -852,7 +877,7 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			UserServiceID:       order.ServiceID,
 			UserServiceStatus:   orderStatus,
 			Amount:              amount,
-			PaymentURL:          paymentURL,
+			PaymentURL:          "",
 			Message:             msg,
 			ExistingUnpaid:      existingUnpaid,
 			RequestedServiceID:  req.ServiceID,

@@ -67,13 +67,17 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	for _, fcNeedle := range []string{
 		`id="topup-forecast-hint"`,
 		`id="topup-no-forecast-msg"`,
+		`var suppressNextTopupForecastApply`,
+		`function openTopupModalSuggestingOrderAmount`,
 		`Не удалось рассчитать сумму оплаты`,
 		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
+		`var accountForecast = 0`,
 		`setAccountForecastFromServicesPayload`,
 		`applyTopupModalForecastDefaults`,
 		`'shown.bs.modal'`,
 		`hidden.bs.modal`,
-		`function openTopupModalForNotPaidService`,
+		`if (suppressNextTopupForecastApply)`,
+		`function openTopupModalForBillingForecast`,
 	} {
 		if !strings.Contains(raw, fcNeedle) {
 			t.Fatalf("embed session forecast topup wiring missing %q", fcNeedle)
@@ -111,6 +115,14 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if jEmbedTopEnd > 0 {
 		tsSnip = tsSnip[:jEmbedTopEnd]
 	}
+	if strings.Contains(tsSnip, `pendingDirectPaymentUrl`) {
+		t.Fatal("embed topup-submit must only use /balance/topup")
+	}
+	iRawEmbed := strings.Index(tsSnip, `String(customIn.value`)
+	tsF := strings.Index(tsSnip, `fetch('/api/account/balance/topup'`)
+	if iRawEmbed < 0 || tsF < 0 || iRawEmbed >= tsF {
+		t.Fatal("embed topup-submit must read amount input before POST /balance/topup")
+	}
 	if !strings.Contains(tsSnip, `openPaymentWindow()`) ||
 		!strings.Contains(tsSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||
 		!strings.Contains(tsSnip, `closePaymentWindow(payWin)`) {
@@ -142,6 +154,9 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	}
 	if !bytes.Contains(b, []byte("активирована автоматически")) {
 		t.Fatal("NOT PAID hint missing")
+	}
+	if !bytes.Contains(b, []byte("продлена автоматически, когда средств будет достаточно")) {
+		t.Fatal("BLOCK balance renewal hint missing")
 	}
 	if !bytes.Contains(b, []byte("Купить новую услугу")) {
 		t.Fatal(`missing catalog section title`)
@@ -215,6 +230,20 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		!bytes.Contains(b, []byte(`Новая выбранная услуга не создана`)) {
 		t.Fatal(`expected honest order success JS copy missing`)
 	}
+	for _, needle := range []string{
+		`neutralMsgFallback`,
+		`serverMsg`,
+		`payA.classList.add('d-none')`,
+		`openTopupModalSuggestingOrderAmount`,
+		`orderAmtNum`,
+	} {
+		if !strings.Contains(raw, needle) {
+			t.Fatalf("catalog order success embed must contain %q", needle)
+		}
+	}
+	if strings.Contains(raw, `payA.href = payUrl`) {
+		t.Fatal("embed catalog order must route YooKassa via top-up confirmation modal")
+	}
 	if !bytes.Contains(b, []byte(`Ожидает оплаты`)) {
 		t.Fatal("post-order button label missing")
 	}
@@ -269,8 +298,12 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iScr < 0 {
 		t.Fatal("expected order-success scroll anchor")
 	}
-	if strings.Contains(raw[iAwait:iAwait+iScr], "resetCatalogOrderState") {
+	postOrderFrag := raw[iAwait : iAwait+iScr]
+	if strings.Contains(postOrderFrag, "resetCatalogOrderState") {
 		t.Fatal("order success fragment must not call resetCatalogOrderState")
+	}
+	if !strings.Contains(postOrderFrag, `openTopupModalSuggestingOrderAmount`) {
+		t.Fatal("embed catalog positive-amount flow must suggest top-up via standard modal")
 	}
 	idxPayOk := strings.Index(raw, `"svc-pay-ok mt-2 d-none"`)
 	if idxPayOk < 0 {
@@ -292,42 +325,52 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		t.Fatal("embed must not retain js-svc-pay-open")
 	}
 	if strings.Contains(raw, `data-pay-amt`) {
-		t.Fatal("embed must not use data-pay-amt for NOT PAID amount")
+		t.Fatal("embed must not use data-pay-amt for forecast balance billing amounts")
+	}
+	if strings.Contains(raw, `openTopupModalForNotPaidService`) {
+		t.Fatal("embed must rename forecast modal opener away from openTopupModalForNotPaidService")
+	}
+	if !strings.Contains(raw, `var forecastBilling = notPaid || blocked`) {
+		t.Fatal("embed renderServiceCards must group NOT PAID and BLOCK forecast billing")
+	}
+	if !strings.Contains(raw, `var blocked = stUp === 'BLOCK'`) {
+		t.Fatal("embed must detect BLOCK for forecast billing cards")
 	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
-		`Перейти к оплате</button>`,
+		`Пополнить для активации`,
+		`Пополнить для продления`,
 		`После оплаты баланс будет пополнен`,
 		`Обновить услуги`,
 	} {
 		if !strings.Contains(raw, needle) {
-			t.Fatalf("embed NOT PAID markup missing %q", needle)
+			t.Fatalf("embed forecast billing card markup missing %q", needle)
 		}
 	}
 	idxEmbPay := strings.Index(raw, `var payBtn = cardRoot.querySelector('.js-svc-balance-pay')`)
 	if idxEmbPay < 0 {
-		t.Fatal("embed: NOT PAID pay handler anchor missing")
+		t.Fatal("embed: NOT PAID/BLOCK forecast pay handler anchor missing")
 	}
 	emSnip := raw[idxEmbPay:]
 	if len(emSnip) > 1200 {
 		emSnip = emSnip[:1200]
 	}
 	for _, needle := range []string{
-		`openTopupModalForNotPaidService`,
+		`openTopupModalForBillingForecast`,
 		`payBtn.addEventListener('click'`,
 	} {
 		if !strings.Contains(emSnip, needle) {
-			t.Fatalf("embed NOT PAID pay handler missing %q", needle)
+			t.Fatalf("embed forecast billing pay handler missing %q", needle)
 		}
 	}
 	if strings.Contains(emSnip, `getAttribute('data-pay-amt')`) {
-		t.Fatal("embed NOT PAID pay must not derive amount from tariff data-pay-amt")
+		t.Fatal("embed forecast billing pay must not derive amount from tariff data-pay-amt")
 	}
 	if strings.Contains(emSnip, `fetch('/api/account/balance/topup'`) {
-		t.Fatal("embed NOT PAID pay must not POST topup from card handler")
+		t.Fatal("embed forecast billing pay must not POST topup from card handler")
 	}
 	if strings.Contains(emSnip, "/api/account/service/order") {
-		t.Fatal("embed NOT PAID strip must not call service/order path")
+		t.Fatal("embed forecast billing strip must not call service/order path")
 	}
 	idxEmbCatBuy := strings.Index(raw, `buyBtn.addEventListener('click',`)
 	if idxEmbCatBuy < 0 {
@@ -354,6 +397,15 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	} {
 		if !strings.Contains(raw, needle) {
 			t.Fatalf("embed session missing %q", needle)
+		}
+	}
+	for _, forbidEmb := range []string{
+		`openTopupModalForPreparedPayment`,
+		`pendingDirectPaymentUrl`,
+		`topup-prepared-msg`,
+	} {
+		if strings.Contains(raw, forbidEmb) {
+			t.Fatalf("embed session must not retain prepared-payment artefact %q", forbidEmb)
 		}
 	}
 	if strings.Count(raw, `id="user-line"`) != 1 {
