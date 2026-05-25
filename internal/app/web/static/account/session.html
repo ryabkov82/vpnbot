@@ -154,6 +154,7 @@
 							<div id="topup-forecast-hint" class="form-text text-secondary small d-none">Сумма рассчитана по данным биллинга для оплаты/продления услуг.</div>
 						</div>
 						<div class="alert alert-danger py-2 small d-none" id="topup-modal-err"></div>
+						<div id="topup-no-forecast-msg" class="alert alert-secondary py-2 small d-none">Не удалось рассчитать сумму оплаты. Пополните баланс вручную.</div>
 						<button type="button" class="btn my-btn w-100" id="topup-submit">Перейти к оплате</button>
 					</div>
 				</div>
@@ -523,6 +524,12 @@
 				modalEl.addEventListener('shown.bs.modal', function () {
 					applyTopupModalForecastDefaults();
 				});
+				modalEl.addEventListener('hidden.bs.modal', function () {
+					var noFc = document.getElementById('topup-no-forecast-msg');
+					if (noFc) {
+						noFc.classList.add('d-none');
+					}
+				});
 			}
 			var customIn = document.getElementById('topup-custom');
 			var topupRefreshBtn = document.getElementById('topup-result-refresh');
@@ -538,6 +545,10 @@
 					var qh = document.getElementById('topup-forecast-hint');
 					if (qh) {
 						qh.classList.add('d-none');
+					}
+					var nf = document.getElementById('topup-no-forecast-msg');
+					if (nf) {
+						nf.classList.add('d-none');
 					}
 				});
 			});
@@ -745,6 +756,34 @@
 			}
 		}
 
+		function openTopupModalForNotPaidService() {
+			document.getElementById('topup-modal-err').classList.add('d-none');
+			var noForecastEl = document.getElementById('topup-no-forecast-msg');
+			if (noForecastEl) {
+				noForecastEl.classList.add('d-none');
+			}
+			var modalEl = document.getElementById('topupModal');
+			var f = accountForecast;
+			if (!(typeof f === 'number' && isFinite(f) && f > 0)) {
+				function clearNotPaidNoForecastShown() {
+					modalEl.removeEventListener('shown.bs.modal', clearNotPaidNoForecastShown);
+					var ci = document.getElementById('topup-custom');
+					if (ci) {
+						ci.value = '';
+					}
+					var hintEl = document.getElementById('topup-forecast-hint');
+					if (hintEl) {
+						hintEl.classList.add('d-none');
+					}
+					if (noForecastEl) {
+						noForecastEl.classList.remove('d-none');
+					}
+				}
+				modalEl.addEventListener('shown.bs.modal', clearNotPaidNoForecastShown);
+			}
+			openBalanceTabWithTopupModal();
+		}
+
 		function renderServiceCards(tok, services) {
 			var wrap = document.getElementById('cards');
 			wrap.innerHTML = '';
@@ -788,12 +827,10 @@
 				var cancelHtml = '';
 				if (!active) {
 					if (notPaid) {
-						var payAmt = typeof s.cost === 'number' && isFinite(s.cost) ? s.cost : -1;
-						var payAmtAttr = payAmt >= 0 ? String(payAmt) : '';
 						cancelHtml =
 							'<div class="mt-2 d-grid gap-2 d-sm-flex flex-sm-wrap">' +
-							'<button type="button" class="btn btn-sm btn-success js-svc-balance-pay" data-pay-amt="' + escapeHtml(payAmtAttr) +
-							'">Перейти к оплате</button>' +
+							'<button type="button" class="btn btn-sm btn-success js-svc-balance-pay">' +
+							'Перейти к оплате</button>' +
 							'<button type="button" class="btn btn-sm btn-outline-danger js-cancel-service" data-usid="' + usid + '">' +
 							'Отменить услугу</button>' +
 							'</div>' +
@@ -896,115 +933,17 @@
 				}
 				var payBtn = cardRoot.querySelector('.js-svc-balance-pay');
 				if (payBtn) {
-					(function (cr, baseTok, initBtn) {
-						var payErr = cr.querySelector('.svc-pay-err');
-						var payOk = cr.querySelector('.svc-pay-ok');
-						var payOkHeading = payOk ? payOk.querySelector('.js-svc-pay-ok-heading') : null;
-						var payFallbackMsg = payOk ? payOk.querySelector('.js-svc-pay-fallback-msg') : null;
-						var payFallbackA = payOk ? payOk.querySelector('.js-svc-pay-fallback') : null;
+					(function (cr, baseTok) {
 						var payRf = cr.querySelector('.js-svc-pay-refresh');
-						var payInitLabel = initBtn.textContent || 'Перейти к оплате';
 						if (payRf) {
 							payRf.addEventListener('click', function () {
 								refreshAccountSnapshot(baseTok).catch(function () {});
 							});
 						}
-						initBtn.addEventListener('click', function () {
-							var rawAttr = String(initBtn.getAttribute('data-pay-amt') || '').trim().replace(',', '.');
-							var amt = parseFloat(rawAttr);
-							if (!svcTopupAmountUsable(amt)) {
-								openBalanceTabWithTopupModal();
-								return;
-							}
-							var payWin = openPaymentWindow();
-							initBtn.disabled = true;
-							initBtn.textContent = 'Готовим оплату...';
-							if (payErr) {
-								payErr.textContent = '';
-								payErr.classList.add('d-none');
-							}
-							if (payOk) {
-								payOk.classList.add('d-none');
-							}
-							fetch('/api/account/balance/topup', {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/json' },
-								body: JSON.stringify({ token: baseTok, amount: amt })
-							})
-								.then(function (r) {
-									return r.json().then(function (j) { return { ok: r.ok, j: j }; });
-								})
-								.then(function (op) {
-									initBtn.disabled = false;
-									initBtn.textContent = payInitLabel;
-									if (!op.ok) {
-										closePaymentWindow(payWin);
-										var msg = '';
-										var jErr = op.j;
-										if (jErr && jErr.error) {
-											msg = String(jErr.error);
-										}
-										if (!msg) {
-											msg = 'Ошибка платежа';
-										}
-										if (payErr) {
-											payErr.textContent = msg;
-											payErr.classList.remove('d-none');
-										}
-										return;
-									}
-									var u = op.j && op.j.payment_url ? String(op.j.payment_url).trim() : '';
-									if (!u) {
-										closePaymentWindow(payWin);
-										if (payErr) {
-											payErr.textContent = 'Ссылка на оплату недоступна';
-											payErr.classList.remove('d-none');
-										}
-										return;
-									}
-									initBtn.classList.add('d-none');
-									if (navigatePaymentWindow(payWin, u)) {
-										if (payOkHeading) {
-											payOkHeading.classList.remove('d-none');
-										}
-										if (payFallbackMsg) {
-											payFallbackMsg.classList.add('d-none');
-										}
-										if (payFallbackA) {
-											payFallbackA.classList.add('d-none');
-											payFallbackA.href = '#';
-											payFallbackA.removeAttribute('target');
-											payFallbackA.removeAttribute('rel');
-										}
-									} else {
-										if (payOkHeading) {
-											payOkHeading.classList.add('d-none');
-										}
-										if (payFallbackMsg) {
-											payFallbackMsg.classList.remove('d-none');
-										}
-										if (payFallbackA) {
-											payFallbackA.href = u;
-											payFallbackA.target = '_blank';
-											payFallbackA.rel = 'noopener noreferrer';
-											payFallbackA.classList.remove('d-none');
-										}
-									}
-									if (payOk) {
-										payOk.classList.remove('d-none');
-									}
-								})
-								.catch(function () {
-									closePaymentWindow(payWin);
-									initBtn.disabled = false;
-									initBtn.textContent = payInitLabel;
-									if (payErr) {
-										payErr.textContent = 'Сеть недоступна';
-										payErr.classList.remove('d-none');
-									}
-								});
+						payBtn.addEventListener('click', function () {
+							openTopupModalForNotPaidService();
 						});
-					})(cardRoot, tok, payBtn);
+					})(cardRoot, tok);
 				}
 			});
 		}

@@ -200,12 +200,16 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	for _, fcNeedle := range []string{
 		`id="topup-forecast-hint"`,
+		`id="topup-no-forecast-msg"`,
+		`Не удалось рассчитать сумму оплаты`,
 		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
 		`var accountForecast = 0`,
 		`function setAccountForecastFromServicesPayload`,
 		`function applyTopupModalForecastDefaults`,
 		`'shown.bs.modal'`,
+		`hidden.bs.modal`,
 		`setAccountForecastFromServicesPayload(j)`,
+		`function openTopupModalForNotPaidService`,
 	} {
 		if !strings.Contains(s, fcNeedle) {
 			t.Fatalf("session forecast topup wiring missing %q", fcNeedle)
@@ -327,6 +331,9 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(s, "js-svc-pay-open") {
 		t.Fatal("legacy js-svc-pay-open link removed from unpaid service payment block")
 	}
+	if strings.Contains(s, `data-pay-amt`) {
+		t.Fatal("session must not use data-pay-amt for NOT PAID amount (use SHM forecast via modal)")
+	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
 		`Перейти к оплате</button>`,
@@ -345,19 +352,22 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("NOT PAID service card missing pay-button handler anchor")
 	}
 	svcPaySnip := s[idxSvcPayHandler:]
-	if len(svcPaySnip) > 4500 {
-		svcPaySnip = svcPaySnip[:4500]
+	if len(svcPaySnip) > 1500 {
+		svcPaySnip = svcPaySnip[:1500]
 	}
 	for _, needle := range []string{
-		"fetch('/api/account/balance/topup'",
-		"Готовим оплату...",
-		`JSON.stringify({ token: baseTok, amount: amt })`,
-		`navigatePaymentWindow(payWin, u)`,
-		`closePaymentWindow(payWin)`,
+		`openTopupModalForNotPaidService`,
+		`payBtn.addEventListener('click'`,
 	} {
 		if !strings.Contains(svcPaySnip, needle) {
 			t.Fatalf("NOT PAID pay handler missing %q", needle)
 		}
+	}
+	if strings.Contains(svcPaySnip, `getAttribute('data-pay-amt')`) {
+		t.Fatal("NOT PAID pay must not read amount from tariff data-pay-amt")
+	}
+	if strings.Contains(svcPaySnip, `fetch('/api/account/balance/topup'`) {
+		t.Fatal("NOT PAID pay must not POST topup from card handler; use balance modal")
 	}
 	if strings.Contains(svcPaySnip, "/api/account/service/order") {
 		t.Fatal("NOT PAID service pay flow must not call service/order")

@@ -66,10 +66,14 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	}
 	for _, fcNeedle := range []string{
 		`id="topup-forecast-hint"`,
+		`id="topup-no-forecast-msg"`,
+		`Не удалось рассчитать сумму оплаты`,
 		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
 		`setAccountForecastFromServicesPayload`,
 		`applyTopupModalForecastDefaults`,
 		`'shown.bs.modal'`,
+		`hidden.bs.modal`,
+		`function openTopupModalForNotPaidService`,
 	} {
 		if !strings.Contains(raw, fcNeedle) {
 			t.Fatalf("embed session forecast topup wiring missing %q", fcNeedle)
@@ -287,6 +291,9 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, "js-svc-pay-open") {
 		t.Fatal("embed must not retain js-svc-pay-open")
 	}
+	if strings.Contains(raw, `data-pay-amt`) {
+		t.Fatal("embed must not use data-pay-amt for NOT PAID amount")
+	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
 		`Перейти к оплате</button>`,
@@ -302,19 +309,22 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		t.Fatal("embed: NOT PAID pay handler anchor missing")
 	}
 	emSnip := raw[idxEmbPay:]
-	if len(emSnip) > 4500 {
-		emSnip = emSnip[:4500]
+	if len(emSnip) > 1200 {
+		emSnip = emSnip[:1200]
 	}
 	for _, needle := range []string{
-		"fetch('/api/account/balance/topup'",
-		"Готовим оплату...",
-		`JSON.stringify({ token: baseTok, amount: amt })`,
-		`navigatePaymentWindow(payWin, u)`,
-		`closePaymentWindow(payWin)`,
+		`openTopupModalForNotPaidService`,
+		`payBtn.addEventListener('click'`,
 	} {
 		if !strings.Contains(emSnip, needle) {
 			t.Fatalf("embed NOT PAID pay handler missing %q", needle)
 		}
+	}
+	if strings.Contains(emSnip, `getAttribute('data-pay-amt')`) {
+		t.Fatal("embed NOT PAID pay must not derive amount from tariff data-pay-amt")
+	}
+	if strings.Contains(emSnip, `fetch('/api/account/balance/topup'`) {
+		t.Fatal("embed NOT PAID pay must not POST topup from card handler")
 	}
 	if strings.Contains(emSnip, "/api/account/service/order") {
 		t.Fatal("embed NOT PAID strip must not call service/order path")
