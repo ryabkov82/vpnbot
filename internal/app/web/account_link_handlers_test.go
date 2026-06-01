@@ -110,6 +110,10 @@ func TestServeAccountLink_NotYetLinked_ShowsStartPage(t *testing.T) {
 	if !strings.Contains(body, "/api/account/google/start") || !strings.Contains(body, "Привязка личного кабинета") {
 		t.Fatalf("unexpected link_start body prefix: %s", truncateForTest(body))
 	}
+	if !strings.Contains(body, "Web-кабинет — это дополнительный способ управления VPN-услугами") ||
+		!strings.Contains(body, "если Telegram недоступен или работает нестабильно") {
+		t.Fatal("link_start must explain web cabinet as backup access")
+	}
 }
 
 func TestServeAccountLink_Login2WithoutWebEmail_ShowsStartPage(t *testing.T) {
