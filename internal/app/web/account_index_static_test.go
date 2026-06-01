@@ -27,8 +27,14 @@ func TestAccountIndexMagicLinkSuccessCopy(t *testing.T) {
 	if !strings.Contains(s, "Введите email — мы отправим ссылку для входа без пароля.") {
 		t.Fatal("missing magic-link intro copy")
 	}
-	if !strings.Contains(s, "Уже пользуетесь Telegram-ботом? Откройте в боте команду «Личный кабинет», чтобы привязать текущий аккаунт и перенести доступ к вашим услугам и балансу в web-кабинет.") {
+	if !strings.Contains(s, "Если вы уже пользуетесь Telegram-ботом, откройте в боте команду «Личный кабинет». Так ваши текущие услуги и баланс будут доступны в web-кабинете.") {
 		t.Fatal("missing Telegram bot linking hint")
+	}
+	if strings.Contains(s, "перенести доступ") {
+		t.Fatal("must not use old copy with «перенести доступ»")
+	}
+	if strings.Contains(s, "балансу") {
+		t.Fatal("must not use old copy with «балансу»")
 	}
 	if strings.Contains(s, "Если вы здесь впервые, личный кабинет будет создан после подтверждения email.") {
 		t.Fatal("must not show old new-user-only intro copy")
