@@ -182,11 +182,17 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iCt < 0 || iPaneSvc < 0 || !(iBw < iCt && iCt < iPaneSvc) {
 		t.Fatal("embed balance-wrap must sit above tabs and outside tab panes")
 	}
-	if !bytes.Contains(b, []byte(`История платежей`)) {
-		t.Fatal("payments tab heading missing")
+	if !bytes.Contains(b, []byte(`>Платежи</button>`)) {
+		t.Fatal("payments tab nav label missing")
 	}
-	if strings.Count(raw, `data-bs-toggle="pill"`) != 3 {
-		t.Fatal("embed: cabinet must have three pills (services + buy + payments)")
+	if !bytes.Contains(b, []byte(`История платежей`)) {
+		t.Fatal("payments pane heading missing")
+	}
+	if strings.Count(raw, `data-bs-toggle="pill"`) != 4 {
+		t.Fatal("embed: cabinet must have four pills (services + buy + payments + help)")
+	}
+	if !bytes.Contains(b, []byte(`Помощь`)) || !bytes.Contains(b, []byte(`Как подключить VPN`)) {
+		t.Fatal("help tab missing")
 	}
 	for _, forbid := range []string{
 		`id="tab-balance-tab"`,

@@ -47,6 +47,16 @@
 				font-size: 0.9rem;
 			}
 		}
+		@media (max-width: 420px) {
+			.account-tabs .nav-link {
+				padding-left: 0.45rem;
+				padding-right: 0.45rem;
+				font-size: 0.875rem;
+			}
+			.account-tabs {
+				gap: 0.15rem;
+			}
+		}
 	</style>
 </head>
 <body class="pb-4">
@@ -101,7 +111,10 @@
 					<button class="nav-link" id="tab-buy-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-buy" type="button" role="tab" aria-controls="tab-pane-buy" aria-selected="false">Купить VPN</button>
 				</li>
 				<li class="nav-item" role="presentation">
-					<button class="nav-link" id="tab-payments-tab" data-bs-toggle="pill" data-bs-target="#tab-payments" type="button" role="tab" aria-controls="tab-payments" aria-selected="false">История платежей</button>
+					<button class="nav-link" id="tab-payments-tab" data-bs-toggle="pill" data-bs-target="#tab-payments" type="button" role="tab" aria-controls="tab-payments" aria-selected="false">Платежи</button>
+				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link" id="tab-help-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-help" type="button" role="tab" aria-controls="tab-pane-help" aria-selected="false">Помощь</button>
 				</li>
 			</ul>
 
@@ -130,6 +143,21 @@
 								<button type="button" class="btn btn-sm btn-outline-secondary" id="payments-refresh">Обновить</button>
 							</div>
 							<div id="payments-list" class="mt-3 text-secondary">Откройте вкладку, чтобы загрузить историю платежей.</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="tab-pane fade" id="tab-pane-help" role="tabpanel" aria-labelledby="tab-help-tab" tabindex="0">
+					<div class="card rounded-3 border border-secondary bg-body-secondary">
+						<div class="card-body py-3">
+							<h2 class="h5 mb-3">Как подключить VPN</h2>
+							<ol class="small text-secondary mb-0 ps-3">
+								<li class="mb-2">Перейдите во вкладку «Купить VPN» и выберите тариф.</li>
+								<li class="mb-2">Если для активации услуги нужно пополнить баланс, кабинет предложит нужную сумму автоматически. Вы можете изменить сумму вручную.</li>
+								<li class="mb-2">После оплаты услуга появится во вкладке «Мои услуги». Создание услуги может занять 1–2 минуты — страница обновится автоматически.</li>
+								<li class="mb-0">Когда статус станет «Активна», нажмите «Подключить» и следуйте инструкции.</li>
+							</ol>
+							<p class="small text-secondary mt-3 mb-0">Нужна помощь? Нажмите «Поддержка» вверху страницы.</p>
 						</div>
 					</div>
 				</div>

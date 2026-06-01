@@ -72,8 +72,21 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "Загружаем платежи…") {
 		t.Fatal("session payments load copy missing")
 	}
-	if !strings.Contains(s, "История платежей") {
-		t.Fatal("session heading for payment history missing")
+	if !strings.Contains(s, ">Платежи</button>") {
+		t.Fatal("payments tab nav label must be «Платежи»")
+	}
+	if !strings.Contains(s, `<h2 class="h5 mb-0">История платежей</h2>`) {
+		t.Fatal("session heading for payment history missing inside pane")
+	}
+	if !strings.Contains(s, `id="tab-help-tab"`) || !strings.Contains(s, `id="tab-pane-help"`) ||
+		!strings.Contains(s, ">Помощь</button>") {
+		t.Fatal("help tab nav or pane missing")
+	}
+	if !strings.Contains(s, "Как подключить VPN") ||
+		!strings.Contains(s, "«Купить VPN»") ||
+		!strings.Contains(s, "«Мои услуги»") ||
+		!strings.Contains(s, "«Подключить»") {
+		t.Fatal("help tab must include VPN setup instructions")
 	}
 	if !strings.Contains(s, "Откройте вкладку, чтобы загрузить историю платежей.") {
 		t.Fatal("payments tab initial placeholder missing")
@@ -132,6 +145,13 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	if !strings.Contains(s, "overflow-x: auto") {
 		t.Fatal("account-tabs css should allow horizontal scroll")
+	}
+	if !strings.Contains(s, "@media (max-width: 420px)") ||
+		!strings.Contains(s, ".account-tabs .nav-link") ||
+		!strings.Contains(s, "padding-left: 0.45rem") ||
+		!strings.Contains(s, "font-size: 0.875rem") ||
+		!strings.Contains(s, "gap: 0.15rem") {
+		t.Fatal("account-tabs must include compact mobile css for narrow screens")
 	}
 	if !strings.Contains(s, "scrollbar-gutter: stable") || !strings.Contains(s, "overflow-y: scroll") {
 		t.Fatal("session css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
@@ -328,8 +348,8 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s[iPanePayments:], `id="payments-list"`) {
 		t.Fatal("payments-list must live inside payments tab-pane")
 	}
-	if strings.Count(s, `data-bs-toggle="pill"`) != 3 {
-		t.Fatal("cabinet must have exactly three pills (services + buy + payments)")
+	if strings.Count(s, `data-bs-toggle="pill"`) != 4 {
+		t.Fatal("cabinet must have exactly four pills (services + buy + payments + help)")
 	}
 	for _, forbid := range []string{
 		`id="tab-balance-tab"`,
