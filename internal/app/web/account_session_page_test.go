@@ -233,7 +233,7 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	for _, needle := range []string{
 		`neutralMsgFallback`,
 		`serverMsg`,
-		`payA.classList.add('d-none')`,
+		`openServicesTab()`,
 		`openTopupModalSuggestingOrderAmount`,
 		`orderAmtNum`,
 	} {
@@ -297,16 +297,24 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iAwait < 0 {
 		t.Fatal("post-order button literal missing")
 	}
-	iScr := strings.Index(raw[iAwait:], "wrap.scrollIntoView")
-	if iScr < 0 {
-		t.Fatal("expected order-success scroll anchor")
+	postEnd := iAwait + 2800
+	if postEnd > len(raw) {
+		postEnd = len(raw)
 	}
-	postOrderFrag := raw[iAwait : iAwait+iScr]
+	postOrderFrag := raw[iAwait:postEnd]
+	if !strings.Contains(postOrderFrag, "afterOrderSnapshotReady()") {
+		t.Fatal("embed order success handler missing afterOrderSnapshotReady")
+	}
 	if strings.Contains(postOrderFrag, "resetCatalogOrderState") {
 		t.Fatal("order success fragment must not call resetCatalogOrderState")
 	}
-	if !strings.Contains(postOrderFrag, `openTopupModalSuggestingOrderAmount`) {
-		t.Fatal("embed catalog positive-amount flow must suggest top-up via standard modal")
+	if !strings.Contains(postOrderFrag, "openServicesTab()") ||
+		!strings.Contains(postOrderFrag, "refreshAccountSnapshot(tok).then(function () {") {
+		t.Fatal("embed successful order must refresh services and open services tab")
+	}
+	if !strings.Contains(postOrderFrag, "orderAmtNum > 0") ||
+		!strings.Contains(postOrderFrag, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") {
+		t.Fatal("embed catalog positive-amount flow must suggest top-up via standard modal when amount > 0")
 	}
 	idxPayOk := strings.Index(raw, `"svc-pay-ok mt-2 d-none"`)
 	if idxPayOk < 0 {

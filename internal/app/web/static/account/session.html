@@ -107,6 +107,7 @@
 
 			<div class="tab-content" id="cabinet-tab-content">
 				<div class="tab-pane fade show active" id="tab-pane-services" role="tabpanel" aria-labelledby="tab-services-tab" tabindex="0">
+					<div id="order-success-hint" class="alert alert-success py-2 small d-none mb-2" role="status"></div>
 					<div id="cards" class="row g-3"></div>
 				</div>
 
@@ -177,6 +178,11 @@
 		var accountPaymentsCache = [];
 		var accountForecast = 0;
 		var suppressNextTopupForecastApply = false;
+		var progressPollingTimer = null;
+		var progressPollingIntervalMs = 5000;
+		var deletingServiceIDs = new Set();
+		var creatingServiceIDs = new Set();
+		var pendingPostDeleteCatalog = false;
 
 		function setAccountForecastFromServicesPayload(j) {
 			var raw = j && j.user ? j.user.forecast : null;
@@ -203,6 +209,7 @@
 		}
 
 		document.getElementById('logout-btn').addEventListener('click', function () {
+			stopProgressPolling();
 			try { localStorage.removeItem(STORAGE); } catch (e) {}
 			window.location.href = '/account?logged_out=1';
 		});
@@ -356,6 +363,7 @@
 
 						buyBtn.addEventListener('click', function () {
 							var cid = parseInt(buyBtn.getAttribute('data-service-id'), 10);
+							hideOrderSuccessHint();
 							cardErr.classList.add('d-none');
 							cardErr.textContent = '';
 							buyBtn.disabled = true;
@@ -392,18 +400,31 @@
 										'У вас уже есть услуга, ожидающая оплаты: ' + rn +
 										'. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.';
 									var neutralMsgFallback = 'Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.';
-									var cardTxt = serverMsg || ((y.j && y.j.existing_unpaid === true) ? dupMsgFallback : neutralMsgFallback);
-									cardOkMsg.textContent = cardTxt;
-									payA.classList.add('d-none');
-									payA.href = '#';
-									payA.removeAttribute('target');
-									payA.removeAttribute('rel');
-									if (typeof orderAmtNum === 'number' && isFinite(orderAmtNum) && orderAmtNum > 0) {
-										openTopupModalSuggestingOrderAmount(orderAmtNum);
+									var orderMsg = serverMsg || ((y.j && y.j.existing_unpaid === true) ? dupMsgFallback : neutralMsgFallback);
+									if (y.j && y.j.user_service_id && y.j.existing_unpaid !== true) {
+										var newUsid = Number(y.j.user_service_id);
+										if (isFinite(newUsid) && newUsid > 0) {
+											creatingServiceIDs.add(newUsid);
+										}
 									}
-									cardOk.classList.remove('d-none');
-									refreshAccountSnapshot(tok).catch(function () {});
-									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+									function afterOrderSnapshotReady() {
+										openServicesTab();
+										var cardsEl = document.getElementById('cards');
+										if (cardsEl) {
+											cardsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+										}
+										if (typeof orderAmtNum === 'number' && isFinite(orderAmtNum) && orderAmtNum > 0) {
+											hideOrderSuccessHint();
+											openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg);
+										} else {
+											showOrderSuccessHint(orderMsg);
+										}
+									}
+									refreshAccountSnapshot(tok).then(function () {
+										afterOrderSnapshotReady();
+									}).catch(function () {
+										afterOrderSnapshotReady();
+									});
 								})
 								.catch(function () {
 									spin.classList.add('d-none');
@@ -766,16 +787,153 @@
 						'Вы вошли как ' + String(j.user.email || '').trim();
 					updateAccountTelegramLine(j.user);
 					var services = j.services || [];
+					syncProgressContextSets(services);
 					renderServiceCards(tok, services);
+					updateProgressPolling(services);
+					maybeOpenCatalogAfterPendingDeletion(services);
 					return services;
 				});
 		}
 
-		function showMyServicesTabScrollCards() {
-			var svcTabBtn = document.getElementById('tab-services-tab');
-			if (svcTabBtn && window.bootstrap && bootstrap.Tab) {
-				bootstrap.Tab.getOrCreateInstance(svcTabBtn).show();
+		function syncProgressContextSets(services) {
+			var present = new Set();
+			var stillProgress = new Set();
+			(services || []).forEach(function (s) {
+				var id = Number(s.user_service_id);
+				if (!isFinite(id) || id <= 0) {
+					return;
+				}
+				present.add(id);
+				if (String(s.status || '').toUpperCase() === 'PROGRESS') {
+					stillProgress.add(id);
+				}
+			});
+			deletingServiceIDs.forEach(function (id) {
+				if (!present.has(id) || !stillProgress.has(id)) {
+					deletingServiceIDs.delete(id);
+				}
+			});
+			creatingServiceIDs.forEach(function (id) {
+				if (!present.has(id) || !stillProgress.has(id)) {
+					creatingServiceIDs.delete(id);
+				}
+			});
+		}
+
+		function progressHintHtmlForService(usid) {
+			var id = Number(usid);
+			var autoLine = '<div class="small text-secondary mt-2">Страница обновится автоматически.</div>';
+			if (deletingServiceIDs.has(id)) {
+				return '<div class="small text-secondary mt-2">Услуга удаляется. Обычно это занимает до 1–2 минут.</div>' + autoLine;
 			}
+			if (creatingServiceIDs.has(id)) {
+				return '<div class="small text-secondary mt-2">Услуга создаётся. Обычно это занимает до 1–2 минут.</div>' + autoLine;
+			}
+			return '<div class="small text-secondary mt-2">Выполняется операция с услугой. Обычно это занимает до 1–2 минут.</div>' + autoLine;
+		}
+
+		function maybeOpenCatalogAfterPendingDeletion(services) {
+			if (!pendingPostDeleteCatalog) {
+				return;
+			}
+			var list = services || [];
+			if (list.length > 0) {
+				return;
+			}
+			pendingPostDeleteCatalog = false;
+			document.getElementById('post-delete-buy-hint').classList.remove('d-none');
+			openCatalogTabIfNoServices(list);
+		}
+
+		function hasProgressServices(services) {
+			return Array.isArray(services) && services.some(function (s) {
+				return String(s.status || '').toUpperCase() === 'PROGRESS';
+			});
+		}
+
+		function stopProgressPolling() {
+			if (progressPollingTimer !== null) {
+				clearInterval(progressPollingTimer);
+				progressPollingTimer = null;
+			}
+		}
+
+		function startProgressPolling() {
+			if (progressPollingTimer !== null) {
+				return;
+			}
+			var tok = dashboardToken;
+			if (!tok) {
+				return;
+			}
+			progressPollingTimer = setInterval(function () {
+				if (document.hidden) {
+					return;
+				}
+				refreshAccountSnapshot(tok).then(function (services) {
+					updateProgressPolling(services);
+				}).catch(function () {});
+			}, progressPollingIntervalMs);
+		}
+
+		function updateProgressPolling(services) {
+			if (hasProgressServices(services)) {
+				startProgressPolling();
+			} else {
+				stopProgressPolling();
+			}
+		}
+
+		function startProgressPollingIfNeeded(services) {
+			updateProgressPolling(services);
+		}
+
+		document.addEventListener('visibilitychange', function () {
+			if (document.visibilityState !== 'visible') {
+				return;
+			}
+			var tok = dashboardToken;
+			if (!tok) {
+				return;
+			}
+			refreshAccountSnapshot(tok).then(function (services) {
+				updateProgressPolling(services);
+			}).catch(function () {});
+		});
+
+		function openServicesTab() {
+			var tab = document.getElementById('tab-services-tab');
+			if (!tab || !window.bootstrap || !bootstrap.Tab) {
+				return;
+			}
+			bootstrap.Tab.getOrCreateInstance(tab).show();
+		}
+
+		function showOrderSuccessHint(message) {
+			var el = document.getElementById('order-success-hint');
+			if (!el) {
+				return;
+			}
+			var msg = String(message || '').trim();
+			if (!msg) {
+				el.textContent = '';
+				el.classList.add('d-none');
+				return;
+			}
+			el.textContent = msg;
+			el.classList.remove('d-none');
+		}
+
+		function hideOrderSuccessHint() {
+			var el = document.getElementById('order-success-hint');
+			if (el) {
+				el.textContent = '';
+				el.classList.add('d-none');
+			}
+		}
+
+		function showMyServicesTabScrollCards() {
+			openServicesTab();
 			var cardsEl = document.getElementById('cards');
 			if (cardsEl) {
 				cardsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -812,15 +970,21 @@
 			}
 		}
 
-		function openTopupModalSuggestingOrderAmount(amtOrder) {
+		function openTopupModalSuggestingOrderAmount(amtOrder, orderMsg) {
 			document.getElementById('topup-modal-err').classList.add('d-none');
 			var noForecastElAmt = document.getElementById('topup-no-forecast-msg');
 			if (noForecastElAmt) {
 				noForecastElAmt.classList.add('d-none');
 			}
 			var hintAmt = document.getElementById('topup-forecast-hint');
+			var orderHint = String(orderMsg || '').trim();
 			if (hintAmt) {
-				hintAmt.classList.add('d-none');
+				if (orderHint) {
+					hintAmt.textContent = orderHint;
+					hintAmt.classList.remove('d-none');
+				} else {
+					hintAmt.classList.add('d-none');
+				}
 			}
 			var ciAmt = document.getElementById('topup-custom');
 			if (ciAmt && typeof amtOrder === 'number' && isFinite(amtOrder) && amtOrder > 0) {
@@ -865,6 +1029,7 @@
 			(services || []).forEach(function (s) {
 				var stUp = String(s.status || '').toUpperCase();
 				var active = stUp === 'ACTIVE';
+				var inProgress = stUp === 'PROGRESS';
 				var notPaid = stUp === 'NOT PAID';
 				var blocked = stUp === 'BLOCK';
 				var forecastBilling = notPaid || blocked;
@@ -895,7 +1060,9 @@
 					connLbl = 'Подключить Premium';
 				}
 				var hint = '';
-				if (active) {
+				if (inProgress) {
+					hint = progressHintHtmlForService(usid);
+				} else if (active) {
 					hint = '<div class="small text-secondary mt-2">Для автопродления заранее пополните баланс.</div>';
 				} else if (notPaid) {
 					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.</div>' +
@@ -904,7 +1071,7 @@
 					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет продлена автоматически, когда средств будет достаточно.</div>';
 				}
 				var cancelHtml = '';
-				if (!active) {
+				if (!active && !inProgress) {
 					if (forecastBilling) {
 						var payTopupLbl = notPaid ? 'Пополнить для активации' : 'Пополнить для продления';
 						cancelHtml =
@@ -992,10 +1159,13 @@
 									okBox.textContent =
 										op.j && op.j.message ? String(op.j.message) : 'Услуга удалена. Теперь можно выбрать другой тариф.';
 									okBox.classList.remove('d-none');
+									deletingServiceIDs.add(idNum);
+									pendingPostDeleteCatalog = true;
 									return refreshAccountSnapshot(tok).then(function (services) {
 										resetCatalogOrderState();
 										if (!services || services.length === 0) {
 											document.getElementById('post-delete-buy-hint').classList.remove('d-none');
+											pendingPostDeleteCatalog = false;
 										}
 										openCatalogTabIfNoServices(services);
 									});
@@ -1027,6 +1197,7 @@
 		}
 
 		function showInvalidSessionLink() {
+			stopProgressPolling();
 			show('err-box', true);
 			document.getElementById('err-box').innerHTML =
 				escapeHtml('Ссылка недействительна или устарела. Запросите новую ссылку для входа.') +
@@ -1034,8 +1205,10 @@
 		}
 
 		function bootDashboardAfterExchange(accountTok) {
+			dashboardToken = String(accountTok || '');
 			show('loading', true);
 			document.getElementById('post-delete-buy-hint').classList.add('d-none');
+			hideOrderSuccessHint();
 			fetch('/api/account/services?token=' + encodeURIComponent(accountTok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
@@ -1052,6 +1225,7 @@
 						'Вы вошли как ' + String(j.user.email || '').trim();
 					updateAccountTelegramLine(j.user);
 					renderServiceCards(accountTok, j.services || []);
+					startProgressPollingIfNeeded(j.services || []);
 					openCatalogTabIfNoServices(j.services || []);
 					loadAccountCatalog(accountTok);
 					bindTopupHandlers(accountTok);

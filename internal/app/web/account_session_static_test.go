@@ -158,10 +158,10 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "Перейти к моим услугам") || !strings.Contains(s, "js-card-goto-my-services") {
 		t.Fatal("catalog success must offer 'go to my services' instead of full reload")
 	}
-	if !strings.Contains(s, "showMyServicesTabScrollCards") {
-		t.Fatal("expected helper to switch to services tab and scroll to #cards")
+	if !strings.Contains(s, "function openServicesTab()") || !strings.Contains(s, "showMyServicesTabScrollCards") {
+		t.Fatal("expected openServicesTab helper and showMyServicesTabScrollCards")
 	}
-	if !strings.Contains(s, "refreshAccountSnapshot(tok).catch(function () {})") {
+	if !strings.Contains(s, "refreshAccountSnapshot(tok).then(function () {") {
 		t.Fatal("after successful order, services list should refresh via refreshAccountSnapshot")
 	}
 	if strings.Contains(s, "location.reload") {
@@ -193,26 +193,56 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(deleteRefreshBlock, "resetCatalogOrderState()") {
 		t.Fatal("resetCatalogOrderState must appear after delete refresh snapshot chain")
 	}
+	if !strings.Contains(s[iDelete:], "deletingServiceIDs.add(idNum)") ||
+		!strings.Contains(s[iDelete:], "pendingPostDeleteCatalog = true") {
+		t.Fatal("delete flow must track deleting service id and pending catalog transition")
+	}
 	if !strings.Contains(deleteRefreshBlock, "openCatalogTabIfNoServices(services)") {
 		t.Fatal("delete flow must open catalog tab only when snapshot has no services")
 	}
 	if strings.Contains(deleteRefreshBlock, `getElementById('tab-buy-tab')`) {
 		t.Fatal("delete flow must not switch buy tab unconditionally; use openCatalogTabIfNoServices")
 	}
-	iOrderAwait := strings.Index(s, `buyBtn.textContent = 'Ожидает оплаты'`)
+	iOrderFetch := strings.Index(s, `fetch('/api/account/service/order',`)
+	if iOrderFetch < 0 {
+		t.Fatal("catalog service/order fetch missing")
+	}
+	iOrderAwait := strings.Index(s[iOrderFetch:], `buyBtn.textContent = 'Ожидает оплаты'`)
 	if iOrderAwait < 0 {
 		t.Fatal("expected post-order buy button label in session")
 	}
-	iOrderScroll := strings.Index(s[iOrderAwait:], "wrap.scrollIntoView")
-	if iOrderScroll < 0 {
-		t.Fatal("expected catalog scroll after successful order")
+	iOrderAwait += iOrderFetch
+	iOrderEnd := strings.Index(s[iOrderAwait:], "afterOrderSnapshotReady()")
+	if iOrderEnd < 0 {
+		t.Fatal("order success handler missing afterOrderSnapshotReady")
 	}
-	orderOkFragment := s[iOrderAwait : iOrderAwait+iOrderScroll]
+	iOrderCatch := strings.Index(s[iOrderAwait+iOrderEnd:], `}).catch(function () {`)
+	if iOrderCatch < 0 {
+		t.Fatal("order success handler boundary missing")
+	}
+	orderOkFragment := s[iOrderAwait : iOrderAwait+iOrderEnd+iOrderCatch]
 	if strings.Contains(orderOkFragment, "resetCatalogOrderState") {
 		t.Fatal("order success must not reset catalog order state immediately after purchase")
 	}
-	if !strings.Contains(orderOkFragment, `openTopupModalSuggestingOrderAmount`) {
-		t.Fatal("catalog order with positive amount must open standard top-up modal prefilled from response.amount")
+	if !strings.Contains(orderOkFragment, "refreshAccountSnapshot(tok).then(function () {") ||
+		!strings.Contains(orderOkFragment, "openServicesTab()") {
+		t.Fatal("successful order must refresh snapshot then open services tab")
+	}
+	if !strings.Contains(orderOkFragment, "orderAmtNum > 0") ||
+		!strings.Contains(orderOkFragment, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") {
+		t.Fatal("catalog order with positive amount must open top-up modal only when amount > 0")
+	}
+	if !strings.Contains(orderOkFragment, "showOrderSuccessHint(orderMsg)") {
+		t.Fatal("catalog order without top-up amount must show order-success hint on services tab")
+	}
+	if !strings.Contains(orderOkFragment, "creatingServiceIDs.add(newUsid)") {
+		t.Fatal("order success must register creating context for returned user_service_id")
+	}
+	if strings.Contains(orderOkFragment, "openCatalogTabIfNoServices") {
+		t.Fatal("order success must not call openCatalogTabIfNoServices when services exist")
+	}
+	if strings.Contains(orderOkFragment, "new-catalog-wrap") {
+		t.Fatal("order success must not scroll catalog wrap")
 	}
 	if strings.Contains(orderOkFragment, `openTopupModalForPreparedPayment`) ||
 		strings.Contains(orderOkFragment, `pendingDirectPaymentUrl`) {
@@ -220,6 +250,14 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	if strings.Contains(orderOkFragment, `payA.href = payUrl`) {
 		t.Fatal("catalog order success must not assign pay link href directly; reuse top-up modal confirmation")
+	}
+	iOrderErr := strings.Index(s[iOrderFetch:], `if (!y.ok) {`)
+	if iOrderErr < 0 {
+		t.Fatal("order error branch missing")
+	}
+	orderErrFragment := s[iOrderFetch+iOrderErr : iOrderAwait]
+	if strings.Contains(orderErrFragment, "openServicesTab()") {
+		t.Fatal("failed order must stay on catalog tab without openServicesTab")
 	}
 	if strings.Contains(s, `(50–10 000 ₽, до 2 знаков)</label>`) {
 		t.Fatal("ambiguous topup custom amount label must clarify decimal digits")
@@ -534,5 +572,175 @@ func TestAccountSessionCatalogTabIfNoServices(t *testing.T) {
 	}
 	if !strings.Contains(deleteBlock, "services.length === 0") {
 		t.Fatal("post-delete hint must show only when no services remain")
+	}
+}
+
+func TestAccountSessionPostOrderGoesToServicesTab(t *testing.T) {
+	b, err := os.ReadFile(sessionHTMLPath(t))
+	if err != nil {
+		t.Fatalf("read session.html: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `id="order-success-hint"`) || !strings.Contains(s, "function showOrderSuccessHint(message)") {
+		t.Fatal("session must expose order-success hint on services tab")
+	}
+	iOrder := strings.Index(s, `fetch('/api/account/service/order',`)
+	if iOrder < 0 {
+		t.Fatal("service/order handler missing")
+	}
+	orderBlock := s[iOrder:]
+	if j := strings.Index(orderBlock, "function loadAccountPayments"); j > 0 {
+		orderBlock = orderBlock[:j]
+	}
+	if !strings.Contains(orderBlock, "openServicesTab()") {
+		t.Fatal("post-order flow must open services tab")
+	}
+	if strings.Contains(orderBlock, "openCatalogTabIfNoServices") {
+		t.Fatal("catalog order handler must not call openCatalogTabIfNoServices")
+	}
+}
+
+func TestAccountSessionProgressPolling(t *testing.T) {
+	b, err := os.ReadFile(sessionHTMLPath(t))
+	if err != nil {
+		t.Fatalf("read session.html: %v", err)
+	}
+	s := string(b)
+	for _, needle := range []string{
+		"var progressPollingTimer = null",
+		"function hasProgressServices(services)",
+		"function updateProgressPolling(services)",
+		"function startProgressPolling()",
+		"function stopProgressPolling()",
+		"function startProgressPollingIfNeeded(services)",
+		"progressPollingIntervalMs = 5000",
+		"document.hidden",
+		"visibilitychange",
+		"document.visibilityState !== 'visible'",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("progress polling helper missing %q", needle)
+		}
+	}
+	if !strings.Contains(s, "Услуга создаётся. Обычно это занимает до 1–2 минут.") ||
+		!strings.Contains(s, "Услуга удаляется. Обычно это занимает до 1–2 минут.") ||
+		!strings.Contains(s, "Выполняется операция с услугой. Обычно это занимает до 1–2 минут.") ||
+		!strings.Contains(s, "function progressHintHtmlForService(usid)") ||
+		!strings.Contains(s, "deletingServiceIDs.has(id)") ||
+		!strings.Contains(s, "creatingServiceIDs.has(id)") ||
+		!strings.Contains(s, "!active && !inProgress") {
+		t.Fatal("renderServiceCards must branch PROGRESS copy and hide cancel for inProgress")
+	}
+	iRefresh := strings.Index(s, "function refreshAccountSnapshot(tok)")
+	if iRefresh < 0 {
+		t.Fatal("refreshAccountSnapshot missing")
+	}
+	refreshBlock := s[iRefresh:]
+	if j := strings.Index(refreshBlock, "function hasProgressServices"); j > 0 {
+		refreshBlock = refreshBlock[:j]
+	}
+	if !strings.Contains(refreshBlock, "syncProgressContextSets(services)") ||
+		!strings.Contains(refreshBlock, "updateProgressPolling(services)") ||
+		!strings.Contains(refreshBlock, "maybeOpenCatalogAfterPendingDeletion(services)") {
+		t.Fatal("refreshAccountSnapshot must sync progress context, polling, and pending delete catalog")
+	}
+	iPollStart := strings.Index(s, "function startProgressPolling() {")
+	if iPollStart < 0 {
+		t.Fatal("startProgressPolling missing")
+	}
+	pollBlock := s[iPollStart:]
+	if j := strings.Index(pollBlock, "function startProgressPollingIfNeeded"); j > 0 {
+		pollBlock = pollBlock[:j]
+	}
+	if !strings.Contains(pollBlock, "if (progressPollingTimer !== null)") {
+		t.Fatal("startProgressPolling must not create duplicate timers")
+	}
+	iPollStop := strings.Index(s, "function stopProgressPolling()")
+	if iPollStop < 0 || !strings.Contains(s[iPollStop:], "clearInterval(progressPollingTimer)") {
+		t.Fatal("stopProgressPolling must clear interval timer")
+	}
+	iPollUpdate := strings.Index(s, "function updateProgressPolling(services)")
+	updateBlock := s[iPollUpdate:]
+	if j := strings.Index(updateBlock, "function startProgressPollingIfNeeded"); j > 0 {
+		updateBlock = updateBlock[:j]
+	}
+	if !strings.Contains(updateBlock, "hasProgressServices(services)") ||
+		!strings.Contains(updateBlock, "startProgressPolling()") ||
+		!strings.Contains(updateBlock, "stopProgressPolling()") {
+		t.Fatal("updateProgressPolling must start/stop polling based on PROGRESS services")
+	}
+	iBoot := strings.Index(s, "function bootDashboardAfterExchange")
+	if iBoot < 0 || !strings.Contains(s[iBoot:], "startProgressPollingIfNeeded(j.services || [])") {
+		t.Fatal("initial dashboard load must start progress polling when needed")
+	}
+}
+
+func TestAccountSessionProgressDeleteContext(t *testing.T) {
+	b, err := os.ReadFile(sessionHTMLPath(t))
+	if err != nil {
+		t.Fatalf("read session.html: %v", err)
+	}
+	s := string(b)
+	for _, needle := range []string{
+		"var deletingServiceIDs = new Set()",
+		"var creatingServiceIDs = new Set()",
+		"var pendingPostDeleteCatalog = false",
+		"function maybeOpenCatalogAfterPendingDeletion(services)",
+		"function syncProgressContextSets(services)",
+		"creatingServiceIDs.add(newUsid)",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("progress delete/create context missing %q", needle)
+		}
+	}
+	iRender := strings.Index(s, "function renderServiceCards(tok, services)")
+	if iRender < 0 {
+		t.Fatal("renderServiceCards missing")
+	}
+	renderBlock := s[iRender:]
+	if j := strings.Index(renderBlock, "function showInvalidSessionLink"); j > 0 {
+		renderBlock = renderBlock[:j]
+	}
+	if !strings.Contains(renderBlock, "!active && !inProgress") {
+		t.Fatal("PROGRESS cards must not render cancel or payment controls")
+	}
+	iDelete := strings.Index(s, `'/api/account/service/delete'`)
+	iDelRefresh := strings.Index(s[iDelete:], "refreshAccountSnapshot(tok).then(function (services) {")
+	deleteBlock := s[iDelete+iDelRefresh:]
+	if j := strings.Index(deleteBlock, "function showInvalidSessionLink"); j > 0 {
+		deleteBlock = deleteBlock[:j]
+	}
+	if strings.Contains(deleteBlock, "openCatalogTabIfNoServices(services)") &&
+		strings.Contains(deleteBlock, "pendingPostDeleteCatalog = false") {
+		// immediate empty list clears pending flag
+	} else {
+		t.Fatal("delete refresh must clear pendingPostDeleteCatalog when services already empty")
+	}
+	iMaybe := strings.Index(s, "function maybeOpenCatalogAfterPendingDeletion(services)")
+	maybeBlock := s[iMaybe:]
+	if j := strings.Index(maybeBlock, "function hasProgressServices"); j > 0 {
+		maybeBlock = maybeBlock[:j]
+	}
+	if !strings.Contains(maybeBlock, "pendingPostDeleteCatalog") ||
+		!strings.Contains(maybeBlock, "openCatalogTabIfNoServices(list)") ||
+		!strings.Contains(maybeBlock, "post-delete-buy-hint") {
+		t.Fatal("pending deletion must open buy tab after polling yields empty services")
+	}
+	iOrderFetch := strings.Index(s, `fetch('/api/account/service/order',`)
+	iOrderAwait2 := strings.Index(s[iOrderFetch:], `buyBtn.textContent = 'Ожидает оплаты'`)
+	if iOrderFetch < 0 || iOrderAwait2 < 0 {
+		t.Fatal("order handler anchors missing")
+	}
+	iOrderAwait2 += iOrderFetch
+	iOrderEnd2 := strings.Index(s[iOrderAwait2:], "refreshAccountSnapshot(tok).then(function () {")
+	if iOrderEnd2 < 0 {
+		t.Fatal("order refresh chain missing")
+	}
+	orderFrag := s[iOrderAwait2 : iOrderAwait2+iOrderEnd2]
+	if !strings.Contains(orderFrag, "creatingServiceIDs.add(newUsid)") {
+		t.Fatal("order flow must mark new user_service_id as creating context")
+	}
+	if strings.Contains(orderFrag, "pendingPostDeleteCatalog") {
+		t.Fatal("order flow must not touch pendingPostDeleteCatalog")
 	}
 }
