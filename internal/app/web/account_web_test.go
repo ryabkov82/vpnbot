@@ -815,10 +815,11 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	}
 	var env struct {
 		User struct {
-			Email    string  `json:"email"`
-			ID       int     `json:"user_id"`
-			Balance  float64 `json:"balance"`
-			Forecast float64 `json:"forecast"`
+			Email          string `json:"email"`
+			ID             int    `json:"user_id"`
+			Balance        float64
+			Forecast       float64
+			TelegramLinked bool `json:"telegram_linked"`
 		} `json:"user"`
 		Services []struct {
 			UserServiceID int    `json:"user_service_id"`
@@ -833,6 +834,9 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	}
 	if env.User.Email != "ok@test.com" || env.User.ID != 99 || env.User.Balance != 0.93 || env.User.Forecast != 280 {
 		t.Fatalf("user %+v", env.User)
+	}
+	if env.User.TelegramLinked {
+		t.Fatalf("web-only stub user must not be telegram_linked: %+v", env.User)
 	}
 	if len(env.Services) != 1 || !env.Services[0].CanConnect || env.Services[0].UserServiceID != 336 || env.Services[0].ServiceID != 3 {
 		t.Fatalf("services %+v", env.Services)
@@ -1142,6 +1146,93 @@ func TestServeAccountConnect_Premium_NoSecret_NotRawSubscription(t *testing.T) {
 	_ = json.Unmarshal([]byte(raw), &out)
 	if out.ConnectURL != "" || strings.Contains(raw, "leak-this.example") || out.Status != "not_ready" {
 		t.Fatalf("%s | %#v", raw, out)
+	}
+}
+
+func TestServeAccountServices_TelegramUsername(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "tg@example.com", 12, "web_tg12", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		balance: &models.UserBalance{Balance: 1, Forecast: 0},
+		getUserByIDRet: &models.User{
+			ID: 12,
+			Settings: models.UserSettings{
+				Telegram: models.TelegramInfo{Username: "vpn_friend", ChatID: 555},
+			},
+		},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if st.getUserByIDCalls != 1 || st.getUserByIDArg != 12 {
+		t.Fatalf("GetUserByID calls=%d arg=%d", st.getUserByIDCalls, st.getUserByIDArg)
+	}
+	var env accountServicesOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if !env.User.TelegramLinked || env.User.TelegramUsername != "@vpn_friend" || env.User.TelegramChatID != 0 {
+		t.Fatalf("user %+v", env.User)
+	}
+	if strings.Contains(rec.Body.String(), `"settings"`) {
+		t.Fatal("must not expose raw settings")
+	}
+}
+
+func TestServeAccountServices_TelegramChatIDOnly(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "id@example.com", 13, "web_tg13", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		balance: &models.UserBalance{},
+		getUserByIDRet: &models.User{
+			Settings: models.UserSettings{Telegram: models.TelegramInfo{ChatID: 919191}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var env accountServicesOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if !env.User.TelegramLinked || env.User.TelegramUsername != "" || env.User.TelegramChatID != 919191 {
+		t.Fatalf("user %+v", env.User)
+	}
+}
+
+func TestServeAccountServices_TelegramNotLinkedWebOnly(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "web@example.com", 14, "web_only14", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		balance: &models.UserBalance{},
+		getUserByIDRet: &models.User{
+			Settings: models.UserSettings{Web: models.WebInfo{Email: "web@example.com"}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountServices(cfg, st).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/account/services?token="+tok, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var env accountServicesOKJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.User.TelegramLinked || env.User.TelegramUsername != "" || env.User.TelegramChatID != 0 {
+		t.Fatalf("user %+v", env.User)
 	}
 }
 

@@ -139,6 +139,16 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, `Вы вошли как ' + String(j.user.email`) {
 		t.Fatal("user-line must show human-friendly email only (Вы вошли как …)")
 	}
+	if !strings.Contains(s, `id="account-telegram"`) || !strings.Contains(s, "function updateAccountTelegramLine(user)") {
+		t.Fatal("session must expose linked Telegram line via updateAccountTelegramLine")
+	}
+	if !strings.Contains(s, "user.telegram_linked") || !strings.Contains(s, "'Telegram: ' + uname") ||
+		!strings.Contains(s, "'Telegram: ID ' + String(user.telegram_chat_id)") {
+		t.Fatal("updateAccountTelegramLine must branch on telegram_linked / username / chat_id")
+	}
+	if !strings.Contains(s, "updateAccountTelegramLine(j.user)") {
+		t.Fatal("services payload must refresh account-telegram line")
+	}
 	if strings.Contains(s, `j.user.login + ' · id '`) || strings.Contains(s, "' · ' + j.user.login") {
 		t.Fatal("session UI must not concatenate login or user_id into user-line")
 	}
@@ -175,13 +185,19 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if iDelete < 0 || !strings.Contains(s[iDelete:], "resetCatalogOrderState()") {
 		t.Fatal("delete-success flow must call resetCatalogOrderState")
 	}
-	iAfterRefresh := strings.Index(s[iDelete:], "refreshAccountSnapshot(tok).then(function () {")
+	iAfterRefresh := strings.Index(s[iDelete:], "refreshAccountSnapshot(tok).then(function (services) {")
 	if iAfterRefresh < 0 {
 		t.Fatal("delete flow must refresh snapshot before resetting catalog UI")
 	}
 	deleteRefreshBlock := s[iDelete+iAfterRefresh:]
 	if !strings.Contains(deleteRefreshBlock, "resetCatalogOrderState()") {
 		t.Fatal("resetCatalogOrderState must appear after delete refresh snapshot chain")
+	}
+	if !strings.Contains(deleteRefreshBlock, "openCatalogTabIfNoServices(services)") {
+		t.Fatal("delete flow must open catalog tab only when snapshot has no services")
+	}
+	if strings.Contains(deleteRefreshBlock, `getElementById('tab-buy-tab')`) {
+		t.Fatal("delete flow must not switch buy tab unconditionally; use openCatalogTabIfNoServices")
 	}
 	iOrderAwait := strings.Index(s, `buyBtn.textContent = 'Ожидает оплаты'`)
 	if iOrderAwait < 0 {
@@ -452,5 +468,71 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	if !strings.Contains(s, `if (!rawTok)`) || !strings.Contains(s, `show('no-token', true)`) {
 		t.Fatal("session must reveal no-token when URL and storage lack a token")
+	}
+}
+
+func TestAccountSessionCatalogTabIfNoServices(t *testing.T) {
+	b, err := os.ReadFile(sessionHTMLPath(t))
+	if err != nil {
+		t.Fatalf("read session.html: %v", err)
+	}
+	s := string(b)
+
+	if !strings.Contains(s, "function openCatalogTabIfNoServices(services)") {
+		t.Fatal("missing openCatalogTabIfNoServices helper")
+	}
+	iHelper := strings.Index(s, "function openCatalogTabIfNoServices(services)")
+	helperBlock := s[iHelper:]
+	if j := strings.Index(helperBlock, "function "); j > 0 {
+		helperBlock = helperBlock[:j]
+	}
+	if !strings.Contains(helperBlock, "list.length > 0") {
+		t.Fatal("helper must skip catalog tab when services remain")
+	}
+	if !strings.Contains(helperBlock, `getElementById('tab-buy-tab')`) ||
+		!strings.Contains(helperBlock, "bootstrap.Tab.getOrCreateInstance(buyTabBtn).show()") {
+		t.Fatal("helper must switch catalog tab via Bootstrap Tab API")
+	}
+
+	iBoot := strings.Index(s, "function bootDashboardAfterExchange")
+	if iBoot < 0 {
+		t.Fatal("bootDashboardAfterExchange missing")
+	}
+	bootBlock := s[iBoot:]
+	if j := strings.Index(bootBlock, "function bootFromRawToken"); j > 0 {
+		bootBlock = bootBlock[:j]
+	}
+	if !strings.Contains(bootBlock, "renderServiceCards(accountTok, j.services || [])") {
+		t.Fatal("initial load must render services from /api/account/services payload")
+	}
+	if !strings.Contains(bootBlock, "openCatalogTabIfNoServices(j.services || [])") {
+		t.Fatal("initial dashboard load must call openCatalogTabIfNoServices after services fetch")
+	}
+	iBootOpen := strings.Index(bootBlock, "openCatalogTabIfNoServices(j.services || [])")
+	iBootRender := strings.Index(bootBlock, "renderServiceCards(accountTok, j.services || [])")
+	if iBootOpen < iBootRender {
+		t.Fatal("initial load must render services before optional catalog tab switch")
+	}
+
+	iDelete := strings.Index(s, `'/api/account/service/delete'`)
+	if iDelete < 0 {
+		t.Fatal("delete handler missing")
+	}
+	iDelRefresh := strings.Index(s[iDelete:], "refreshAccountSnapshot(tok).then(function (services) {")
+	if iDelRefresh < 0 {
+		t.Fatal("delete must refresh snapshot and receive services list")
+	}
+	deleteBlock := s[iDelete+iDelRefresh:]
+	if j := strings.Index(deleteBlock, "function showInvalidSessionLink"); j > 0 {
+		deleteBlock = deleteBlock[:j]
+	}
+	if !strings.Contains(deleteBlock, "openCatalogTabIfNoServices(services)") {
+		t.Fatal("delete flow must call openCatalogTabIfNoServices after refresh")
+	}
+	if strings.Contains(deleteBlock, `getElementById('tab-buy-tab')`) {
+		t.Fatal("delete flow must not unconditionally switch to buy tab")
+	}
+	if !strings.Contains(deleteBlock, "services.length === 0") {
+		t.Fatal("post-delete hint must show only when no services remain")
 	}
 }

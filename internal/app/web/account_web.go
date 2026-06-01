@@ -298,11 +298,14 @@ func dashboardTariffCostForUserService(app accountWebApp, us *models.UserService
 }
 
 type accountServicesUserJSON struct {
-	Email    string  `json:"email"`
-	UserID   int     `json:"user_id"`
-	Login    string  `json:"login"`
-	Balance  float64 `json:"balance"`
-	Forecast float64 `json:"forecast"`
+	Email            string  `json:"email"`
+	UserID           int     `json:"user_id"`
+	Login            string  `json:"login"`
+	Balance          float64 `json:"balance"`
+	Forecast         float64 `json:"forecast"`
+	TelegramLinked   bool    `json:"telegram_linked"`
+	TelegramUsername string  `json:"telegram_username,omitempty"`
+	TelegramChatID   int64   `json:"telegram_chat_id,omitempty"`
 }
 
 type accountServicesRowJSON struct {
@@ -466,14 +469,24 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 			out = append(out, row)
 		}
 
+		userJSON := accountServicesUserJSON{
+			Email:    claims.Email,
+			UserID:   claims.UserID,
+			Login:    claims.Login,
+			Balance:  balance,
+			Forecast: forecast,
+		}
+		if shmUser, errGU := app.GetUserByID(claims.UserID); errGU != nil {
+			slog.Error("account services: GetUserByID", "err", errGU)
+		} else if shmUser != nil {
+			linked, uname, chatID := telegramLinkFieldsFromUser(shmUser)
+			userJSON.TelegramLinked = linked
+			userJSON.TelegramUsername = uname
+			userJSON.TelegramChatID = chatID
+		}
+
 		writeJSON(w, http.StatusOK, accountServicesOKJSON{
-			User: accountServicesUserJSON{
-				Email:    claims.Email,
-				UserID:   claims.UserID,
-				Login:    claims.Login,
-				Balance:  balance,
-				Forecast: forecast,
-			},
+			User:     userJSON,
 			Services: out,
 		})
 	}

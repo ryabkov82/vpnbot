@@ -287,8 +287,11 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iDeleteAPI < 0 {
 		t.Fatal("delete endpoint string missing")
 	}
-	if !strings.Contains(raw[iDeleteAPI:], "refreshAccountSnapshot(tok).then(function () {") {
+	if !strings.Contains(raw[iDeleteAPI:], "refreshAccountSnapshot(tok).then(function (services) {") {
 		t.Fatal("delete success must chain refreshAccountSnapshot before catalog reset")
+	}
+	if !strings.Contains(raw[iDeleteAPI:], "openCatalogTabIfNoServices(services)") {
+		t.Fatal("delete success must conditionally open catalog tab via openCatalogTabIfNoServices")
 	}
 	iAwait := strings.Index(raw, `'Ожидает оплаты'`)
 	if iAwait < 0 {

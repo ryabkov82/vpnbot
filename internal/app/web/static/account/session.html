@@ -55,6 +55,7 @@
 			<div class="flex-grow-1 min-w-0">
 				<h1 class="h4 fw-bold mb-1 mb-sm-2 mb-md-3">Личный кабинет</h1>
 				<div id="user-line" class="small text-secondary"></div>
+				<div id="account-telegram" class="small text-secondary d-none"></div>
 			</div>
 			<div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start">
 				<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->
@@ -725,6 +726,32 @@
 				});
 		}
 
+		function updateAccountTelegramLine(user) {
+			var el = document.getElementById('account-telegram');
+			if (!el) {
+				return;
+			}
+			if (!user || !user.telegram_linked) {
+				el.textContent = '';
+				el.classList.add('d-none');
+				return;
+			}
+			var uname = String(user.telegram_username || '').trim();
+			var label = '';
+			if (uname) {
+				label = 'Telegram: ' + uname;
+			} else if (user.telegram_chat_id) {
+				label = 'Telegram: ID ' + String(user.telegram_chat_id);
+			}
+			if (!label) {
+				el.textContent = '';
+				el.classList.add('d-none');
+				return;
+			}
+			el.textContent = label;
+			el.classList.remove('d-none');
+		}
+
 		function refreshAccountSnapshot(tok) {
 			return fetch('/api/account/services?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -737,7 +764,10 @@
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
 						'Вы вошли как ' + String(j.user.email || '').trim();
-					renderServiceCards(tok, j.services || []);
+					updateAccountTelegramLine(j.user);
+					var services = j.services || [];
+					renderServiceCards(tok, services);
+					return services;
 				});
 		}
 
@@ -749,6 +779,21 @@
 			var cardsEl = document.getElementById('cards');
 			if (cardsEl) {
 				cardsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			}
+		}
+
+		function openCatalogTabIfNoServices(services) {
+			var list = services || [];
+			if (list.length > 0) {
+				return;
+			}
+			var buyTabBtn = document.getElementById('tab-buy-tab');
+			if (buyTabBtn && window.bootstrap && bootstrap.Tab) {
+				bootstrap.Tab.getOrCreateInstance(buyTabBtn).show();
+			}
+			var catalogWrap = document.getElementById('new-catalog-wrap');
+			if (catalogWrap) {
+				catalogWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 			}
 		}
 
@@ -947,14 +992,12 @@
 									okBox.textContent =
 										op.j && op.j.message ? String(op.j.message) : 'Услуга удалена. Теперь можно выбрать другой тариф.';
 									okBox.classList.remove('d-none');
-									document.getElementById('post-delete-buy-hint').classList.remove('d-none');
-									return refreshAccountSnapshot(tok).then(function () {
+									return refreshAccountSnapshot(tok).then(function (services) {
 										resetCatalogOrderState();
-										var buyTabBtn = document.getElementById('tab-buy-tab');
-										if (buyTabBtn && window.bootstrap && bootstrap.Tab) {
-											bootstrap.Tab.getOrCreateInstance(buyTabBtn).show();
+										if (!services || services.length === 0) {
+											document.getElementById('post-delete-buy-hint').classList.remove('d-none');
 										}
-										document.getElementById('new-catalog-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+										openCatalogTabIfNoServices(services);
 									});
 								})
 								.catch(function () {
@@ -1007,7 +1050,9 @@
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
 						'Вы вошли как ' + String(j.user.email || '').trim();
+					updateAccountTelegramLine(j.user);
 					renderServiceCards(accountTok, j.services || []);
+					openCatalogTabIfNoServices(j.services || []);
 					loadAccountCatalog(accountTok);
 					bindTopupHandlers(accountTok);
 					bindDashboardPayments(accountTok);
