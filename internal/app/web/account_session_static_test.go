@@ -32,6 +32,23 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "Подключить Premium") {
 		t.Fatal(`missing Premium connect button label`)
 	}
+	for _, forbid := range []string{
+		"Открыть Premium подключение",
+		"Открыть подключение",
+		"Скопировать ссылку",
+		"conn-open",
+		"conn-copy",
+		"conn-res",
+	} {
+		if strings.Contains(s, forbid) {
+			t.Fatalf("session connect UI must not use post-connect control %q", forbid)
+		}
+	}
+	if !strings.Contains(s, "function openConnectPage(url)") ||
+		!strings.Contains(s, `window.open(u, '_blank', 'noopener,noreferrer')`) ||
+		!strings.Contains(s, "openConnectPage(x.j.connect_url)") {
+		t.Fatal("connect handler must open URL in new tab immediately")
+	}
 	if !strings.Contains(s, "/api/account/session/start") {
 		t.Fatal("session must call /api/account/session/start")
 	}
