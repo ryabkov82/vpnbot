@@ -471,12 +471,11 @@
 				});
 		}
 
-		function openConnectPage(url) {
-			var u = String(url || '').trim();
-			if (!u) {
+		function openExternalPage(url) {
+			if (!url) {
 				return false;
 			}
-			var w = window.open(u, '_blank', 'noopener,noreferrer');
+			var w = window.open(url, '_blank');
 			if (!w) {
 				return false;
 			}
@@ -513,10 +512,10 @@
 							return;
 						}
 						if (x.j && x.j.status === 'ok' && x.j.connect_url) {
-							if (!openConnectPage(x.j.connect_url)) {
+							if (!openExternalPage(x.j.connect_url)) {
 								if (statusEl) {
 									statusEl.textContent =
-										'Не удалось открыть страницу подключения. Разрешите всплывающие окна.';
+										'Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.';
 									statusEl.classList.remove('d-none');
 								}
 								return;

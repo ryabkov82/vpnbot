@@ -44,10 +44,26 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 			t.Fatalf("session connect UI must not use post-connect control %q", forbid)
 		}
 	}
-	if !strings.Contains(s, "function openConnectPage(url)") ||
-		!strings.Contains(s, `window.open(u, '_blank', 'noopener,noreferrer')`) ||
-		!strings.Contains(s, "openConnectPage(x.j.connect_url)") {
-		t.Fatal("connect handler must open URL in new tab immediately")
+	if !strings.Contains(s, "function openExternalPage(url)") ||
+		!strings.Contains(s, `window.open(url, '_blank')`) ||
+		!strings.Contains(s, "openExternalPage(x.j.connect_url)") {
+		t.Fatal("connect handler must open URL via openExternalPage")
+	}
+	if strings.Contains(s, `window.open(url, '_blank', 'noopener,noreferrer')`) ||
+		strings.Contains(s, "openConnectPage(") {
+		t.Fatal("connect must not use noopener,noreferrer window.open or openConnectPage null-check trap")
+	}
+	iConn := strings.Index(s, "function attachConnect(")
+	if iConn < 0 {
+		t.Fatal("attachConnect missing")
+	}
+	connBlock := s[iConn:]
+	if j := strings.Index(connBlock, "function openExternalPage"); j > 0 {
+		connBlock = connBlock[:j]
+	}
+	if !strings.Contains(connBlock, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.") ||
+		!strings.Contains(connBlock, "if (!openExternalPage(x.j.connect_url))") {
+		t.Fatal("connect popup error must show only when openExternalPage returns false")
 	}
 	if !strings.Contains(s, "/api/account/session/start") {
 		t.Fatal("session must call /api/account/session/start")
