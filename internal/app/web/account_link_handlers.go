@@ -159,7 +159,7 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 	}
 }
 
-func serveAccountLinkConfirm(cfg *config.Config, svc *appService.Service) http.HandlerFunc {
+func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/account/link/confirm" && r.URL.Path != "/account/link/confirm/" {
 			http.NotFound(w, r)
@@ -183,7 +183,7 @@ func serveAccountLinkConfirm(cfg *config.Config, svc *appService.Service) http.H
 			return
 		}
 
-		u, err := svc.LinkWebEmailForTelegramUser(claims.ShmUserID, claims.TelegramChatID, claims.Email, "telegram_link")
+		u, err := app.LinkWebEmailForTelegramUser(claims.ShmUserID, claims.TelegramChatID, claims.Email, "telegram_link")
 		switch {
 		case err == nil:
 			break
@@ -194,7 +194,13 @@ func serveAccountLinkConfirm(cfg *config.Config, svc *appService.Service) http.H
 			wlConflict := webuser.WebLoginFromEmail(strings.TrimSpace(claims.Email))
 			slog.Warn("link confirm: email already linked to another user",
 				"shm_user_id", claims.ShmUserID, "web_login", wlConflict)
-			respondAccountEmailAlreadyLinked(w, r)
+			linkTok, tokErr := CreateAccountTelegramLinkToken(secret, claims.ShmUserID, claims.TelegramChatID, cfg)
+			if tokErr != nil {
+				slog.Error("link confirm", "stage", "recreate_link_token", "shm_user_id", claims.ShmUserID, "err", tokErr)
+				http.Redirect(w, r, "/account/link"+linkErrQuery("link_failed"), http.StatusFound)
+				return
+			}
+			respondLinkEmailAlreadyLinked(w, r, linkTok)
 			return
 		case errors.Is(err, appService.ErrTelegramChatMismatch):
 			http.Redirect(w, r, "/account/link"+linkErrQuery("telegram_mismatch"), http.StatusFound)
@@ -243,7 +249,7 @@ type accountLinkLoginStartReq struct {
 	LinkToken string `json:"link_token"`
 }
 
-func serveAccountLinkLoginStart(cfg *config.Config, svc *appService.Service, rl *leadRateLimiter) http.HandlerFunc {
+func serveAccountLinkLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/account/link/login/start" {
 			http.NotFound(w, r)
@@ -294,7 +300,7 @@ func serveAccountLinkLoginStart(cfg *config.Config, svc *appService.Service, rl 
 			return
 		}
 
-		other, err := svc.FindUserByWebEmail(normEmail)
+		other, err := app.FindUserByWebEmail(normEmail)
 		if err != nil {
 			slog.Error("link login", "stage", "find_user_by_web_login", "user_id", linkClaims.ShmUserID, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")

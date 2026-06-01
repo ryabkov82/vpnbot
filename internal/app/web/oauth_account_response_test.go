@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -36,5 +37,26 @@ func TestRespondAccountEmailAlreadyLinked_JSON409(t *testing.T) {
 	}
 	if body["error"] != accountErrorEmailAlreadyLinked {
 		t.Fatalf("error field=%v", body)
+	}
+}
+
+func TestRespondLinkEmailAlreadyLinked_RedirectPreservesToken(t *testing.T) {
+	t.Parallel()
+	const linkTok = "eyJhbGciOiJIUzI1NiJ9.test"
+	rec := httptest.NewRecorder()
+	respondLinkEmailAlreadyLinked(rec, httptest.NewRequest(http.MethodGet, "/", nil), linkTok)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Path != "/account/link" || u.Query().Get("token") != linkTok || u.Query().Get("err") != "email_already_linked" {
+		t.Fatalf("location=%q", loc)
+	}
+	if u.Query().Get("error") != "" {
+		t.Fatalf("must use err= not error=, location=%q", loc)
 	}
 }

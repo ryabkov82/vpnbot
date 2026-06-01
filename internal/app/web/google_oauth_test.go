@@ -481,7 +481,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheckRedirects(t *
 	}
 	loc := rec.Header().Get("Location")
 	q, qerr := url.Parse(loc)
-	if qerr != nil || q.Path != "/account" || q.Query().Get("error") != "email_already_linked" {
+	if qerr != nil || q.Path != "/account/link" || q.Query().Get("token") != linkTok || q.Query().Get("err") != "email_already_linked" {
 		t.Fatalf("bad redirect %q parsed=%v", loc, qerr)
 	}
 	if st.linkWebEmailCalls != 0 {
@@ -489,7 +489,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheckRedirects(t *
 	}
 }
 
-func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_JSON409(t *testing.T) {
+func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_RedirectWithToken(t *testing.T) {
 	const shmLinkUser = 702
 	secret := strings.Repeat("M", 41)
 	validTS := httptest.NewServer(googleOAuthTestMockHandler("Taken.Json@Example.COM", true, false))
@@ -515,27 +515,24 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_JSON409(t *t
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
-	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 
-	if rec.Code != http.StatusConflict {
+	if rec.Code != http.StatusFound {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	var body map[string]string
-	if jerr := json.Unmarshal(rec.Body.Bytes(), &body); jerr != nil {
-		t.Fatal(jerr)
-	}
-	if body["error"] != accountErrorEmailAlreadyLinked {
-		t.Fatalf("body=%v", body)
+	loc := rec.Header().Get("Location")
+	q, qerr := url.Parse(loc)
+	if qerr != nil || q.Path != "/account/link" || q.Query().Get("token") != linkTok || q.Query().Get("err") != "email_already_linked" {
+		t.Fatalf("bad redirect %q parsed=%v", loc, qerr)
 	}
 	if st.linkWebEmailCalls != 0 {
 		t.Fatalf("LinkWebEmailForTelegramUser calls=%d want 0", st.linkWebEmailCalls)
 	}
 }
 
-func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_JSON409(t *testing.T) {
+func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_RedirectWithToken(t *testing.T) {
 	const shmLinkUser = 703
 	secret := strings.Repeat("N", 42)
 	validTS := httptest.NewServer(googleOAuthTestMockHandler("Edge.Case@example.com", true, false))
@@ -557,20 +554,17 @@ func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_JSON409(t *testi
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
-	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 
-	if rec.Code != http.StatusConflict {
+	if rec.Code != http.StatusFound {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	var body map[string]string
-	if jerr := json.Unmarshal(rec.Body.Bytes(), &body); jerr != nil {
-		t.Fatal(jerr)
-	}
-	if body["error"] != accountErrorEmailAlreadyLinked {
-		t.Fatalf("body=%v", body)
+	loc := rec.Header().Get("Location")
+	q, qerr := url.Parse(loc)
+	if qerr != nil || q.Path != "/account/link" || q.Query().Get("token") != linkTok || q.Query().Get("err") != "email_already_linked" {
+		t.Fatalf("bad redirect %q parsed=%v", loc, qerr)
 	}
 	if st.linkWebEmailCalls != 1 {
 		t.Fatalf("link calls=%d want 1", st.linkWebEmailCalls)

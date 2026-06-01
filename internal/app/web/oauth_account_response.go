@@ -17,7 +17,7 @@ func accountPrefersJSONResponse(r *http.Request) bool {
 	return strings.Contains(a, "application/json")
 }
 
-// respondAccountEmailAlreadyLinked завершает запрос без дальнейшей логики OAuth/link: 409 JSON или 302 на /account.
+// respondAccountEmailAlreadyLinked — обычный web login: 409 JSON или 302 на /account?error=email_already_linked.
 func respondAccountEmailAlreadyLinked(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if accountPrefersJSONResponse(r) {
@@ -27,4 +27,16 @@ func respondAccountEmailAlreadyLinked(w http.ResponseWriter, r *http.Request) {
 	q := url.Values{}
 	q.Set("error", accountErrorEmailAlreadyLinked)
 	http.Redirect(w, r, "/account?"+q.Encode(), http.StatusFound)
+}
+
+// respondLinkEmailAlreadyLinked — Telegram→Web link-flow: 302 на /account/link?token=…&err=email_already_linked.
+func respondLinkEmailAlreadyLinked(w http.ResponseWriter, r *http.Request, linkToken string) {
+	w.Header().Set("Cache-Control", "no-store")
+	linkToken = strings.TrimSpace(linkToken)
+	q := url.Values{}
+	if linkToken != "" {
+		q.Set("token", linkToken)
+	}
+	q.Set("err", accountErrorEmailAlreadyLinked)
+	http.Redirect(w, r, "/account/link?"+q.Encode(), http.StatusFound)
 }
