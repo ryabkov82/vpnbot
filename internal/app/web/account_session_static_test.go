@@ -58,12 +58,24 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("attachConnect missing")
 	}
 	connBlock := s[iConn:]
-	if j := strings.Index(connBlock, "function openExternalPage"); j > 0 {
+	if j := strings.Index(connBlock, "var topupHandlersBound"); j > 0 {
 		connBlock = connBlock[:j]
 	}
 	if !strings.Contains(connBlock, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.") ||
 		!strings.Contains(connBlock, "if (!openExternalPage(x.j.connect_url))") {
 		t.Fatal("connect popup error must show only when openExternalPage returns false")
+	}
+	for _, forbid := range []string{"conn-happ-msg", "hapHint"} {
+		if strings.Contains(connBlock, forbid) {
+			t.Fatalf("attachConnect must not reference post-click premium hint %q", forbid)
+		}
+	}
+	if strings.Count(connBlock, "openExternalPage(x.j.connect_url)") != 1 {
+		t.Fatal("attachConnect must call openExternalPage once per success path")
+	}
+	if !strings.Contains(s, "premSvcHint") ||
+		!strings.Contains(s, "Для Premium используйте приложение Happ.") {
+		t.Fatal("premium card must keep static Happ hint in renderServiceCards")
 	}
 	if !strings.Contains(s, "/api/account/session/start") {
 		t.Fatal("session must call /api/account/session/start")

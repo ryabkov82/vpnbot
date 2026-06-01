@@ -491,14 +491,9 @@
 				var apiUrl = '/api/account/service/connect?token=' + encodeURIComponent(tok)
 					+ '&user_service_id=' + encodeURIComponent(String(userServiceId));
 				var statusEl = cardRoot.querySelector('.conn-notready');
-				var hapHint = cardRoot.querySelector('.conn-happ-msg');
 				if (statusEl) {
 					statusEl.textContent = '';
 					statusEl.classList.add('d-none');
-				}
-				if (hapHint) {
-					hapHint.textContent = '';
-					hapHint.classList.add('d-none');
 				}
 				fetch(apiUrl)
 					.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -519,12 +514,6 @@
 									statusEl.classList.remove('d-none');
 								}
 								return;
-							}
-							if (String(x.j.connect_app || '').toLowerCase() === 'happ' && hapHint) {
-								hapHint.textContent = (x.j && x.j.message)
-									? String(x.j.message)
-									: 'Для Premium используйте приложение Happ.';
-								hapHint.classList.remove('d-none');
 							}
 							return;
 						}
@@ -1138,7 +1127,6 @@
 					hint +
 					'<button type="button" class="btn btn-sm btn-primary mt-3 conn-btn"' +
 					(btnShow ? '' : ' style="display:none"') + '>' + connLbl + '</button>' +
-					'<div class="small text-secondary mt-2 conn-happ-msg d-none lh-base" role="status"></div>' +
 					'<div class="small text-danger mt-2 conn-notready d-none" role="alert"></div>' +
 					cancelHtml +
 					'</div></div>';
