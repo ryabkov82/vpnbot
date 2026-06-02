@@ -25,6 +25,7 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 	bot.Handle("/list", h.handleList)
 	bot.Handle("/pricelist", h.handlePricelist)
 	bot.Handle("/balance", h.handleBalance)
+	bot.Handle("/account", h.handleAccount)
 	// Callback-кнопки
 	bot.Handle(telebot.OnCallback, h.handleCallbacks)
 	/*
@@ -40,32 +41,7 @@ func (h *BotHandler) RegisterHandlers(bot *telebot.Bot) {
 
 // Устанавливаем список команд для бота
 func (h *BotHandler) SetBotCommands(bot *telebot.Bot) error {
-	commands := []telebot.Command{
-		{
-			Text:        "/start",
-			Description: "Начало работы с ботом",
-		},
-		{
-			Text:        "/balance",
-			Description: "Баланс",
-		},
-		{
-			Text:        "/list",
-			Description: "Список ключей доступа",
-		},
-		{
-			Text:        "/pricelist",
-			Description: "Новый ключ",
-		},
-		{
-			Text:        "/help",
-			Description: "Помощь по использованию бота",
-		},
-
-		// Добавьте другие команды по необходимости
-	}
-
-	return bot.SetCommands(commands)
+	return bot.SetCommands(botMenuCommands())
 }
 
 func (h *BotHandler) handleMenu(c telebot.Context) error {
@@ -126,6 +102,10 @@ func (h *BotHandler) handleServiceBuy(c telebot.Context, serviceID string) error
 
 func (h *BotHandler) handleHelp(c telebot.Context) error {
 	return h.service.handleHelp(c)
+}
+
+func (h *BotHandler) handleAccount(c telebot.Context) error {
+	return h.service.handleAccount(c)
 }
 
 func (h *BotHandler) handlePays(c telebot.Context) error {

@@ -162,10 +162,7 @@ func (s *Service) showMainMenu(c telebot.Context) error {
 	if u, uerr := s.service.GetUser(c.Chat().ID); uerr != nil && !errors.Is(uerr, service.ErrUserNotFound) {
 		log.Printf("telegram web cabinet link: get user %v", uerr)
 	} else if u != nil {
-		if cabinetURL := s.telegramWebCabinetURL(c.Chat().ID, u.ID); cabinetURL != "" {
-			b := inlineMenu.URL("🌐 Личный кабинет", cabinetURL)
-			webCabBtn = &b
-		}
+		webCabBtn = s.webCabinetMenuButton(inlineMenu, c.Chat().ID, u.ID)
 	}
 
 	// Кнопка «Новости», если задана ссылка
