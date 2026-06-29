@@ -264,6 +264,16 @@
 				try { win.close(); } catch (_) {}
 			}
 		}
+		function showPaymentWindowLoading(win, text) {
+			if (!win) {
+				return;
+			}
+			try {
+				win.document.open();
+				win.document.write(String(text || ''));
+				win.document.close();
+			} catch (_) {}
+		}
 
 		function fmtMoney(n) {
 			if (typeof n !== 'number' || isNaN(n)) return '—';
@@ -471,35 +481,33 @@
 				});
 		}
 
-		function openExternalPage(url) {
-			if (!url) {
-				return false;
-			}
-			var w = window.open(url, '_blank');
-			if (!w) {
-				return false;
-			}
-			try {
-				w.opener = null;
-			} catch (_) {}
-			return true;
-		}
-
 		function attachConnect(btn, tok, userServiceId, cardRoot) {
 			btn.addEventListener('click', function () {
 				btn.disabled = true;
-				var apiUrl = '/api/account/service/connect?token=' + encodeURIComponent(tok)
-					+ '&user_service_id=' + encodeURIComponent(String(userServiceId));
 				var statusEl = cardRoot.querySelector('.conn-notready');
 				if (statusEl) {
 					statusEl.textContent = '';
 					statusEl.classList.add('d-none');
 				}
+				var popup = openPaymentWindow();
+				if (!popup) {
+					btn.disabled = false;
+					if (statusEl) {
+						statusEl.textContent =
+							'Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.';
+						statusEl.classList.remove('d-none');
+					}
+					return;
+				}
+				showPaymentWindowLoading(popup, 'Открываем страницу подключения...');
+				var apiUrl = '/api/account/service/connect?token=' + encodeURIComponent(tok)
+					+ '&user_service_id=' + encodeURIComponent(String(userServiceId));
 				fetch(apiUrl)
 					.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 					.then(function (x) {
 						btn.disabled = false;
 						if (!x.ok) {
+							closePaymentWindow(popup);
 							if (statusEl) {
 								statusEl.textContent = (x.j && x.j.error) ? String(x.j.error) : 'Ошибка';
 								statusEl.classList.remove('d-none');
@@ -507,16 +515,16 @@
 							return;
 						}
 						if (x.j && x.j.status === 'ok' && x.j.connect_url) {
-							if (!openExternalPage(x.j.connect_url)) {
+							if (!navigatePaymentWindow(popup, x.j.connect_url)) {
+								closePaymentWindow(popup);
 								if (statusEl) {
-									statusEl.textContent =
-										'Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.';
+									statusEl.textContent = 'Подключение пока недоступно';
 									statusEl.classList.remove('d-none');
 								}
-								return;
 							}
 							return;
 						}
+						closePaymentWindow(popup);
 						if (statusEl) {
 							statusEl.textContent = (x.j && x.j.message)
 								? String(x.j.message)
@@ -526,6 +534,7 @@
 					})
 					.catch(function () {
 						btn.disabled = false;
+						closePaymentWindow(popup);
 						if (statusEl) {
 							statusEl.textContent = 'Сеть недоступна';
 							statusEl.classList.remove('d-none');

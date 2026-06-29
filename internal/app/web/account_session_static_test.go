@@ -44,14 +44,12 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 			t.Fatalf("session connect UI must not use post-connect control %q", forbid)
 		}
 	}
-	if !strings.Contains(s, "function openExternalPage(url)") ||
-		!strings.Contains(s, `window.open(url, '_blank')`) ||
-		!strings.Contains(s, "openExternalPage(x.j.connect_url)") {
-		t.Fatal("connect handler must open URL via openExternalPage")
-	}
-	if strings.Contains(s, `window.open(url, '_blank', 'noopener,noreferrer')`) ||
+	if strings.Contains(s, "function openExternalPage(") ||
 		strings.Contains(s, "openConnectPage(") {
-		t.Fatal("connect must not use noopener,noreferrer window.open or openConnectPage null-check trap")
+		t.Fatal("connect must not use openExternalPage or openConnectPage")
+	}
+	if strings.Contains(s, `window.open(url, '_blank', 'noopener,noreferrer')`) {
+		t.Fatal("connect must not use noopener,noreferrer window.open")
 	}
 	iConn := strings.Index(s, "function attachConnect(")
 	if iConn < 0 {
@@ -61,17 +59,31 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if j := strings.Index(connBlock, "var topupHandlersBound"); j > 0 {
 		connBlock = connBlock[:j]
 	}
-	if !strings.Contains(connBlock, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.") ||
-		!strings.Contains(connBlock, "if (!openExternalPage(x.j.connect_url))") {
-		t.Fatal("connect popup error must show only when openExternalPage returns false")
+	iConnOpen := strings.Index(connBlock, "openPaymentWindow()")
+	iConnFetch := strings.Index(connBlock, "fetch(apiUrl)")
+	if iConnOpen < 0 || iConnFetch < 0 || iConnOpen >= iConnFetch {
+		t.Fatal("attachConnect must open blank tab via openPaymentWindow before fetch")
+	}
+	if !strings.Contains(connBlock, "if (!popup)") ||
+		!strings.Contains(connBlock, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.") {
+		t.Fatal("connect popup error must show when pre-open returns null")
+	}
+	if !strings.Contains(connBlock, "showPaymentWindowLoading(popup, 'Открываем страницу подключения...')") ||
+		!strings.Contains(connBlock, "navigatePaymentWindow(popup, x.j.connect_url)") ||
+		!strings.Contains(connBlock, "closePaymentWindow(popup)") {
+		t.Fatal("attachConnect must show loading text, navigate popup, and close on failure")
+	}
+	if strings.Contains(connBlock, "window.open(x.j.connect_url") ||
+		strings.Contains(connBlock, "window.open(url, '_blank')") {
+		t.Fatal("attachConnect must not call window.open with URL after async fetch")
 	}
 	for _, forbid := range []string{"conn-happ-msg", "hapHint"} {
 		if strings.Contains(connBlock, forbid) {
 			t.Fatalf("attachConnect must not reference post-click premium hint %q", forbid)
 		}
 	}
-	if strings.Count(connBlock, "openExternalPage(x.j.connect_url)") != 1 {
-		t.Fatal("attachConnect must call openExternalPage once per success path")
+	if strings.Count(connBlock, "navigatePaymentWindow(popup, x.j.connect_url)") != 1 {
+		t.Fatal("attachConnect must call navigatePaymentWindow once per success path")
 	}
 	if !strings.Contains(s, "premSvcHint") ||
 		!strings.Contains(s, "Для Premium используйте приложение Happ.") {
@@ -152,6 +164,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		`function openPaymentWindow`,
 		`function navigatePaymentWindow`,
 		`function closePaymentWindow`,
+		`function showPaymentWindowLoading`,
 		`window.open('about:blank', '_blank')`,
 		`win.opener = null`,
 		`win.location.href = u`,
