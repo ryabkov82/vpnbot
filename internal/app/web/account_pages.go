@@ -77,6 +77,7 @@ func renderedAccountLoginPageHTML(cfg *config.Config, locale accountLocale) ([]b
 		ErrorReplaceJSON:     template.JS(strconv.Quote(accountLoginLoggedOutReplacePath(locale))),
 		LoginEmailLinkedJSON: template.JS(strconv.Quote(i18n.LoginEmailLinked)),
 		CurrentLang:          string(locale),
+		SiteURL:              accountMarketingSiteURL(locale),
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -109,6 +110,7 @@ func renderedAccountSessionPageHTML(cfg *config.Config, locale accountLocale, r 
 		AccountConfigJSON:       marshalAccountJSConfig(locale),
 		I18nJSON:                marshalAccountI18nJS(i18n),
 		BalanceCurrency:         accountCurrencyDisplay(locale),
+		SiteURL:                 accountMarketingSiteURL(locale),
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {

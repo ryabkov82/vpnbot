@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
+	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +53,108 @@ func TestResolveAccountLocale(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/account", nil)
 	if got := resolveAccountLocale(req); got != accountLocaleRU {
 		t.Fatalf("default ru: got %q", got)
+	}
+}
+
+func TestAccountMarketingSiteURL(t *testing.T) {
+	if got := accountMarketingSiteURL(accountLocaleRU); got != accountMarketingSiteURLRU {
+		t.Fatalf("ru: got %q", got)
+	}
+	if got := accountMarketingSiteURL(accountLocaleEN); got != accountMarketingSiteURLEN {
+		t.Fatalf("en: got %q", got)
+	}
+}
+
+func TestRenderedAccountMarketingSiteLink(t *testing.T) {
+	cfg := orderStartTestCfg()
+	ruLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleRU)
+	if !strings.Contains(ruLogin, `href="https://vpn-for-friends.com/"`) ||
+		!strings.Contains(ruLogin, `>VPN for Friends</a>`) {
+		t.Fatal("RU login footer brand must link to marketing site")
+	}
+	if strings.Contains(ruLogin, ">На сайт</a>") || strings.Contains(ruLogin, ">Website</a>") {
+		t.Fatal("marketing link must use footer brand, not header site link")
+	}
+
+	enLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleEN)
+	if !strings.Contains(enLogin, `href="https://vpn-for-friends.com/en/"`) ||
+		!strings.Contains(enLogin, `>VPN for Friends</a>`) {
+		t.Fatal("EN login footer brand must link to marketing site")
+	}
+	if !strings.Contains(enLogin, `/account?lang=en`) {
+		t.Fatal("EN login must keep lang switcher")
+	}
+
+	ruSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleRU)
+	if !strings.Contains(ruSession, `href="https://vpn-for-friends.com/"`) ||
+		!strings.Contains(ruSession, `account-footer`) {
+		t.Fatal("RU session footer brand must link to marketing site")
+	}
+
+	enSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleEN)
+	if !strings.Contains(enSession, `href="https://vpn-for-friends.com/en/"`) {
+		t.Fatal("EN session footer brand must link to marketing site")
+	}
+	if !strings.Contains(enSession, `/account/session?lang=en`) {
+		t.Fatal("EN session must keep lang switcher with lang=en")
+	}
+}
+
+func TestRenderedAccountSessionInvalidLinkI18n(t *testing.T) {
+	cfg := orderStartTestCfg()
+	ru := mustRenderAccountSessionHTML(t, cfg, accountLocaleRU)
+	en := mustRenderAccountSessionHTML(t, cfg, accountLocaleEN)
+	for _, html := range []string{ru, en} {
+		if strings.Contains(html, `t('sessionInvalidLinkA')`) || strings.Contains(html, `"sessionInvalidLinkA"`) {
+			t.Fatal("rendered session must not expose raw key sessionInvalidLinkA")
+		}
+		if !strings.Contains(html, "sessionInvalidLinkAction") {
+			t.Fatal("rendered session must reference sessionInvalidLinkAction")
+		}
+	}
+	if !strings.Contains(ru, `"sessionInvalidLink":"Ссылка недействительна или устарела."`) ||
+		!strings.Contains(ru, `"sessionInvalidLinkAction":"Запросить новую ссылку для входа"`) ||
+		!strings.Contains(ru, `t('sessionInvalidLinkAction')`) {
+		t.Fatal("RU invalid-session i18n missing")
+	}
+	if !strings.Contains(en, `"sessionInvalidLink":"This sign-in link is invalid or expired."`) ||
+		!strings.Contains(en, `"sessionInvalidLinkAction":"Request a new sign-in link"`) ||
+		!strings.Contains(en, `"/account?lang=en"`) {
+		t.Fatal("EN invalid-session i18n or login path missing")
+	}
+}
+
+func TestRenderedAccountSessionInlineJS_NodeCheck(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed")
+	}
+	cfg := orderStartTestCfg()
+	re := regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+	for _, tc := range []struct {
+		name   string
+		locale accountLocale
+	}{
+		{"RU", accountLocaleRU},
+		{"EN", accountLocaleEN},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			html := mustRenderAccountSessionHTML(t, cfg, tc.locale)
+			var parts []string
+			for _, m := range re.FindAllStringSubmatch(html, -1) {
+				if len(m) > 1 {
+					parts = append(parts, m[1])
+				}
+			}
+			path := t.TempDir() + "/session-inline.js"
+			if err := os.WriteFile(path, []byte(strings.Join(parts, "\n")), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(node, "--check", path)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("node --check: %v\n%s", err, out)
+			}
+		})
 	}
 }
 

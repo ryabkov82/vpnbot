@@ -194,7 +194,7 @@
 		</div>
 
 		<footer class="mt-4 pt-3 text-center text-secondary small account-footer">
-			<div class="fw-semibold">{{.I18n.FooterBrand}}</div>
+			<div class="fw-semibold"><a href="{{.SiteURL}}" class="text-secondary text-decoration-none" target="_blank" rel="noopener noreferrer">{{.I18n.FooterBrand}}</a></div>
 			<div>{{.I18n.FooterTagline}}</div>
 		</footer>
 	</div>
@@ -1309,7 +1309,7 @@
 			show('err-box', true);
 			document.getElementById('err-box').innerHTML =
 				escapeHtml(t('sessionInvalidLink')) +
-				' <a href="' + escapeHtml(t('loginPagePath')) + '">' + escapeHtml(t('sessionInvalidLinkA')) + '</a>';
+				' <a href="' + escapeHtml(t('loginPagePath')) + '">' + escapeHtml(t('sessionInvalidLinkAction')) + '</a>';
 		}
 
 		function bootDashboardAfterExchange(accountTok) {

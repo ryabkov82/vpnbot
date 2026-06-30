@@ -39,6 +39,10 @@
 			<button type="submit" class="btn my-btn w-100" id="btn-send">{{.I18n.LoginSubmitBtn}}</button>
 		</form>
 		{{.GoogleLoginHTML}}
+		<footer class="mt-4 pt-3 text-center text-secondary small">
+			<div class="fw-semibold"><a href="{{.SiteURL}}" class="text-secondary text-decoration-none" target="_blank" rel="noopener noreferrer">{{.I18n.FooterBrand}}</a></div>
+			<div>{{.I18n.FooterTagline}}</div>
+		</footer>
 	</div>
 	<script>
 	(function () {

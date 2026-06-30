@@ -14,10 +14,12 @@ import (
 type accountLocale string
 
 const (
-	accountLocaleRU         accountLocale = "ru"
-	accountLocaleEN         accountLocale = "en"
-	accountLangCookieName                 = "vff_lang"
-	accountLangCookieMaxAge               = 365 * 24 * 3600
+	accountLocaleRU           accountLocale = "ru"
+	accountLocaleEN           accountLocale = "en"
+	accountLangCookieName                   = "vff_lang"
+	accountLangCookieMaxAge                 = 365 * 24 * 3600
+	accountMarketingSiteURLRU               = "https://vpn-for-friends.com/"
+	accountMarketingSiteURLEN               = "https://vpn-for-friends.com/en/"
 )
 
 // accountI18n holds localized UI copy for the web account cabinet.
@@ -52,11 +54,11 @@ type accountI18n struct {
 	LoginGenericError string
 
 	// Session — no token / loading / errors
-	SessionNoToken      string
-	SessionNoTokenLink  string
-	SessionLoading      string
-	SessionInvalidLink  string
-	SessionInvalidLinkA string
+	SessionNoToken           string
+	SessionNoTokenLink       string
+	SessionLoading           string
+	SessionInvalidLink       string
+	SessionInvalidLinkAction string
 
 	// Dashboard balance
 	BalanceLabel        string
@@ -116,6 +118,13 @@ type accountI18n struct {
 	PaymentMethodCryptoDesc string
 	PaymentMethodTrybitWarn string
 	PaymentMethodSupport    string
+}
+
+func accountMarketingSiteURL(locale accountLocale) string {
+	if locale == accountLocaleEN {
+		return accountMarketingSiteURLEN
+	}
+	return accountMarketingSiteURLRU
 }
 
 func normalizeAccountLocale(raw string) accountLocale {
@@ -270,11 +279,11 @@ func accountI18nRU() accountI18n {
 		LoginNetworkError: "Сеть недоступна",
 		LoginGenericError: "Ошибка",
 
-		SessionNoToken:      "Откройте",
-		SessionNoTokenLink:  "страницу входа",
-		SessionLoading:      "Загрузка…",
-		SessionInvalidLink:  "Ссылка недействительна или устарела. Запросите новую ссылку для входа.",
-		SessionInvalidLinkA: "Страница входа",
+		SessionNoToken:           "Откройте",
+		SessionNoTokenLink:       "страницу входа",
+		SessionLoading:           "Загрузка…",
+		SessionInvalidLink:       "Ссылка недействительна или устарела.",
+		SessionInvalidLinkAction: "Запросить новую ссылку для входа",
 
 		BalanceLabel:        "Баланс:",
 		BalanceExplainer:    "Баланс используется для оплаты и автоматического продления услуг.",
@@ -358,11 +367,11 @@ func accountI18nEN() accountI18n {
 		LoginNetworkError: "Network is unavailable",
 		LoginGenericError: "Error",
 
-		SessionNoToken:      "Open the",
-		SessionNoTokenLink:  "sign-in page",
-		SessionLoading:      "Loading…",
-		SessionInvalidLink:  "This sign-in link is invalid or expired. Request a new sign-in link.",
-		SessionInvalidLinkA: "Sign-in page",
+		SessionNoToken:           "Open the",
+		SessionNoTokenLink:       "sign-in page",
+		SessionLoading:           "Loading…",
+		SessionInvalidLink:       "This sign-in link is invalid or expired.",
+		SessionInvalidLinkAction: "Request a new sign-in link",
 
 		BalanceLabel:        "Balance:",
 		BalanceExplainer:    "Balance is used for payments and automatic service renewal.",
@@ -419,80 +428,81 @@ func accountI18nEN() accountI18n {
 
 func (i accountI18n) jsMessages() map[string]string {
 	return map[string]string{
-		"buyBtn":                 pickJS(i, "Купить", "Buy"),
-		"buyCreating":            pickJS(i, "Создаем...", "Creating..."),
-		"buyCreatingService":     pickJS(i, "Создаем услугу…", "Creating service…"),
-		"buyAwaitPayment":        pickJS(i, "Ожидает оплаты", "Waiting for payment"),
-		"catalogLoadFail":        pickJS(i, "Не удалось загрузить тарифы", "Failed to load plans"),
-		"catalogPlanFallback":    pickJS(i, "Тариф", "Plan"),
-		"catalogMonthsSuffix":    pickJS(i, " мес.", " mo."),
-		"networkError":           pickJS(i, "Сеть недоступна", "Network is unavailable. Check your connection and try again."),
-		"networkErrorRetry":      pickJS(i, "Сеть недоступна. Проверьте подключение и попробуйте ещё раз.", "Network is unavailable. Check your connection and try again."),
-		"genericError":           pickJS(i, "Ошибка", "Error"),
-		"orderError":             pickJS(i, "Ошибка заказа", "Order failed"),
-		"connectPopupBlocked":    pickJS(i, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.", "Could not open the connection page. Allow pop-ups and try again."),
-		"connectLoading":         pickJS(i, "Открываем страницу подключения...", "Opening connection page..."),
-		"connectNotReady":        pickJS(i, "Подключение пока недоступно", "Connection is not available yet"),
-		"topupAmountRequired":    pickJS(i, "Укажите сумму", "Enter an amount"),
-		"topupAmountInvalid":     pickJS(i, "Сумма 50–10 000 ₽, до 2 знаков после запятой", "Amount must be 50–10,000 RUB, up to 2 decimal places"),
-		"trybitInvoiceFailed":    pickJS(i, "Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.", "Failed to create a Trybit invoice. Try again later or contact support."),
-		"paymentInvoiceFailed":   pickJS(i, "Не удалось создать счет на оплату. Попробуйте позже или обратитесь в поддержку.", "Failed to create a payment invoice. Try again later or contact support."),
-		"paymentLinkUnavailable": pickJS(i, "Ссылка на оплату недоступна", "Payment link is not available"),
-		"paymentsLoading":        pickJS(i, "Загружаем платежи…", "Loading payments…"),
-		"paymentsEmpty":          pickJS(i, "Оплаченных платежей пока нет.", "No paid payments yet."),
-		"paymentsLoadFailed":     pickJS(i, "Не удалось загрузить историю платежей. Попробуйте позже.", "Failed to load payment history. Try again later."),
-		"signedInAs":             pickJS(i, "Вы вошли как ", "Signed in as "),
-		"telegramPrefix":         pickJS(i, "Telegram: ", "Telegram: "),
-		"telegramIDPrefix":       pickJS(i, "Telegram: ID ", "Telegram: ID "),
-		"serviceFallback":        pickJS(i, "Услуга", "Service"),
-		"statusLabel":            pickJS(i, "Статус: ", "Status: "),
-		"untilLabel":             pickJS(i, "До: ", "Until: "),
-		"connectBtn":             pickJS(i, "Подключить", "Connect"),
-		"connectPremiumBtn":      pickJS(i, "Подключить Premium", "Connect Premium"),
-		"premiumHappHint":        pickJS(i, "Для Premium используйте приложение Happ.", "For Premium, use the Happ app."),
-		"premiumTariffHint":      pickJS(i, "Для сетей с блокировками. Подключение через Happ.", "Premium connection via Happ app."),
-		"autorenewHint":          pickJS(i, "Для автопродления заранее пополните баланс.", "Top up your balance in advance for automatic renewal."),
-		"notPaidHint1":           pickJS(i, "Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.", "Top up your balance — the service will activate automatically when there are enough funds."),
-		"notPaidHint2":           pickJS(i, "Если хотите выбрать другой тариф, сначала отмените эту услугу.", "If you want to choose another plan, cancel this service first."),
-		"blockedHint":            pickJS(i, "Пополните баланс — услуга будет продлена автоматически, когда средств будет достаточно.", "Top up your balance — the service will renew automatically when there are enough funds."),
-		"topUpForActivation":     pickJS(i, "Пополнить для активации", "Top up for activation"),
-		"topUpForRenewal":        pickJS(i, "Пополнить для продления", "Top up for renewal"),
-		"cancelService":          pickJS(i, "Отменить услугу", "Cancel service"),
-		"cancelDeleting":         pickJS(i, "Удаляем...", "Deleting..."),
-		"deleteConfirm":          pickJS(i, "Удалить услугу «{name}»? После удаления можно будет выбрать другой тариф.", `Delete service "{name}"? After deletion, you can choose another plan.`),
-		"deleteError":            pickJS(i, "Ошибка удаления", "Failed to delete service"),
-		"deleteSuccessFallback":  pickJS(i, "Услуга удалена. Теперь можно выбрать другой тариф.", "Service deleted. You can now choose another plan."),
-		"progressCreating":       pickJS(i, "Услуга создаётся. Обычно это занимает до 1–2 минут.", "Service is being created. This usually takes 1–2 minutes."),
-		"progressDeleting":       pickJS(i, "Услуга удаляется. Обычно это занимает до 1–2 минут.", "Service is being deleted. This usually takes 1–2 minutes."),
-		"progressGeneric":        pickJS(i, "Выполняется операция с услугой. Обычно это занимает до 1–2 минут.", "Service operation in progress. This usually takes 1–2 minutes."),
-		"progressAutoRefresh":    pickJS(i, "Страница обновится автоматически.", "The page updates automatically."),
-		"goToMyServices":         pickJS(i, "Перейти к моим услугам", "Go to my services"),
-		"goToPayment":            pickJS(i, "Перейти к оплате", "Go to payment"),
-		"dupUnpaidFallback":      pickJS(i, "У вас уже есть услуга, ожидающая оплаты: {name}. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.", "You already have a service awaiting payment: {name}. The newly selected service was not created. Top up your balance — the pending service will activate automatically after payment."),
-		"neutralUnpaidFallback":  pickJS(i, "Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.", "The service is awaiting payment. Top up your balance — the service will activate automatically after payment."),
-		"svcPayPageOpened":       pickJS(i, "Страница оплаты открыта в новой вкладке. После оплаты вернитесь в кабинет и обновите список услуг.", "The payment page opened in a new tab. After payment, return to your account and refresh the services list."),
-		"svcPayAfterPay":         pickJS(i, "После оплаты баланс будет пополнен. Если средств достаточно, услуга активируется автоматически.", "After payment, your balance will be topped up. If funds are sufficient, the service will activate automatically."),
-		"svcPayFallback":         pickJS(i, "Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».", "If the payment page did not open automatically, click “Open payment”."),
-		"refreshServices":        pickJS(i, "Обновить услуги", "Refresh services"),
-		"openPayment":            pickJS(i, "Открыть оплату", "Open payment"),
-		"catalogLoading":         pickJS(i, "Загрузка тарифов…", "Loading plans…"),
-		"sessionInvalidLink":     pickJS(i, "Ссылка недействительна или устарела. Запросите новую ссылку для входа.", "This sign-in link is invalid or expired. Request a new sign-in link."),
-		"paymentsPlaceholder":    pickJS(i, "Откройте вкладку, чтобы загрузить историю платежей.", "Open this tab to load payment history."),
-		"logoutRedirect":         pickJS(i, "/account?logged_out=1", "/account?logged_out=1&lang=en"),
-		"loginPagePath":          pickJS(i, "/account", "/account?lang=en"),
-		"errInvalidToken":        pickJS(i, "Недействительная сессия", "Invalid session"),
-		"errInvalidAmount":       pickJS(i, "Неверная сумма", "Invalid amount"),
-		"errPaymentURLFailed":    pickJS(i, "Не удалось создать ссылку на оплату", "Failed to create payment link"),
-		"errRateLimited":         pickJS(i, "Слишком частые запросы", "Too many requests"),
-		"errInvalidEmail":        pickJS(i, "Неверный email", "Invalid email"),
-		"errEmailUnavailable":    pickJS(i, "Отправка email недоступна", "Email delivery unavailable"),
-		"errInternal":            pickJS(i, "Внутренняя ошибка", "Internal error"),
-		"errForbidden":           pickJS(i, "Доступ запрещён", "Access denied"),
-		"errActiveCannotDelete":  pickJS(i, "Активную услугу нельзя удалить", "Active service cannot be deleted"),
-		"errDeleteFailed":        pickJS(i, "Не удалось удалить услугу", "Failed to delete service"),
-		"errServiceNotFound":     pickJS(i, "Тариф не найден", "Plan not found"),
-		"errOrderFailed":         pickJS(i, "Не удалось создать заказ", "Failed to create order"),
-		"errNonJSONResponse":     pickJS(i, "Неожиданный ответ сервера", "Unexpected server response"),
+		"buyBtn":                   pickJS(i, "Купить", "Buy"),
+		"buyCreating":              pickJS(i, "Создаем...", "Creating..."),
+		"buyCreatingService":       pickJS(i, "Создаем услугу…", "Creating service…"),
+		"buyAwaitPayment":          pickJS(i, "Ожидает оплаты", "Waiting for payment"),
+		"catalogLoadFail":          pickJS(i, "Не удалось загрузить тарифы", "Failed to load plans"),
+		"catalogPlanFallback":      pickJS(i, "Тариф", "Plan"),
+		"catalogMonthsSuffix":      pickJS(i, " мес.", " mo."),
+		"networkError":             pickJS(i, "Сеть недоступна", "Network is unavailable. Check your connection and try again."),
+		"networkErrorRetry":        pickJS(i, "Сеть недоступна. Проверьте подключение и попробуйте ещё раз.", "Network is unavailable. Check your connection and try again."),
+		"genericError":             pickJS(i, "Ошибка", "Error"),
+		"orderError":               pickJS(i, "Ошибка заказа", "Order failed"),
+		"connectPopupBlocked":      pickJS(i, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.", "Could not open the connection page. Allow pop-ups and try again."),
+		"connectLoading":           pickJS(i, "Открываем страницу подключения...", "Opening connection page..."),
+		"connectNotReady":          pickJS(i, "Подключение пока недоступно", "Connection is not available yet"),
+		"topupAmountRequired":      pickJS(i, "Укажите сумму", "Enter an amount"),
+		"topupAmountInvalid":       pickJS(i, "Сумма 50–10 000 ₽, до 2 знаков после запятой", "Amount must be 50–10,000 RUB, up to 2 decimal places"),
+		"trybitInvoiceFailed":      pickJS(i, "Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.", "Failed to create a Trybit invoice. Try again later or contact support."),
+		"paymentInvoiceFailed":     pickJS(i, "Не удалось создать счет на оплату. Попробуйте позже или обратитесь в поддержку.", "Failed to create a payment invoice. Try again later or contact support."),
+		"paymentLinkUnavailable":   pickJS(i, "Ссылка на оплату недоступна", "Payment link is not available"),
+		"paymentsLoading":          pickJS(i, "Загружаем платежи…", "Loading payments…"),
+		"paymentsEmpty":            pickJS(i, "Оплаченных платежей пока нет.", "No paid payments yet."),
+		"paymentsLoadFailed":       pickJS(i, "Не удалось загрузить историю платежей. Попробуйте позже.", "Failed to load payment history. Try again later."),
+		"signedInAs":               pickJS(i, "Вы вошли как ", "Signed in as "),
+		"telegramPrefix":           pickJS(i, "Telegram: ", "Telegram: "),
+		"telegramIDPrefix":         pickJS(i, "Telegram: ID ", "Telegram: ID "),
+		"serviceFallback":          pickJS(i, "Услуга", "Service"),
+		"statusLabel":              pickJS(i, "Статус: ", "Status: "),
+		"untilLabel":               pickJS(i, "До: ", "Until: "),
+		"connectBtn":               pickJS(i, "Подключить", "Connect"),
+		"connectPremiumBtn":        pickJS(i, "Подключить Premium", "Connect Premium"),
+		"premiumHappHint":          pickJS(i, "Для Premium используйте приложение Happ.", "For Premium, use the Happ app."),
+		"premiumTariffHint":        pickJS(i, "Для сетей с блокировками. Подключение через Happ.", "Premium connection via Happ app."),
+		"autorenewHint":            pickJS(i, "Для автопродления заранее пополните баланс.", "Top up your balance in advance for automatic renewal."),
+		"notPaidHint1":             pickJS(i, "Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.", "Top up your balance — the service will activate automatically when there are enough funds."),
+		"notPaidHint2":             pickJS(i, "Если хотите выбрать другой тариф, сначала отмените эту услугу.", "If you want to choose another plan, cancel this service first."),
+		"blockedHint":              pickJS(i, "Пополните баланс — услуга будет продлена автоматически, когда средств будет достаточно.", "Top up your balance — the service will renew automatically when there are enough funds."),
+		"topUpForActivation":       pickJS(i, "Пополнить для активации", "Top up for activation"),
+		"topUpForRenewal":          pickJS(i, "Пополнить для продления", "Top up for renewal"),
+		"cancelService":            pickJS(i, "Отменить услугу", "Cancel service"),
+		"cancelDeleting":           pickJS(i, "Удаляем...", "Deleting..."),
+		"deleteConfirm":            pickJS(i, "Удалить услугу «{name}»? После удаления можно будет выбрать другой тариф.", `Delete service "{name}"? After deletion, you can choose another plan.`),
+		"deleteError":              pickJS(i, "Ошибка удаления", "Failed to delete service"),
+		"deleteSuccessFallback":    pickJS(i, "Услуга удалена. Теперь можно выбрать другой тариф.", "Service deleted. You can now choose another plan."),
+		"progressCreating":         pickJS(i, "Услуга создаётся. Обычно это занимает до 1–2 минут.", "Service is being created. This usually takes 1–2 minutes."),
+		"progressDeleting":         pickJS(i, "Услуга удаляется. Обычно это занимает до 1–2 минут.", "Service is being deleted. This usually takes 1–2 minutes."),
+		"progressGeneric":          pickJS(i, "Выполняется операция с услугой. Обычно это занимает до 1–2 минут.", "Service operation in progress. This usually takes 1–2 minutes."),
+		"progressAutoRefresh":      pickJS(i, "Страница обновится автоматически.", "The page updates automatically."),
+		"goToMyServices":           pickJS(i, "Перейти к моим услугам", "Go to my services"),
+		"goToPayment":              pickJS(i, "Перейти к оплате", "Go to payment"),
+		"dupUnpaidFallback":        pickJS(i, "У вас уже есть услуга, ожидающая оплаты: {name}. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.", "You already have a service awaiting payment: {name}. The newly selected service was not created. Top up your balance — the pending service will activate automatically after payment."),
+		"neutralUnpaidFallback":    pickJS(i, "Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.", "The service is awaiting payment. Top up your balance — the service will activate automatically after payment."),
+		"svcPayPageOpened":         pickJS(i, "Страница оплаты открыта в новой вкладке. После оплаты вернитесь в кабинет и обновите список услуг.", "The payment page opened in a new tab. After payment, return to your account and refresh the services list."),
+		"svcPayAfterPay":           pickJS(i, "После оплаты баланс будет пополнен. Если средств достаточно, услуга активируется автоматически.", "After payment, your balance will be topped up. If funds are sufficient, the service will activate automatically."),
+		"svcPayFallback":           pickJS(i, "Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».", "If the payment page did not open automatically, click “Open payment”."),
+		"refreshServices":          pickJS(i, "Обновить услуги", "Refresh services"),
+		"openPayment":              pickJS(i, "Открыть оплату", "Open payment"),
+		"catalogLoading":           pickJS(i, "Загрузка тарифов…", "Loading plans…"),
+		"sessionInvalidLink":       pickJS(i, "Ссылка недействительна или устарела.", "This sign-in link is invalid or expired."),
+		"sessionInvalidLinkAction": pickJS(i, "Запросить новую ссылку для входа", "Request a new sign-in link"),
+		"paymentsPlaceholder":      pickJS(i, "Откройте вкладку, чтобы загрузить историю платежей.", "Open this tab to load payment history."),
+		"logoutRedirect":           pickJS(i, "/account?logged_out=1", "/account?logged_out=1&lang=en"),
+		"loginPagePath":            pickJS(i, "/account", "/account?lang=en"),
+		"errInvalidToken":          pickJS(i, "Недействительная сессия", "Invalid session"),
+		"errInvalidAmount":         pickJS(i, "Неверная сумма", "Invalid amount"),
+		"errPaymentURLFailed":      pickJS(i, "Не удалось создать ссылку на оплату", "Failed to create payment link"),
+		"errRateLimited":           pickJS(i, "Слишком частые запросы", "Too many requests"),
+		"errInvalidEmail":          pickJS(i, "Неверный email", "Invalid email"),
+		"errEmailUnavailable":      pickJS(i, "Отправка email недоступна", "Email delivery unavailable"),
+		"errInternal":              pickJS(i, "Внутренняя ошибка", "Internal error"),
+		"errForbidden":             pickJS(i, "Доступ запрещён", "Access denied"),
+		"errActiveCannotDelete":    pickJS(i, "Активную услугу нельзя удалить", "Active service cannot be deleted"),
+		"errDeleteFailed":          pickJS(i, "Не удалось удалить услугу", "Failed to delete service"),
+		"errServiceNotFound":       pickJS(i, "Тариф не найден", "Plan not found"),
+		"errOrderFailed":           pickJS(i, "Не удалось создать заказ", "Failed to create order"),
+		"errNonJSONResponse":       pickJS(i, "Неожиданный ответ сервера", "Unexpected server response"),
 	}
 }
 
@@ -565,6 +575,7 @@ type accountLoginPageData struct {
 	LoginEmailLinkedJSON template.JS
 	CurrentLang          string
 	NoTokenLoginURL      string
+	SiteURL              string
 }
 
 // accountSessionPageData is passed to the session page template.
@@ -581,6 +592,7 @@ type accountSessionPageData struct {
 	AccountConfigJSON       template.JS
 	I18nJSON                template.JS
 	BalanceCurrency         string
+	SiteURL                 string
 }
 
 func buildAccountTopupPaymentMethodsHTML(i accountI18n) template.HTML {

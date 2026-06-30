@@ -176,8 +176,8 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(s, `window.open('', '_blank', 'noopener')`) {
 		t.Fatal("pre-open must not use noopener (returns null in some browsers)")
 	}
-	if !strings.Contains(s, "t('sessionInvalidLink')") {
-		t.Fatal("missing invalid magic-link message")
+	if !strings.Contains(s, "t('sessionInvalidLink')") || !strings.Contains(s, "t('sessionInvalidLinkAction')") {
+		t.Fatal("missing invalid magic-link message or action link")
 	}
 	if !strings.Contains(s, "account-tabs") {
 		t.Fatal("cabinet tabs should use account-tabs class for responsive layout")
