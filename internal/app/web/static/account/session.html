@@ -543,6 +543,10 @@
 			});
 		}
 
+		function selectedTopupBalanceURL() {
+			return '/api/account/balance/topup';
+		}
+
 		var topupHandlersBound = false;
 
 		function applyTopupModalForecastDefaults() {
@@ -622,16 +626,51 @@
 				}
 				var payWin = openPaymentWindow();
 				document.getElementById('topup-submit').disabled = true;
-				fetch('/api/account/balance/topup', {
+				var topupEndpoint = selectedTopupBalanceURL();
+				var topupPaymentMethod = '';
+				var pickedMethod = document.querySelector('input[name="topup-payment-method"]:checked');
+				if (pickedMethod) {
+					topupPaymentMethod = String(pickedMethod.value || '').trim();
+				}
+				fetch(topupEndpoint, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ token: tok, amount: amt })
-				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-					.then(function (xv) {
+				}).then(function (r) {
+					return r.text().then(function (text) {
+						var j = null;
+						try {
+							j = text ? JSON.parse(text) : {};
+						} catch (e) {
+							console.warn('topup non-json response', {
+								endpoint: topupEndpoint,
+								paymentMethod: topupPaymentMethod,
+								status: r.status,
+								contentType: r.headers.get('content-type'),
+								bodyStart: String(text || '').slice(0, 300)
+							});
+							return {
+								ok: false,
+								j: { error: 'non_json_response' },
+								nonJson: true,
+								status: r.status
+							};
+						}
+						return { ok: r.ok, j: j, status: r.status };
+					});
+				}).then(function (xv) {
 						document.getElementById('topup-submit').disabled = false;
 						if (!xv.ok) {
 							closePaymentWindow(payWin);
-							errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
+							if (xv.nonJson || (xv.j && xv.j.error === 'non_json_response')) {
+								if (topupPaymentMethod === 'cryptocloud') {
+									errEl.textContent = 'Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.';
+								} else {
+									errEl.textContent = 'Не удалось создать счет на оплату. Попробуйте позже или обратитесь в поддержку.';
+								}
+							} else {
+								errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
+							}
 							errEl.classList.remove('d-none');
 							return;
 						}
@@ -685,7 +724,7 @@
 					}).catch(function () {
 						closePaymentWindow(payWin);
 						document.getElementById('topup-submit').disabled = false;
-						errEl.textContent = 'Сеть недоступна';
+						errEl.textContent = 'Сеть недоступна. Проверьте подключение и попробуйте ещё раз.';
 						errEl.classList.remove('d-none');
 					});
 			});

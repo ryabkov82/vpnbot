@@ -53,6 +53,27 @@ func TestBuildYooKassaPaymentURL_FractionalAmount(t *testing.T) {
 	}
 }
 
+func TestBuildCryptoCloudPaymentURL_OK(t *testing.T) {
+	got, err := BuildCryptoCloudPaymentURL("https://bill.example/", 701, 150, 1700000001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Path != "/shm/pay_systems/cryptocloud.cgi" {
+		t.Fatalf("path: %q", u.Path)
+	}
+	q := u.Query()
+	if q.Get("action") != "create" || q.Get("user_id") != "701" || q.Get("ts") != "1700000001" || q.Get("ps") != "cryptocloud" || q.Get("amount") != "150" {
+		t.Fatalf("query: %#v", q)
+	}
+	if !strings.HasPrefix(got, "https://bill.example/shm/pay_systems/cryptocloud.cgi?") {
+		t.Fatalf("prefix: %s", got)
+	}
+}
+
 func TestBuildYooKassaPaymentURL_Validation(t *testing.T) {
 	if _, err := BuildYooKassaPaymentURL("https://x", 0, 10, 1); err == nil {
 		t.Fatal("want error for user id 0")

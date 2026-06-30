@@ -444,9 +444,16 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("topup-submit must only create payment via /balance/topup, not prepared direct URL")
 	}
 	iRawTop := strings.Index(topSubmitSnip, `String(customIn.value`)
-	iFetchTop := strings.Index(topSubmitSnip, `fetch('/api/account/balance/topup'`)
+	iFetchTop := strings.Index(topSubmitSnip, `var topupEndpoint = selectedTopupBalanceURL()`)
 	if iRawTop < 0 || iFetchTop < 0 || iRawTop >= iFetchTop {
 		t.Fatal("topup-submit must read #topup-custom before POST /balance/topup")
+	}
+	if !strings.Contains(topSubmitSnip, `non_json_response`) ||
+		!strings.Contains(topSubmitSnip, `topup non-json response`) {
+		t.Fatal("topup-submit must handle non-JSON backend responses explicitly")
+	}
+	if !strings.Contains(topSubmitSnip, `Сеть недоступна. Проверьте подключение`) {
+		t.Fatal("topup-submit network catch must use explicit network-unavailable copy")
 	}
 	if !strings.Contains(topSubmitSnip, `openPaymentWindow()`) ||
 		!strings.Contains(topSubmitSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||

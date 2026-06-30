@@ -33,7 +33,49 @@ var accountSessionPageHTML []byte
 
 const accountSessionSupportLinkPlaceholder = "<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->"
 
+const accountTopupSubmitButtonHTML = `<button type="button" class="btn my-btn w-100" id="topup-submit">Перейти к оплате</button>`
+
+const accountTopupPaymentMethodBlockHTML = `<div class="mb-3" id="topup-payment-methods" role="radiogroup" aria-label="Способ оплаты">
+							<div class="small text-secondary mb-2">Способ оплаты</div>
+							<div class="row g-2">
+								<div class="col-12 col-sm-6">
+									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
+										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="yookassa" checked>
+										<span class="fw-semibold">Банковская карта</span>
+										<span class="d-block small text-secondary mt-1">Оплата картой через текущий платежный шлюз</span>
+									</label>
+								</div>
+								<div class="col-12 col-sm-6">
+									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
+										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="cryptocloud">
+										<span class="fw-semibold">Криптовалюта</span>
+										<span class="d-block small text-secondary mt-1">Оплата через Trybit: USDT, TON и другие доступные валюты</span>
+									</label>
+								</div>
+							</div>
+							<div class="alert alert-warning py-2 small mt-3 mb-2">При частичной оплате доступ может не активироваться автоматически. Если платеж не зачислился, обратитесь в поддержку.</div>
+							<div class="small text-secondary">Поддержка: <a href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer">Telegram @friends_connect_support</a> · <a href="mailto:support@vpn-for-friends.com">support@vpn-for-friends.com</a></div>
+						</div>`
+
+const accountTopupPaymentEndpointJSStub = `		function selectedTopupBalanceURL() {
+			return '/api/account/balance/topup';
+		}`
+
+const accountTopupPaymentEndpointJS = `		function selectedTopupBalanceURL() {
+			var picked = document.querySelector('input[name="topup-payment-method"]:checked');
+			var method = picked ? String(picked.value || '').trim() : '';
+			if (method === 'cryptocloud') {
+				return '/api/account/balance/topup/cryptocloud';
+			}
+			return '/api/account/balance/topup';
+		}`
+
 func renderedAccountSessionPageHTML(cfg *config.Config) []byte {
+	body := accountSessionPageWithSupportLink(cfg)
+	return withAccountTopupPaymentMethods(body)
+}
+
+func accountSessionPageWithSupportLink(cfg *config.Config) []byte {
 	ph := []byte(accountSessionSupportLinkPlaceholder)
 	url := WebCabinetResolvedSupportURL(cfg)
 	if url == "" {
@@ -42,6 +84,12 @@ func renderedAccountSessionPageHTML(cfg *config.Config) []byte {
 	block := fmt.Sprintf(`				<a class="btn btn-outline-secondary btn-sm flex-shrink-0" href="%s" target="_blank" rel="noopener noreferrer">Поддержка</a>`,
 		template.HTMLEscapeString(url))
 	return bytes.ReplaceAll(accountSessionPageHTML, ph, []byte(block))
+}
+
+func withAccountTopupPaymentMethods(body []byte) []byte {
+	body = bytes.ReplaceAll(body, []byte(accountTopupSubmitButtonHTML), []byte(accountTopupPaymentMethodBlockHTML+"\n\t\t\t\t\t\t"+accountTopupSubmitButtonHTML))
+	body = bytes.ReplaceAll(body, []byte(accountTopupPaymentEndpointJSStub), []byte(accountTopupPaymentEndpointJS))
+	return body
 }
 
 //go:embed static/account/link_invalid.html

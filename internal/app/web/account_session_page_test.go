@@ -119,9 +119,12 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		t.Fatal("embed topup-submit must only use /balance/topup")
 	}
 	iRawEmbed := strings.Index(tsSnip, `String(customIn.value`)
-	tsF := strings.Index(tsSnip, `fetch('/api/account/balance/topup'`)
+	tsF := strings.Index(tsSnip, `var topupEndpoint = selectedTopupBalanceURL()`)
 	if iRawEmbed < 0 || tsF < 0 || iRawEmbed >= tsF {
 		t.Fatal("embed topup-submit must read amount input before POST /balance/topup")
+	}
+	if !strings.Contains(tsSnip, `non_json_response`) {
+		t.Fatal("embed topup-submit must handle non-JSON backend responses")
 	}
 	if !strings.Contains(tsSnip, `openPaymentWindow()`) ||
 		!strings.Contains(tsSnip, `navigatePaymentWindow(payWin, urlRaw)`) ||
