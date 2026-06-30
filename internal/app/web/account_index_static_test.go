@@ -1,17 +1,12 @@
 package web
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
 
 func TestAccountIndexMagicLinkSuccessCopy(t *testing.T) {
-	b, err := os.ReadFile(accountIndexHTMLPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(b)
+	s := mustRenderAccountLoginHTML(t, orderStartTestCfg(), accountLocaleRU)
 	if strings.Contains(s, "Если такой email есть в системе, мы отправили ссылку для входа.") {
 		t.Fatal("must not leak old ambiguous copy")
 	}

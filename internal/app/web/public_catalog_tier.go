@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	publicTierStandard = "standard"
-	publicTierPremium  = "premium"
+	publicTierStandard        = "standard"
+	publicTierPremium         = "premium"
 	publicConnectSubscription = "subscription"
 	publicConnectHapp         = "happ"
 )

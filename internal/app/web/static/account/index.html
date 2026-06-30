@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru" data-bs-theme="dark">
+<html lang="{{.I18n.HTMLLang}}" data-bs-theme="dark">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Личный кабинет — VPN for Friends</title>
+	<title>{{.I18n.PageTitleLogin}}</title>
 	<link rel="icon" href="/favicon.ico" sizes="any">
 	<link rel="icon" type="image/png" href="/favicon-32x32.png">
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -16,45 +16,66 @@
 </head>
 <body class="pb-4">
 	<div class="container py-4" style="max-width:26rem">
-		<h1 class="h4 fw-bold mb-3">Личный кабинет VPN for Friends</h1>
-		<p class="small text-secondary mb-2">Введите email — мы отправим ссылку для входа без пароля.</p>
-		<p class="small text-secondary mb-3">Если вы уже пользуетесь Telegram-ботом, откройте в боте команду «Личный кабинет». Так ваши текущие услуги и баланс будут доступны в web-кабинете.</p>
-		<div class="alert alert-secondary py-2 px-3 mb-3 d-none" id="logged-out-msg" role="status">Вы вышли из личного кабинета.</div>
-		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="ok-msg" role="alert">
-			<p class="mb-2 mb-md-3">Мы отправили ссылку для входа на указанный email. Откройте письмо и перейдите по ссылке.</p>
-			<p class="small text-body-secondary mb-0">Если письма нет, проверьте папку «Спам» или попробуйте еще раз через пару минут.</p>
+		<div class="text-end small mb-2">
+			<a href="{{.LangSwitchRU}}" class="{{if .LangRUActive}}fw-bold text-light text-decoration-none{{else}}text-secondary{{end}}">{{.I18n.LangSwitcherRU}}</a>
+			<span class="text-secondary"> / </span>
+			<a href="{{.LangSwitchEN}}" class="{{if .LangENActive}}fw-bold text-light text-decoration-none{{else}}text-secondary{{end}}">{{.I18n.LangSwitcherEN}}</a>
 		</div>
-		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="rate-msg" role="alert">Слишком частые запросы. Попробуйте позже.</div>
+		<h1 class="h4 fw-bold mb-3">{{.I18n.LoginH1}}</h1>
+		<p class="small text-secondary mb-2">{{.I18n.LoginIntro}}</p>
+		<p class="small text-secondary mb-3">{{.I18n.LoginTelegramHint}}</p>
+		<div class="alert alert-secondary py-2 px-3 mb-3 d-none" id="logged-out-msg" role="status">{{.I18n.LoginLoggedOut}}</div>
+		<div class="alert alert-success py-2 px-3 mb-3 d-none" id="ok-msg" role="alert">
+			<p class="mb-2 mb-md-3">{{.I18n.LoginSuccess1}}</p>
+			<p class="small text-body-secondary mb-0">{{.I18n.LoginSuccess2}}</p>
+		</div>
+		<div class="alert alert-warning py-2 px-3 mb-3 d-none" id="rate-msg" role="alert">{{.I18n.LoginRateLimit}}</div>
 		<div class="alert alert-danger py-2 px-3 mb-3 d-none" id="err-msg" role="alert"></div>
 		<form id="login-form" novalidate>
-			<label for="email" class="form-label">Email</label>
+			<label for="email" class="form-label">{{.I18n.LoginEmailLabel}}</label>
 			<input type="email" class="form-control mb-3" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
 			<input type="text" name="website" id="acct-website" class="form-control visually-hidden" tabindex="-1" autocomplete="off">
-			<button type="submit" class="btn my-btn w-100" id="btn-send">Получить ссылку для входа</button>
+			<input type="hidden" id="acct-lang" value="{{.CurrentLang}}">
+			<button type="submit" class="btn my-btn w-100" id="btn-send">{{.I18n.LoginSubmitBtn}}</button>
 		</form>
-		<!--ACCOUNT_GOOGLE_LOGIN_BLOCK-->
+		{{.GoogleLoginHTML}}
 	</div>
 	<script>
 	(function () {
+		window.VFF_ACCOUNT = {{.AccountConfigJSON}};
+		window.VFF_I18N = {{.I18nJSON}};
+		function t(key) {
+			var m = window.VFF_I18N || {};
+			return m[key] != null ? String(m[key]) : key;
+		}
+		function apiErrorText(j) {
+			if (!j) return t('genericError');
+			var code = String(j.error || j.code || '').trim();
+			var map = {
+				rate_limited: 'errRateLimited',
+				invalid_email: 'errInvalidEmail',
+				email_unavailable: 'errEmailUnavailable',
+				internal_error: 'errInternal',
+				email_send_failed: 'errInternal'
+			};
+			if (code && map[code]) return t(map[code]);
+			return t('genericError');
+		}
+		window.t = t;
+		window.apiErrorText = apiErrorText;
 		var params = new URLSearchParams(window.location.search);
 		if (params.get('logged_out') === '1') {
 			var lo = document.getElementById('logged-out-msg');
-			if (lo) {
-				lo.classList.remove('d-none');
-			}
-			try {
-				window.history.replaceState({}, document.title, '/account');
-			} catch (e) {}
+			if (lo) lo.classList.remove('d-none');
+			try { window.history.replaceState({}, document.title, {{.LoggedOutReplaceJSON}}); } catch (e) {}
 		}
 		if (params.get('error') === 'email_already_linked') {
 			var er = document.getElementById('err-msg');
 			if (er) {
-				er.textContent = 'Этот email уже привязан к другому аккаунту. Войдите с другим email или обратитесь в поддержку.';
+				er.textContent = {{.LoginEmailLinkedJSON}};
 				er.classList.remove('d-none');
 			}
-			try {
-				window.history.replaceState({}, document.title, '/account');
-			} catch (e2) {}
+			try { window.history.replaceState({}, document.title, {{.ErrorReplaceJSON}}); } catch (e2) {}
 		}
 	})();
 	</script>
@@ -71,12 +92,13 @@
 			hideAll();
 			var email = document.getElementById('email').value.trim();
 			var website = document.getElementById('acct-website').value;
+			var lang = document.getElementById('acct-lang').value.trim();
 			var btn = document.getElementById('btn-send');
 			btn.disabled = true;
 			fetch('/api/account/login/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: email, website: website })
+				body: JSON.stringify({ email: email, website: website, lang: lang })
 			}).then(function (r) {
 				return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
 			}).then(function (x) {
@@ -86,14 +108,14 @@
 					return;
 				}
 				if (!x.ok) {
-					document.getElementById('err-msg').textContent = (x.j && x.j.error) ? x.j.error : 'Ошибка';
+					document.getElementById('err-msg').textContent = apiErrorText(x.j);
 					document.getElementById('err-msg').classList.remove('d-none');
 					return;
 				}
 				document.getElementById('ok-msg').classList.remove('d-none');
 			}).catch(function () {
 				btn.disabled = false;
-				document.getElementById('err-msg').textContent = 'Сеть недоступна';
+				document.getElementById('err-msg').textContent = t('networkError');
 				document.getElementById('err-msg').classList.remove('d-none');
 			});
 		});

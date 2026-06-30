@@ -42,7 +42,7 @@ func TestServeAccountBalanceTopupCrypto_SuccessPaymentURL(t *testing.T) {
 }
 
 func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
-	raw := string(renderedAccountSessionPageHTML(orderStartTestCfg()))
+	raw := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
 	for _, needle := range []string{
 		`id="topup-payment-methods"`,
 		`name="topup-payment-method" value="yookassa" checked`,

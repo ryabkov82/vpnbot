@@ -107,7 +107,7 @@ func TestWebCabinetResolvedSupportURL_rejectsUnknownScheme(t *testing.T) {
 func TestRenderedAccountSessionPageHTML_supportLink(t *testing.T) {
 	t.Setenv(envTelegramSupportURL, "")
 	cfg := cfgWithSupport("@vpn_test_support")
-	out := string(renderedAccountSessionPageHTML(cfg))
+	out := mustRenderAccountSessionHTML(t, cfg, accountLocaleRU)
 	if !strings.Contains(out, `href="https://t.me/vpn_test_support"`) {
 		t.Fatalf("missing escaped support href; snippet around Поддержка not found:\n%s", out[:min(2500, len(out))])
 	}
@@ -121,7 +121,7 @@ func TestRenderedAccountSessionPageHTML_supportLink(t *testing.T) {
 
 func TestRenderedAccountSessionPageHTML_emptySupportOmitsLink(t *testing.T) {
 	t.Setenv(envTelegramSupportURL, "")
-	out := string(renderedAccountSessionPageHTML(cfgWithSupport("")))
+	out := mustRenderAccountSessionHTML(t, cfgWithSupport(""), accountLocaleRU)
 	if strings.Contains(out, ">Поддержка<") {
 		t.Fatal("must omit support label when URL empty")
 	}

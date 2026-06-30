@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru" data-bs-theme="dark">
+<html lang="{{.I18n.HTMLLang}}" data-bs-theme="dark">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Кабинет — VPN for Friends</title>
+	<title>{{.I18n.PageTitleSession}}</title>
 	<link rel="icon" href="/favicon.ico" sizes="any">
 	<link rel="icon" type="image/png" href="/favicon-32x32.png">
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -61,21 +61,22 @@
 </head>
 <body class="pb-4">
 	<div class="container py-4">
-		<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+		<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3 w-100">
+			<div class="text-end small ms-auto w-100 mb-1"><a href="{{.LangSwitchRU}}" class="{{if .LangRUActive}}fw-bold text-light text-decoration-none{{else}}text-secondary{{end}}">{{.I18n.LangSwitcherRU}}</a><span class="text-secondary"> / </span><a href="{{.LangSwitchEN}}" class="{{if .LangENActive}}fw-bold text-light text-decoration-none{{else}}text-secondary{{end}}">{{.I18n.LangSwitcherEN}}</a></div>
 			<div class="flex-grow-1 min-w-0">
-				<h1 class="h4 fw-bold mb-1 mb-sm-2 mb-md-3">Личный кабинет</h1>
+				<h1 class="h4 fw-bold mb-1 mb-sm-2 mb-md-3">{{.I18n.DashboardTitle}}</h1>
 				<div id="user-line" class="small text-secondary"></div>
 				<div id="account-telegram" class="small text-secondary d-none"></div>
 			</div>
 			<div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start">
-				<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->
-				<button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0" id="logout-btn">Выйти</button>
+				{{.SupportLinkHTML}}
+				<button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0" id="logout-btn">{{.I18n.LogoutBtn}}</button>
 			</div>
 		</div>
 		<div class="alert alert-secondary d-none" id="no-token" role="alert">
-			Откройте <a href="/account">страницу входа</a>, чтобы получить ссылку.
+			{{.I18n.SessionNoToken}} <a href="{{.NoTokenLoginURL}}">{{.I18n.SessionNoTokenLink}}</a>.
 		</div>
-		<div class="alert alert-info d-none" id="loading">Загрузка…</div>
+		<div class="alert alert-info d-none" id="loading">{{.I18n.SessionLoading}}</div>
 		<div class="alert alert-danger d-none" id="err-box"></div>
 
 		<div id="dashboard-area" class="d-none">
@@ -83,21 +84,21 @@
 				<div class="card-body py-3">
 					<div class="row g-3 align-items-start align-items-md-center">
 						<div class="col-12 col-md">
-							<div class="small text-secondary">Баланс:</div>
-							<div class="fs-4 fw-semibold lh-sm mb-2"><span id="balance-num">—</span> <span class="text-secondary fw-normal fs-6">₽</span></div>
-							<p class="small text-secondary mb-0">Баланс используется для оплаты и автоматического продления услуг.</p>
+							<div class="small text-secondary">{{.I18n.BalanceLabel}}</div>
+							<div class="fs-4 fw-semibold lh-sm mb-2"><span id="balance-num">—</span> <span class="text-secondary fw-normal fs-6">{{.BalanceCurrency}}</span></div>
+							<p class="small text-secondary mb-0">{{.I18n.BalanceExplainer}}</p>
 						</div>
 						<div class="col-12 col-md-auto">
-							<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">Пополнить баланс</button>
+							<button type="button" class="btn btn-sm btn-outline-primary fw-semibold" data-bs-toggle="modal" data-bs-target="#topupModal">{{.I18n.TopUpBalanceBtn}}</button>
 						</div>
 					</div>
 					<div id="topup-result" class="alert alert-secondary d-none mt-3 mb-0 py-3" role="region">
-						<div id="topup-result-heading" class="small text-secondary mb-2">Страница оплаты открыта в новой вкладке.</div>
-						<p id="topup-result-detail" class="small text-secondary mb-2 mb-lg-3">После оплаты вернитесь в кабинет и обновите баланс. Баланс должен обновиться в течение 1–2 минут.</p>
-						<div id="topup-result-fallback-msg" class="small text-secondary mb-2 d-none">Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».</div>
+						<div id="topup-result-heading" class="small text-secondary mb-2">{{.I18n.TopUpResultHeading}}</div>
+						<p id="topup-result-detail" class="small text-secondary mb-2 mb-lg-3">{{.I18n.TopUpResultDetail}}</p>
+						<div id="topup-result-fallback-msg" class="small text-secondary mb-2 d-none">{{.I18n.TopUpResultFallback}}</div>
 						<div class="d-flex flex-wrap gap-2 mb-2">
-							<button type="button" class="btn btn-sm btn-outline-light" id="topup-result-refresh">Обновить баланс</button>
-							<a id="topup-result-pay-fallback" class="btn btn-sm btn-success d-none" href="#">Открыть оплату</a>
+							<button type="button" class="btn btn-sm btn-outline-light" id="topup-result-refresh">{{.I18n.RefreshBalanceBtn}}</button>
+							<a id="topup-result-pay-fallback" class="btn btn-sm btn-success d-none" href="#">{{.I18n.OpenPaymentBtn}}</a>
 						</div>
 					</div>
 				</div>
@@ -105,16 +106,16 @@
 
 			<ul class="nav nav-pills account-tabs mb-3" id="cabinet-tabs" role="tablist">
 				<li class="nav-item" role="presentation">
-					<button class="nav-link active" id="tab-services-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-services" type="button" role="tab" aria-controls="tab-pane-services" aria-selected="true">Мои услуги</button>
+					<button class="nav-link active" id="tab-services-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-services" type="button" role="tab" aria-controls="tab-pane-services" aria-selected="true">{{.I18n.TabServices}}</button>
 				</li>
 				<li class="nav-item" role="presentation">
-					<button class="nav-link" id="tab-buy-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-buy" type="button" role="tab" aria-controls="tab-pane-buy" aria-selected="false">Купить VPN</button>
+					<button class="nav-link" id="tab-buy-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-buy" type="button" role="tab" aria-controls="tab-pane-buy" aria-selected="false">{{.I18n.TabBuy}}</button>
 				</li>
 				<li class="nav-item" role="presentation">
-					<button class="nav-link" id="tab-payments-tab" data-bs-toggle="pill" data-bs-target="#tab-payments" type="button" role="tab" aria-controls="tab-payments" aria-selected="false">Платежи</button>
+					<button class="nav-link" id="tab-payments-tab" data-bs-toggle="pill" data-bs-target="#tab-payments" type="button" role="tab" aria-controls="tab-payments" aria-selected="false">{{.I18n.TabPayments}}</button>
 				</li>
 				<li class="nav-item" role="presentation">
-					<button class="nav-link" id="tab-help-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-help" type="button" role="tab" aria-controls="tab-pane-help" aria-selected="false">Помощь</button>
+					<button class="nav-link" id="tab-help-tab" data-bs-toggle="pill" data-bs-target="#tab-pane-help" type="button" role="tab" aria-controls="tab-pane-help" aria-selected="false">{{.I18n.TabHelp}}</button>
 				</li>
 			</ul>
 
@@ -126,11 +127,11 @@
 
 				<div class="tab-pane fade" id="tab-pane-buy" role="tabpanel" aria-labelledby="tab-buy-tab" tabindex="0">
 					<div id="new-catalog-wrap" class="rounded-3 px-3 py-3 border border-secondary" style="background: var(--bs-secondary-bg);">
-						<div id="post-delete-buy-hint" class="alert alert-info py-2 small d-none mb-2" role="status">Теперь можно выбрать другой тариф.</div>
-						<h2 class="h6 fw-semibold mb-2">Купить новую услугу</h2>
-						<p class="small text-secondary mb-2">Выберите тариф ниже. Оплату можно провести по ссылке — баланс пополнится согласно выбранной сумме, неоплаченная услуга активируется при достатке средств.</p>
+						<div id="post-delete-buy-hint" class="alert alert-info py-2 small d-none mb-2" role="status">{{.I18n.PostDeleteBuyHint}}</div>
+						<h2 class="h6 fw-semibold mb-2">{{.I18n.BuyNewServiceTitle}}</h2>
+						<p class="small text-secondary mb-2">{{.I18n.BuyNewServiceDesc}}</p>
 						<div class="alert alert-danger py-2 small d-none mb-3" id="catalog-err-box" role="alert"></div>
-						<p class="small text-secondary d-none mb-2" id="catalog-loading-msg">Загрузка тарифов…</p>
+						<p class="small text-secondary d-none mb-2" id="catalog-loading-msg"></p>
 						<div id="catalog-tariffs" class="row g-2"></div>
 					</div>
 				</div>
@@ -139,10 +140,10 @@
 					<div class="card rounded-3 border border-secondary bg-body-secondary">
 						<div class="card-body py-3">
 							<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-								<h2 class="h5 mb-0">История платежей</h2>
-								<button type="button" class="btn btn-sm btn-outline-secondary" id="payments-refresh">Обновить</button>
+								<h2 class="h5 mb-0">{{.I18n.PaymentsHeading}}</h2>
+								<button type="button" class="btn btn-sm btn-outline-secondary" id="payments-refresh">{{.I18n.PaymentsRefreshBtn}}</button>
 							</div>
-							<div id="payments-list" class="mt-3 text-secondary">Откройте вкладку, чтобы загрузить историю платежей.</div>
+							<div id="payments-list" class="mt-3 text-secondary">{{.I18n.PaymentsPlaceholder}}</div>
 						</div>
 					</div>
 				</div>
@@ -150,14 +151,14 @@
 				<div class="tab-pane fade" id="tab-pane-help" role="tabpanel" aria-labelledby="tab-help-tab" tabindex="0">
 					<div class="card rounded-3 border border-secondary bg-body-secondary">
 						<div class="card-body py-3">
-							<h2 class="h5 mb-3">Как подключить VPN</h2>
+							<h2 class="h5 mb-3">{{.I18n.HelpHeading}}</h2>
 							<ol class="small text-secondary mb-0 ps-3">
-								<li class="mb-2">Перейдите во вкладку «Купить VPN» и выберите тариф.</li>
-								<li class="mb-2">Если для активации услуги нужно пополнить баланс, кабинет предложит нужную сумму автоматически. Вы можете изменить сумму вручную.</li>
-								<li class="mb-2">После оплаты услуга появится во вкладке «Мои услуги». Создание услуги может занять 1–2 минуты — страница обновится автоматически.</li>
-								<li class="mb-0">Когда статус станет «Активна», нажмите «Подключить» и следуйте инструкции.</li>
+								<li class="mb-2">{{.I18n.HelpStep1}}</li>
+								<li class="mb-2">{{.I18n.HelpStep2}}</li>
+								<li class="mb-2">{{.I18n.HelpStep3}}</li>
+								<li class="mb-0">{{.I18n.HelpStep4}}</li>
 							</ol>
-							<p class="small text-secondary mt-3 mb-0">Нужна помощь? Нажмите «Поддержка» вверху страницы.</p>
+							<p class="small text-secondary mt-3 mb-0">{{.I18n.HelpFooter}}</p>
 						</div>
 					</div>
 				</div>
@@ -168,35 +169,78 @@
 			<div class="modal-dialog modal-dialog-centered">
 				<div class="modal-content bg-body-secondary border border-secondary">
 					<div class="modal-header border-secondary">
-						<h2 class="modal-title h5" id="topupModalLabel">Пополнение баланса</h2>
-						<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+						<h2 class="modal-title h5" id="topupModalLabel">{{.I18n.TopUpModalTitle}}</h2>
+						<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="{{.I18n.CloseModal}}"></button>
 					</div>
 					<div class="modal-body">
 						<div class="d-flex flex-wrap gap-2 mb-3" id="quick-amounts">
-							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="150">150 ₽</button>
-							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="300">300 ₽</button>
-							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="450">450 ₽</button>
-							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="600">600 ₽</button>
+							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="150">{{.I18n.QuickAmount150}}</button>
+							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="300">{{.I18n.QuickAmount300}}</button>
+							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="450">{{.I18n.QuickAmount450}}</button>
+							<button type="button" class="btn btn-sm btn-outline-primary amt-quick" data-amt="600">{{.I18n.QuickAmount600}}</button>
 						</div>
 						<div class="mb-3">
-							<label for="topup-custom" class="form-label">Другая сумма: 50–10 000 ₽, до 2 знаков после запятой</label>
-							<input type="number" class="form-control" id="topup-custom" min="50" max="10000" step="0.01" placeholder="Например 250">
-							<div id="topup-forecast-hint" class="form-text text-secondary small d-none">Сумма рассчитана по данным биллинга для оплаты/продления услуг.</div>
+							<label for="topup-custom" class="form-label">{{.I18n.TopUpCustomLabel}}</label>
+							<input type="number" class="form-control" id="topup-custom" min="50" max="10000" step="0.01" placeholder="{{.I18n.TopUpCustomPlaceholder}}">
+							<div id="topup-forecast-hint" class="form-text text-secondary small d-none">{{.I18n.TopUpForecastHint}}</div>
 						</div>
 						<div class="alert alert-danger py-2 small d-none" id="topup-modal-err"></div>
-						<div id="topup-no-forecast-msg" class="alert alert-secondary py-2 small d-none">Не удалось рассчитать сумму оплаты. Пополните баланс вручную.</div>
-						<button type="button" class="btn my-btn w-100" id="topup-submit">Перейти к оплате</button>
+						<div id="topup-no-forecast-msg" class="alert alert-secondary py-2 small d-none">{{.I18n.TopUpNoForecast}}</div>
+						{{.TopupPaymentMethodsHTML}}
+						<button type="button" class="btn my-btn w-100" id="topup-submit">{{.I18n.TopUpSubmitBtn}}</button>
 					</div>
 				</div>
 			</div>
 		</div>
 
 		<footer class="mt-4 pt-3 text-center text-secondary small account-footer">
-			<div class="fw-semibold">VPN for Friends</div>
-			<div>Безопасный доступ к вашим VPN-услугам</div>
+			<div class="fw-semibold">{{.I18n.FooterBrand}}</div>
+			<div>{{.I18n.FooterTagline}}</div>
 		</footer>
 	</div>
 
+	<script>
+	(function () {
+		window.VFF_ACCOUNT = {{.AccountConfigJSON}};
+		window.VFF_I18N = {{.I18nJSON}};
+		function t(key) {
+			var m = window.VFF_I18N || {};
+			return m[key] != null ? String(m[key]) : key;
+		}
+		function tNamed(key, vars) {
+			var s = t(key);
+			if (!vars) return s;
+			Object.keys(vars).forEach(function (k) {
+				s = s.split('{' + k + '}').join(String(vars[k]));
+			});
+			return s;
+		}
+		function apiErrorText(j) {
+			if (!j) return t('genericError');
+			var code = String(j.error || j.code || '').trim();
+			var map = {
+				rate_limited: 'errRateLimited',
+				invalid_email: 'errInvalidEmail',
+				invalid_token: 'errInvalidToken',
+				invalid_amount: 'errInvalidAmount',
+				payment_url_failed: 'errPaymentURLFailed',
+				email_unavailable: 'errEmailUnavailable',
+				internal_error: 'errInternal',
+				forbidden: 'errForbidden',
+				active_service_cannot_be_deleted: 'errActiveCannotDelete',
+				delete_failed: 'errDeleteFailed',
+				service_not_found: 'errServiceNotFound',
+				order_failed: 'errOrderFailed',
+				non_json_response: 'errNonJSONResponse'
+			};
+			if (code && map[code]) return t(map[code]);
+			return t('genericError');
+		}
+		window.t = t;
+		window.tNamed = tNamed;
+		window.apiErrorText = apiErrorText;
+	})();
+	</script>
 	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 	<script>
 	(function () {
@@ -239,7 +283,7 @@
 		document.getElementById('logout-btn').addEventListener('click', function () {
 			stopProgressPolling();
 			try { localStorage.removeItem(STORAGE); } catch (e) {}
-			window.location.href = '/account?logged_out=1';
+			window.location.href = t('logoutRedirect');
 		});
 
 		function openPaymentWindow() {
@@ -278,28 +322,36 @@
 		function fmtMoney(n) {
 			if (typeof n !== 'number' || isNaN(n)) return '—';
 			var v = Math.round(n * 100) / 100;
-			return v.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+			var cfg = window.VFF_ACCOUNT || {};
+			var loc = cfg.locale || 'ru-RU';
+			return v.toLocaleString(loc, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+		}
+
+		function fmtMoneyWithCurrency(n) {
+			var cfg = window.VFF_ACCOUNT || {};
+			var cur = cfg.currencyDisplay || '₽';
+			return fmtMoney(n) + ' ' + cur;
 		}
 
 		function catalogMonthsLabel(v) {
 			if (typeof v !== 'number' || !isFinite(v)) return '—';
 			var n = Math.round(v * 10) / 10;
 			if (n === Math.floor(n)) n = Math.floor(n);
-			return n + ' мес.';
+			return n + t('catalogMonthsSuffix');
 		}
 
 		function resetBuyBtn(cardRoot) {
 			var buyBtn = cardRoot.querySelector('.js-buy-catalog');
 			if (!buyBtn) return;
 			buyBtn.disabled = false;
-			buyBtn.textContent = 'Купить';
+			buyBtn.textContent = t('buyBtn');
 			cardRoot.querySelector('.catalog-card-spinner').classList.add('d-none');
 		}
 
 		function resetCatalogOrderState() {
 			document.querySelectorAll('.js-buy-catalog').forEach(function (btn) {
 				btn.disabled = false;
-				btn.textContent = 'Купить';
+				btn.textContent = t('buyBtn');
 			});
 			document.querySelectorAll('.catalog-card-spinner').forEach(function (el) {
 				el.classList.add('d-none');
@@ -325,6 +377,7 @@
 		function loadAccountCatalog(tok) {
 			document.getElementById('catalog-err-box').classList.add('d-none');
 			document.getElementById('catalog-loading-msg').classList.remove('d-none');
+			document.getElementById('catalog-loading-msg').textContent = t('catalogLoading');
 			document.getElementById('catalog-tariffs').innerHTML = '';
 			fetch('/api/account/catalog/services?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -334,7 +387,7 @@
 					rootEl.innerHTML = '';
 					if (!x.ok) {
 						document.getElementById('catalog-err-box').textContent =
-							(x.j && x.j.error) ? String(x.j.error) : 'Не удалось загрузить тарифы';
+							t('catalogLoadFail');
 						document.getElementById('catalog-err-box').classList.remove('d-none');
 						return;
 					}
@@ -344,7 +397,7 @@
 						var wrap = document.createElement('div');
 						wrap.className = 'col-12 js-catalog-card';
 						var descEsc = escapeHtml(String(s.description || ''));
-						var titleEsc = escapeHtml(String(s.name || 'Тариф'));
+						var titleEsc = escapeHtml(String(s.name || t('catalogPlanFallback')));
 						var badges = '';
 						if (Array.isArray(s.badges) && s.badges.length) {
 							s.badges.forEach(function (b) {
@@ -356,8 +409,7 @@
 						var isHappTariff = String(s.connect_app || '') === 'happ' || String(s.tier || '') === 'premium';
 						var premTariffHint = '';
 						if (isHappTariff) {
-							premTariffHint = '<p class="small text-secondary mt-2 mb-0 lh-base">' +
-								'Для сетей с блокировками. Подключение через Happ.</p>';
+							premTariffHint = '<p class="small text-secondary mt-2 mb-0 lh-base">' + t('premiumTariffHint') + '</p>';
 						}
 						var catCls = String(s.tier || '') === 'premium'
 							? 'card rounded-3 border border-primary border-opacity-25 bg-body-secondary tariff-order-card h-100'
@@ -371,17 +423,17 @@
 							'<div class="small text-secondary mt-2 mb-3 flex-grow-1" style="white-space:pre-wrap">' + descEsc + '</div>' +
 							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-auto">' +
 							'<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>' +
-							'<div class="fw-bold">' + escapeHtml(fmtMoney(Number(s.cost))) + ' ₽</div>' +
-							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">Купить</button>' +
+							'<div class="fw-bold">' + escapeHtml(fmtMoneyWithCurrency(Number(s.cost))) + '</div>' +
+							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">' + t('buyBtn') + '</button>' +
 							'</div>' +
 							'<div class="catalog-card-spinner mt-3 d-none text-secondary small align-items-center' +
-							'"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span><span>Создаем услугу…</span></div>' +
+							'"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span><span>' + t('buyCreatingService') + '</span></div>' +
 							'<div class="catalog-card-err alert alert-danger py-2 small mt-2 mb-0 d-none" role="alert"></div>' +
 							'<div class="catalog-card-success d-none mt-3 rounded border border-success px-3 py-2 small" style="background: rgba(25,135,84,.08);">' +
 							'<p class="mb-2 mb-lg-3 js-catalog-success-text"></p>' +
 							'<div class="d-grid gap-2 d-sm-flex flex-sm-wrap">' +
-							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener">Перейти к оплате</a>' +
-							'<button type="button" class="btn btn-sm btn-outline-light js-card-goto-my-services">Перейти к моим услугам</button>' +
+							'<a class="btn btn-sm btn-success js-card-pay" href="#" target="_blank" rel="noopener">' + t('goToPayment') + '</a>' +
+							'<button type="button" class="btn btn-sm btn-outline-light js-card-goto-my-services">' + t('goToMyServices') + '</button>' +
 							'</div></div>' +
 							'</div></div>';
 						var spin = wrap.querySelector('.catalog-card-spinner');
@@ -405,7 +457,7 @@
 							cardErr.classList.add('d-none');
 							cardErr.textContent = '';
 							buyBtn.disabled = true;
-							buyBtn.textContent = 'Создаем...';
+							buyBtn.textContent = t('buyCreating');
 							spin.classList.remove('d-none');
 							cardOk.classList.add('d-none');
 							fetch('/api/account/service/order', {
@@ -419,11 +471,11 @@
 									if (!y.ok) {
 										resetBuyBtn(wrap.firstElementChild);
 										cardErr.textContent =
-											(y.j && y.j.error) ? String(y.j.error) : 'Ошибка заказа';
+											apiErrorText(y.j);
 										cardErr.classList.remove('d-none');
 										return;
 									}
-									buyBtn.textContent = 'Ожидает оплаты';
+									buyBtn.textContent = t('buyAwaitPayment');
 									var orderAmtNum = NaN;
 									if (y.j && typeof y.j.amount === 'number' && isFinite(y.j.amount)) {
 										orderAmtNum = y.j.amount;
@@ -432,12 +484,13 @@
 									if (y.j && y.j.returned_service_name !== undefined && y.j.returned_service_name !== null) {
 										rn = String(y.j.returned_service_name).trim();
 									}
-									if (!rn) { rn = 'Тариф'; }
+									if (!rn) { rn = t('catalogPlanFallback'); }
 									var serverMsg = (y.j && y.j.message) ? String(y.j.message).trim() : '';
-									var dupMsgFallback =
-										'У вас уже есть услуга, ожидающая оплаты: ' + rn +
-										'. Новая выбранная услуга не создана. Пополните баланс — после поступления оплаты ожидающая услуга активируется автоматически.';
-									var neutralMsgFallback = 'Услуга ожидает оплаты. Пополните баланс — после поступления оплаты услуга активируется автоматически.';
+									if ((window.VFF_ACCOUNT || {}).lang !== 'ru') {
+										serverMsg = '';
+									}
+									var dupMsgFallback = tNamed('dupUnpaidFallback', { name: rn });
+									var neutralMsgFallback = t('neutralUnpaidFallback');
 									var orderMsg = serverMsg || ((y.j && y.j.existing_unpaid === true) ? dupMsgFallback : neutralMsgFallback);
 									if (y.j && y.j.user_service_id && y.j.existing_unpaid !== true) {
 										var newUsid = Number(y.j.user_service_id);
@@ -467,7 +520,7 @@
 								.catch(function () {
 									spin.classList.add('d-none');
 									resetBuyBtn(wrap.firstElementChild);
-									cardErr.textContent = 'Сеть недоступна';
+									cardErr.textContent = t('networkError');
 									cardErr.classList.remove('d-none');
 								});
 						});
@@ -476,7 +529,7 @@
 				})
 				.catch(function () {
 					document.getElementById('catalog-loading-msg').classList.add('d-none');
-					document.getElementById('catalog-err-box').textContent = 'Сеть недоступна';
+					document.getElementById('catalog-err-box').textContent = t('networkError');
 					document.getElementById('catalog-err-box').classList.remove('d-none');
 				});
 		}
@@ -494,12 +547,12 @@
 					btn.disabled = false;
 					if (statusEl) {
 						statusEl.textContent =
-							'Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.';
+							t('connectPopupBlocked');
 						statusEl.classList.remove('d-none');
 					}
 					return;
 				}
-				showPaymentWindowLoading(popup, 'Открываем страницу подключения...');
+				showPaymentWindowLoading(popup, t('connectLoading'));
 				var apiUrl = '/api/account/service/connect?token=' + encodeURIComponent(tok)
 					+ '&user_service_id=' + encodeURIComponent(String(userServiceId));
 				fetch(apiUrl)
@@ -509,7 +562,7 @@
 						if (!x.ok) {
 							closePaymentWindow(popup);
 							if (statusEl) {
-								statusEl.textContent = (x.j && x.j.error) ? String(x.j.error) : 'Ошибка';
+								statusEl.textContent = apiErrorText(x.j);
 								statusEl.classList.remove('d-none');
 							}
 							return;
@@ -518,7 +571,7 @@
 							if (!navigatePaymentWindow(popup, x.j.connect_url)) {
 								closePaymentWindow(popup);
 								if (statusEl) {
-									statusEl.textContent = 'Подключение пока недоступно';
+									statusEl.textContent = t('connectNotReady');
 									statusEl.classList.remove('d-none');
 								}
 							}
@@ -526,9 +579,11 @@
 						}
 						closePaymentWindow(popup);
 						if (statusEl) {
-							statusEl.textContent = (x.j && x.j.message)
-								? String(x.j.message)
-								: 'Подключение пока недоступно';
+							var msg = (x.j && x.j.message) ? String(x.j.message).trim() : '';
+							if (msg && (window.VFF_ACCOUNT || {}).lang !== 'ru') {
+								msg = t('connectNotReady');
+							}
+							statusEl.textContent = msg || t('connectNotReady');
 							statusEl.classList.remove('d-none');
 						}
 					})
@@ -620,7 +675,7 @@
 				var errEl = document.getElementById('topup-modal-err');
 				errEl.classList.add('d-none');
 				if (isNaN(amt) || !svcTopupAmountUsable(amt)) {
-					errEl.textContent = isNaN(amt) ? 'Укажите сумму' : 'Сумма 50–10 000 ₽, до 2 знаков после запятой';
+					errEl.textContent = isNaN(amt) ? t('topupAmountRequired') : t('topupAmountInvalid');
 					errEl.classList.remove('d-none');
 					return;
 				}
@@ -664,12 +719,12 @@
 							closePaymentWindow(payWin);
 							if (xv.nonJson || (xv.j && xv.j.error === 'non_json_response')) {
 								if (topupPaymentMethod === 'cryptocloud') {
-									errEl.textContent = 'Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.';
+									errEl.textContent = t('trybitInvoiceFailed');
 								} else {
-									errEl.textContent = 'Не удалось создать счет на оплату. Попробуйте позже или обратитесь в поддержку.';
+									errEl.textContent = t('paymentInvoiceFailed');
 								}
 							} else {
-								errEl.textContent = (xv.j && xv.j.error) ? xv.j.error : 'Ошибка';
+								errEl.textContent = apiErrorText(xv.j);
 							}
 							errEl.classList.remove('d-none');
 							return;
@@ -677,7 +732,7 @@
 						var urlRaw = xv.j && xv.j.payment_url ? String(xv.j.payment_url).trim() : '';
 						if (!urlRaw) {
 							closePaymentWindow(payWin);
-							errEl.textContent = 'Ссылка на оплату недоступна';
+							errEl.textContent = t('paymentLinkUnavailable');
 							errEl.classList.remove('d-none');
 							return;
 						}
@@ -724,7 +779,7 @@
 					}).catch(function () {
 						closePaymentWindow(payWin);
 						document.getElementById('topup-submit').disabled = false;
-						errEl.textContent = 'Сеть недоступна. Проверьте подключение и попробуйте ещё раз.';
+						errEl.textContent = t('networkErrorRetry');
 						errEl.classList.remove('d-none');
 					});
 			});
@@ -737,7 +792,7 @@
 			var listElReset = document.getElementById('payments-list');
 			if (listElReset) {
 				listElReset.className = 'mt-3 text-secondary';
-				listElReset.textContent = 'Откройте вкладку, чтобы загрузить историю платежей.';
+				listElReset.textContent = t('paymentsPlaceholder');
 			}
 			var refBtn = document.getElementById('payments-refresh');
 			if (refBtn && refBtn.dataset.bound !== '1') {
@@ -767,7 +822,7 @@
 			var plist = payments || [];
 			if (!plist.length) {
 				listEl.className = 'mt-3 text-secondary';
-				listEl.textContent = 'Оплаченных платежей пока нет.';
+				listEl.textContent = t('paymentsEmpty');
 				return;
 			}
 			listEl.className = 'mt-3';
@@ -790,13 +845,13 @@
 				return Promise.resolve();
 			}
 			listEl.className = 'mt-3 text-secondary';
-			listEl.textContent = 'Загружаем платежи…';
+			listEl.textContent = t('paymentsLoading');
 
 			return fetch('/api/account/payments?token=' + encodeURIComponent(tok))
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
 					if (!x.ok) {
-						listEl.textContent = 'Не удалось загрузить историю платежей. Попробуйте позже.';
+						listEl.textContent = t('paymentsLoadFailed');
 						listEl.className = 'mt-3 text-danger';
 						return;
 					}
@@ -806,7 +861,7 @@
 					renderAccountPayments(arr);
 				})
 				.catch(function () {
-					listEl.textContent = 'Не удалось загрузить историю платежей. Попробуйте позже.';
+					listEl.textContent = t('paymentsLoadFailed');
 					listEl.className = 'mt-3 text-danger';
 				});
 		}
@@ -824,9 +879,9 @@
 			var uname = String(user.telegram_username || '').trim();
 			var label = '';
 			if (uname) {
-				label = 'Telegram: ' + uname;
+				label = t('telegramPrefix') + uname;
 			} else if (user.telegram_chat_id) {
-				label = 'Telegram: ID ' + String(user.telegram_chat_id);
+				label = t('telegramIDPrefix') + String(user.telegram_chat_id);
 			}
 			if (!label) {
 				el.textContent = '';
@@ -848,7 +903,7 @@
 					setAccountForecastFromServicesPayload(j);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
-						'Вы вошли как ' + String(j.user.email || '').trim();
+						t('signedInAs') + String(j.user.email || '').trim();
 					updateAccountTelegramLine(j.user);
 					var services = j.services || [];
 					syncProgressContextSets(services);
@@ -886,14 +941,14 @@
 
 		function progressHintHtmlForService(usid) {
 			var id = Number(usid);
-			var autoLine = '<div class="small text-secondary mt-2">Страница обновится автоматически.</div>';
+			var autoLine = '<div class="small text-secondary mt-2">' + t('progressAutoRefresh') + '</div>';
 			if (deletingServiceIDs.has(id)) {
-				return '<div class="small text-secondary mt-2">Услуга удаляется. Обычно это занимает до 1–2 минут.</div>' + autoLine;
+				return '<div class="small text-secondary mt-2">' + t('progressDeleting') + '</div>' + autoLine;
 			}
 			if (creatingServiceIDs.has(id)) {
-				return '<div class="small text-secondary mt-2">Услуга создаётся. Обычно это занимает до 1–2 минут.</div>' + autoLine;
+				return '<div class="small text-secondary mt-2">' + t('progressCreating') + '</div>' + autoLine;
 			}
-			return '<div class="small text-secondary mt-2">Выполняется операция с услугой. Обычно это занимает до 1–2 минут.</div>' + autoLine;
+			return '<div class="small text-secondary mt-2">' + t('progressGeneric') + '</div>' + autoLine;
 		}
 
 		function maybeOpenCatalogAfterPendingDeletion(services) {
@@ -1099,7 +1154,7 @@
 				var forecastBilling = notPaid || blocked;
 				var cardEl = document.createElement('div');
 				cardEl.className = 'col-12';
-				var nm = escapeHtml(String(s.name || 'Услуга'));
+				var nm = escapeHtml(String(s.name || t('serviceFallback')));
 				var st = escapeHtml(String(s.status || '—'));
 				var exp = escapeHtml(String(s.expire || '—'));
 				var isPremSvc = String(s.connect_app || '') === 'happ' || String(s.tier || '') === 'premium';
@@ -1114,48 +1169,45 @@
 				}
 				var badgeRow = badges ? '<div class="small mt-2">' + badges + '</div>' : '';
 				var premSvcHint = (active && isPremSvc)
-					? '<div class="small text-secondary mt-2 lh-base">Для Premium используйте приложение Happ.</div>'
+					? '<div class="small text-secondary mt-2 lh-base">' + t('premiumHappHint') + '</div>'
 					: '';
 				var svcCardCls = isPremSvc
 					? 'card rounded-3 border border-primary border-opacity-25'
 					: 'card rounded-3 border-secondary';
-				var connLbl = 'Подключить';
+				var connLbl = t('connectBtn');
 				if (active && isPremSvc) {
-					connLbl = 'Подключить Premium';
+					connLbl = t('connectPremiumBtn');
 				}
 				var hint = '';
 				if (inProgress) {
 					hint = progressHintHtmlForService(usid);
 				} else if (active) {
-					hint = '<div class="small text-secondary mt-2">Для автопродления заранее пополните баланс.</div>';
+					hint = '<div class="small text-secondary mt-2">' + t('autorenewHint') + '</div>';
 				} else if (notPaid) {
-					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет активирована автоматически, когда средств будет достаточно.</div>' +
-						'<div class="small text-secondary mt-2">Если хотите выбрать другой тариф, сначала отмените эту услугу.</div>';
+					hint = '<div class="small text-secondary mt-2">' + t('notPaidHint1') + '</div>' +
+						'<div class="small text-secondary mt-2">' + t('notPaidHint2') + '</div>';
 				} else if (blocked) {
-					hint = '<div class="small text-secondary mt-2">Пополните баланс — услуга будет продлена автоматически, когда средств будет достаточно.</div>';
+					hint = '<div class="small text-secondary mt-2">' + t('blockedHint') + '</div>';
 				}
 				var cancelHtml = '';
 				if (!active && !inProgress) {
 					if (forecastBilling) {
-						var payTopupLbl = notPaid ? 'Пополнить для активации' : 'Пополнить для продления';
+						var payTopupLbl = notPaid ? t('topUpForActivation') : t('topUpForRenewal');
 						cancelHtml =
 							'<div class="mt-2 d-grid gap-2 d-sm-flex flex-sm-wrap">' +
 							'<button type="button" class="btn btn-sm btn-success js-svc-balance-pay">' +
 							payTopupLbl + '</button>' +
 							'<button type="button" class="btn btn-sm btn-outline-danger js-cancel-service" data-usid="' + usid + '">' +
-							'Отменить услугу</button>' +
+							t('cancelService') + '</button>' +
 							'</div>' +
 							'<div class="svc-pay-err small text-danger mt-2 d-none" role="alert"></div>' +
 							'<div class="svc-pay-ok mt-2 d-none">' +
-							'<div class="small text-secondary js-svc-pay-ok-heading">' +
-							'Страница оплаты открыта в новой вкладке. После оплаты вернитесь в кабинет и обновите список услуг.</div>' +
-							'<div class="small text-secondary mt-2">' +
-							'После оплаты баланс будет пополнен. Если средств достаточно, услуга активируется автоматически.</div>' +
-							'<div class="small text-secondary mt-2 js-svc-pay-fallback-msg d-none">' +
-							'Если страница оплаты не открылась автоматически, нажмите «Открыть оплату».</div>' +
+							'<div class="small text-secondary js-svc-pay-ok-heading">' + t('svcPayPageOpened') + '</div>' +
+							'<div class="small text-secondary mt-2">' + t('svcPayAfterPay') + '</div>' +
+							'<div class="small text-secondary mt-2 js-svc-pay-fallback-msg d-none">' + t('svcPayFallback') + '</div>' +
 							'<div class="d-flex gap-2 flex-wrap mt-2">' +
-							'<a class="btn btn-sm btn-success js-svc-pay-fallback d-none" href="#">Открыть оплату</a>' +
-							'<button type="button" class="btn btn-sm btn-outline-light js-svc-pay-refresh">Обновить услуги</button>' +
+							'<a class="btn btn-sm btn-success js-svc-pay-fallback d-none" href="#">' + t('openPayment') + '</a>' +
+							'<button type="button" class="btn btn-sm btn-outline-light js-svc-pay-refresh">' + t('refreshServices') + '</button>' +
 							'</div>' +
 							'</div>';
 					}
@@ -1163,14 +1215,14 @@
 						'<div class="svc-cancel-err small text-danger mt-2 d-none" role="alert"></div>' +
 						'<div class="svc-cancel-ok small text-success mt-2 d-none" role="status"></div>' +
 						(forecastBilling ? '' : '<button type="button" class="btn btn-sm btn-outline-warning mt-2 js-cancel-service" data-usid="' + usid + '">' +
-							'Отменить услугу</button>');
+							t('cancelService') + '</button>');
 				}
 				cardEl.innerHTML = '<div class="' + svcCardCls + '" style="background:var(--bs-secondary-bg)">' +
 					'<div class="card-body">' +
 					'<div class="fw-semibold">' + nm + '</div>' +
 					badgeRow +
-					'<div class="small text-secondary mt-2">Статус: ' + st + '</div>' +
-					'<div class="small text-secondary">До: ' + exp + '</div>' +
+					'<div class="small text-secondary mt-2">' + t('statusLabel') + st + '</div>' +
+					'<div class="small text-secondary">' + t('untilLabel') + exp + '</div>' +
 					premSvcHint +
 					hint +
 					'<button type="button" class="btn btn-sm btn-primary mt-3 conn-btn"' +
@@ -1192,12 +1244,12 @@
 							var okBox = cardRoot.querySelector('.svc-cancel-ok');
 							errBox.classList.add('d-none');
 							okBox.classList.add('d-none');
-							var pn = String(nmPlain).trim() !== '' ? String(nmPlain).trim() : 'Услуга';
-							if (!window.confirm('Удалить услугу «' + pn + '»? После удаления можно будет выбрать другой тариф.')) {
+							var pn = String(nmPlain).trim() !== '' ? String(nmPlain).trim() : t('serviceFallback');
+							if (!window.confirm(tNamed('deleteConfirm', { name: pn }))) {
 								return;
 							}
 							cb.disabled = true;
-							cb.textContent = 'Удаляем...';
+							cb.textContent = t('cancelDeleting');
 							fetch('/api/account/service/delete', {
 								method: 'POST',
 								headers: { 'Content-Type': 'application/json' },
@@ -1207,13 +1259,13 @@
 								.then(function (op) {
 									if (!op.ok) {
 										cb.disabled = false;
-										cb.textContent = 'Отменить услугу';
-										errBox.textContent = op.j && op.j.error ? String(op.j.error) : 'Ошибка удаления';
+										cb.textContent = t('cancelService');
+										errBox.textContent = apiErrorText(op.j);
 										errBox.classList.remove('d-none');
 										return;
 									}
 									okBox.textContent =
-										op.j && op.j.message ? String(op.j.message) : 'Услуга удалена. Теперь можно выбрать другой тариф.';
+										op.j && op.j.message && (window.VFF_ACCOUNT || {}).lang === 'ru' ? String(op.j.message) : t('deleteSuccessFallback');
 									okBox.classList.remove('d-none');
 									deletingServiceIDs.add(idNum);
 									pendingPostDeleteCatalog = true;
@@ -1228,8 +1280,8 @@
 								})
 								.catch(function () {
 									cb.disabled = false;
-									cb.textContent = 'Отменить услугу';
-									errBox.textContent = 'Сеть недоступна';
+									cb.textContent = t('cancelService');
+									errBox.textContent = t('networkError');
 									errBox.classList.remove('d-none');
 								});
 						});
@@ -1256,8 +1308,8 @@
 			stopProgressPolling();
 			show('err-box', true);
 			document.getElementById('err-box').innerHTML =
-				escapeHtml('Ссылка недействительна или устарела. Запросите новую ссылку для входа.') +
-				' <a href="/account">Страница входа</a>';
+				escapeHtml(t('sessionInvalidLink')) +
+				' <a href="' + escapeHtml(t('loginPagePath')) + '">' + escapeHtml(t('sessionInvalidLinkA')) + '</a>';
 		}
 
 		function bootDashboardAfterExchange(accountTok) {
@@ -1278,7 +1330,7 @@
 					setAccountForecastFromServicesPayload(j);
 					document.getElementById('balance-num').textContent = fmtMoney(j.user.balance);
 					document.getElementById('user-line').textContent =
-						'Вы вошли как ' + String(j.user.email || '').trim();
+						t('signedInAs') + String(j.user.email || '').trim();
 					updateAccountTelegramLine(j.user);
 					renderServiceCards(accountTok, j.services || []);
 					startProgressPollingIfNeeded(j.services || []);

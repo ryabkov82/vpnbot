@@ -322,6 +322,9 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 		} else {
 			clearGoogleOAuthLinkTokenCookie(w, r)
 		}
+		if qLang := strings.TrimSpace(r.URL.Query().Get("lang")); qLang != "" {
+			setAccountLangCookie(w, r, normalizeAccountLocale(qLang))
+		}
 		loc, err := buildGoogleOAuthURL(cfg, state)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
@@ -458,7 +461,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 				return
 			}
 			slog.Info("google oauth link: linked and redirecting", "user_id", user.ID, "duration_ms", linkDoneMs)
-			sessionURL := "/account/session?token=" + url.QueryEscape(rawSessionTok)
+			sessionURL := appendAccountLangQuery("/account/session?token="+url.QueryEscape(rawSessionTok), resolveAccountLocale(r))
 			http.Redirect(w, r, sessionURL, http.StatusFound)
 			return
 		}
@@ -481,7 +484,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			sendAccountUserRegisteredTelegramNotification(cfg, normEmail, user.ID, user.Login, ClientIPFromRequest(r))
 		}
 
-		redirect := "/account/session?token=" + url.QueryEscape(rawSessionTok)
+		redirect := appendAccountLangQuery("/account/session?token="+url.QueryEscape(rawSessionTok), resolveAccountLocale(r))
 		http.Redirect(w, r, redirect, http.StatusFound)
 	}
 }

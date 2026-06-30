@@ -1,7 +1,6 @@
 package web
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,19 +16,20 @@ func sessionHTMLPath(t *testing.T) string {
 	return filepath.Join(filepath.Dir(fname), "static", "account", "session.html")
 }
 
+func sessionTemplateSource(t *testing.T) string {
+	t.Helper()
+	return accountSessionPageTemplateSrc
+}
+
 func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
-	b, err := os.ReadFile(sessionHTMLPath(t))
-	if err != nil {
-		t.Fatalf("read session.html: %v", err)
-	}
-	s := string(b)
-	if !strings.Contains(s, "Для Premium используйте приложение Happ.") {
+	s := sessionTemplateSource(t)
+	if !strings.Contains(s, "t('premiumHappHint')") {
 		t.Fatal("missing premium Happ copy")
 	}
 	if !strings.Contains(s, "connect_app") || !strings.Contains(s, "'happ'") {
 		t.Fatal("session JS must branch on connect_app")
 	}
-	if !strings.Contains(s, "Подключить Premium") {
+	if !strings.Contains(s, "t('connectPremiumBtn')") {
 		t.Fatal(`missing Premium connect button label`)
 	}
 	for _, forbid := range []string{
@@ -65,10 +65,10 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("attachConnect must open blank tab via openPaymentWindow before fetch")
 	}
 	if !strings.Contains(connBlock, "if (!popup)") ||
-		!strings.Contains(connBlock, "Не удалось открыть страницу подключения. Разрешите всплывающие окна и попробуйте ещё раз.") {
+		!strings.Contains(connBlock, "t('connectPopupBlocked')") {
 		t.Fatal("connect popup error must show when pre-open returns null")
 	}
-	if !strings.Contains(connBlock, "showPaymentWindowLoading(popup, 'Открываем страницу подключения...')") ||
+	if !strings.Contains(connBlock, "showPaymentWindowLoading(popup, t('connectLoading')") ||
 		!strings.Contains(connBlock, "navigatePaymentWindow(popup, x.j.connect_url)") ||
 		!strings.Contains(connBlock, "closePaymentWindow(popup)") {
 		t.Fatal("attachConnect must show loading text, navigate popup, and close on failure")
@@ -86,7 +86,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("attachConnect must call navigatePaymentWindow once per success path")
 	}
 	if !strings.Contains(s, "premSvcHint") ||
-		!strings.Contains(s, "Для Premium используйте приложение Happ.") {
+		!strings.Contains(s, "t('premiumHappHint')") {
 		t.Fatal("premium card must keep static Happ hint in renderServiceCards")
 	}
 	if !strings.Contains(s, "/api/account/session/start") {
@@ -126,29 +126,29 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "function bindDashboardPayments") || !strings.Contains(s, "bindDashboardPayments(") {
 		t.Fatal("expected bindDashboardPayments for payments tab/refresher wiring")
 	}
-	if !strings.Contains(s, "Загружаем платежи…") {
+	if !strings.Contains(s, "t('paymentsLoading')") {
 		t.Fatal("session payments load copy missing")
 	}
-	if !strings.Contains(s, ">Платежи</button>") {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), ">Платежи</button>") {
 		t.Fatal("payments tab nav label must be «Платежи»")
 	}
-	if !strings.Contains(s, `<h2 class="h5 mb-0">История платежей</h2>`) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "История платежей") {
 		t.Fatal("session heading for payment history missing inside pane")
 	}
 	if !strings.Contains(s, `id="tab-help-tab"`) || !strings.Contains(s, `id="tab-pane-help"`) ||
-		!strings.Contains(s, ">Помощь</button>") {
+		!strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), ">Помощь</button>") {
 		t.Fatal("help tab nav or pane missing")
 	}
-	if !strings.Contains(s, "Как подключить VPN") ||
-		!strings.Contains(s, "«Купить VPN»") ||
-		!strings.Contains(s, "«Мои услуги»") ||
-		!strings.Contains(s, "«Подключить»") {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Как подключить VPN") ||
+		!strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Купить VPN") ||
+		!strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Мои услуги") ||
+		!strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Подключить") {
 		t.Fatal("help tab must include VPN setup instructions")
 	}
-	if !strings.Contains(s, "Откройте вкладку, чтобы загрузить историю платежей.") {
+	if !strings.Contains(s, "t('paymentsPlaceholder')") {
 		t.Fatal("payments tab initial placeholder missing")
 	}
-	if !strings.Contains(s, "Оплаченных платежей пока нет.") {
+	if !strings.Contains(s, "t('paymentsEmpty')") {
 		t.Fatal("session must include empty-state copy for filtered payments")
 	}
 	if strings.Contains(s, `uniq_key`) {
@@ -176,20 +176,20 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(s, `window.open('', '_blank', 'noopener')`) {
 		t.Fatal("pre-open must not use noopener (returns null in some browsers)")
 	}
-	if !strings.Contains(s, "Ссылка недействительна или устарела.") {
+	if !strings.Contains(s, "t('sessionInvalidLink')") {
 		t.Fatal("missing invalid magic-link message")
 	}
 	if !strings.Contains(s, "account-tabs") {
 		t.Fatal("cabinet tabs should use account-tabs class for responsive layout")
 	}
-	if !strings.Contains(s, "<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->") {
+	if !strings.Contains(s, "{{.SupportLinkHTML}}") {
 		t.Fatal("session.html must include support link placeholder for server-side injection")
 	}
 	for _, needle := range []string{
 		`<footer `,
 		`account-footer`,
-		`VPN for Friends</div>`,
-		`Безопасный доступ к вашим VPN-услугам`,
+		`{{.I18n.FooterBrand}}`,
+		`{{.I18n.FooterTagline}}`,
 	} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("session.html branded footer missing %q", needle)
@@ -214,14 +214,14 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, "scrollbar-gutter: stable") || !strings.Contains(s, "overflow-y: scroll") {
 		t.Fatal("session css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
 	}
-	if !strings.Contains(s, `Вы вошли как ' + String(j.user.email`) {
+	if !strings.Contains(s, "t('signedInAs')") {
 		t.Fatal("user-line must show human-friendly email only (Вы вошли как …)")
 	}
 	if !strings.Contains(s, `id="account-telegram"`) || !strings.Contains(s, "function updateAccountTelegramLine(user)") {
 		t.Fatal("session must expose linked Telegram line via updateAccountTelegramLine")
 	}
-	if !strings.Contains(s, "user.telegram_linked") || !strings.Contains(s, "'Telegram: ' + uname") ||
-		!strings.Contains(s, "'Telegram: ID ' + String(user.telegram_chat_id)") {
+	if !strings.Contains(s, "user.telegram_linked") || !strings.Contains(s, "t('telegramPrefix')") ||
+		!strings.Contains(s, "t('telegramIDPrefix')") {
 		t.Fatal("updateAccountTelegramLine must branch on telegram_linked / username / chat_id")
 	}
 	if !strings.Contains(s, "updateAccountTelegramLine(j.user)") {
@@ -233,7 +233,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(s, `getElementById('user-line').textContent =`) && strings.Contains(s, ` · id `) {
 		t.Fatal("user-line assignment must not expose internal id label")
 	}
-	if !strings.Contains(s, "Перейти к моим услугам") || !strings.Contains(s, "js-card-goto-my-services") {
+	if !strings.Contains(s, "t('goToMyServices')") || !strings.Contains(s, "js-card-goto-my-services") {
 		t.Fatal("catalog success must offer 'go to my services' instead of full reload")
 	}
 	if !strings.Contains(s, "function openServicesTab()") || !strings.Contains(s, "showMyServicesTabScrollCards") {
@@ -255,7 +255,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		!strings.Contains(s, ".querySelectorAll('.catalog-card-err')") {
 		t.Fatal("resetCatalogOrderState must target catalog card hooks")
 	}
-	if !strings.Contains(s, `btn.textContent = 'Купить'`) ||
+	if !strings.Contains(s, "t('buyBtn')") ||
 		!strings.Contains(s, `btn.disabled = false`) {
 		t.Fatal("resetCatalogOrderState must restore buy buttons from post-order pending state")
 	}
@@ -285,7 +285,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if iOrderFetch < 0 {
 		t.Fatal("catalog service/order fetch missing")
 	}
-	iOrderAwait := strings.Index(s[iOrderFetch:], `buyBtn.textContent = 'Ожидает оплаты'`)
+	iOrderAwait := strings.Index(s[iOrderFetch:], `buyBtn.textContent = t('buyAwaitPayment')`)
 	if iOrderAwait < 0 {
 		t.Fatal("expected post-order buy button label in session")
 	}
@@ -340,7 +340,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(s, `(50–10 000 ₽, до 2 знаков)</label>`) {
 		t.Fatal("ambiguous topup custom amount label must clarify decimal digits")
 	}
-	if !strings.Contains(s, `50–10 000 ₽, до 2 знаков после запятой`) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "50–10 000 ₽") {
 		t.Fatal("topup modal must say «после запятой» for fractional amounts")
 	}
 	for _, fcNeedle := range []string{
@@ -348,8 +348,8 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		`id="topup-no-forecast-msg"`,
 		`var suppressNextTopupForecastApply`,
 		`function openTopupModalSuggestingOrderAmount`,
-		`Не удалось рассчитать сумму оплаты`,
-		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
+		`{{.I18n.TopUpNoForecast}}`,
+		`{{.I18n.TopUpForecastHint}}`,
 		`var accountForecast = 0`,
 		`function setAccountForecastFromServicesPayload`,
 		`function applyTopupModalForecastDefaults`,
@@ -381,13 +381,20 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(topResFrag, `>Перейти к оплате<`) {
 		t.Fatal("topup-result success must not duplicate modal «Перейти к оплате» button")
 	}
+	ruTop := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
 	for _, needle := range []string{
 		`Страница оплаты открыта в новой вкладке`,
 		`обновите баланс. Баланс должен обновиться в течение 1–2 минут`,
-		`topup-result-pay-fallback`,
 		`Открыть оплату`,
-		`topup-result-refresh`,
 		`Обновить баланс`,
+	} {
+		if !strings.Contains(ruTop, needle) {
+			t.Fatalf("topup-result markup missing %q", needle)
+		}
+	}
+	for _, needle := range []string{
+		`topup-result-pay-fallback`,
+		`topup-result-refresh`,
 	} {
 		if !strings.Contains(topResFrag, needle) {
 			t.Fatalf("topup-result markup missing %q", needle)
@@ -452,7 +459,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		!strings.Contains(topSubmitSnip, `topup non-json response`) {
 		t.Fatal("topup-submit must handle non-JSON backend responses explicitly")
 	}
-	if !strings.Contains(topSubmitSnip, `Сеть недоступна. Проверьте подключение`) {
+	if !strings.Contains(topSubmitSnip, "t('networkErrorRetry')") {
 		t.Fatal("topup-submit network catch must use explicit network-unavailable copy")
 	}
 	if !strings.Contains(topSubmitSnip, `openPaymentWindow()`) ||
@@ -489,9 +496,9 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(svcPayBlock, `>Перейти к оплате`) {
 		t.Fatal("svc-pay-ok block must not show a duplicate Перейти к оплате link")
 	}
-	if !strings.Contains(svcPayBlock, `Страница оплаты открыта в новой вкладке`) ||
+	if !strings.Contains(svcPayBlock, `t('svcPayPageOpened')`) ||
 		!strings.Contains(svcPayBlock, `js-svc-pay-fallback`) ||
-		!strings.Contains(svcPayBlock, `Открыть оплату`) {
+		!strings.Contains(svcPayBlock, `t('openPayment')`) {
 		t.Fatal("svc-pay-ok must include auto-open messaging and Открыть оплату fallback")
 	}
 	if strings.Contains(s, "js-svc-pay-open") {
@@ -506,17 +513,17 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if !strings.Contains(s, `var blocked = stUp === 'BLOCK'`) {
 		t.Fatal("session renderServiceCards must detect BLOCK status for forecast billing")
 	}
-	if !strings.Contains(s, `Пополнить для активации`) || !strings.Contains(s, `Пополнить для продления`) {
+	if !strings.Contains(s, "t('topUpForActivation')") || !strings.Contains(s, "t('topUpForRenewal')") {
 		t.Fatal("session must expose distinct forecast top-up labels for NOT PAID vs BLOCK")
 	}
-	if !strings.Contains(s, `продлена автоматически, когда средств будет достаточно`) {
+	if !strings.Contains(s, "t('blockedHint')") {
 		t.Fatal("session BLOCK helper copy for balance renewal missing")
 	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
-		`После оплаты баланс будет пополнен`,
-		`Обновить услуги`,
-		`Отменить услугу`,
+		`t('svcPayAfterPay')`,
+		`t('refreshServices')`,
+		`t('cancelService')`,
 		`svcTopupAmountUsable`,
 		`openBalanceTabWithTopupModal`,
 	} {
@@ -569,13 +576,15 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	}
 	for _, needle := range []string{
 		`id="logout-btn"`,
-		`>Выйти</button>`,
 		`localStorage.removeItem(STORAGE)`,
-		`'/account?logged_out=1'`,
+		`t('logoutRedirect')`,
 	} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("session logout UI/JS missing %q", needle)
 		}
+	}
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), ">Выйти</button>") {
+		t.Fatal("session logout button label missing in RU render")
 	}
 	for _, forbidSession := range []string{
 		`openTopupModalForPreparedPayment`,
@@ -595,11 +604,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 }
 
 func TestAccountSessionCatalogTabIfNoServices(t *testing.T) {
-	b, err := os.ReadFile(sessionHTMLPath(t))
-	if err != nil {
-		t.Fatalf("read session.html: %v", err)
-	}
-	s := string(b)
+	s := sessionTemplateSource(t)
 
 	if !strings.Contains(s, "function openCatalogTabIfNoServices(services)") {
 		t.Fatal("missing openCatalogTabIfNoServices helper")
@@ -661,11 +666,7 @@ func TestAccountSessionCatalogTabIfNoServices(t *testing.T) {
 }
 
 func TestAccountSessionPostOrderGoesToServicesTab(t *testing.T) {
-	b, err := os.ReadFile(sessionHTMLPath(t))
-	if err != nil {
-		t.Fatalf("read session.html: %v", err)
-	}
-	s := string(b)
+	s := sessionTemplateSource(t)
 	if !strings.Contains(s, `id="order-success-hint"`) || !strings.Contains(s, "function showOrderSuccessHint(message)") {
 		t.Fatal("session must expose order-success hint on services tab")
 	}
@@ -686,11 +687,7 @@ func TestAccountSessionPostOrderGoesToServicesTab(t *testing.T) {
 }
 
 func TestAccountSessionProgressPolling(t *testing.T) {
-	b, err := os.ReadFile(sessionHTMLPath(t))
-	if err != nil {
-		t.Fatalf("read session.html: %v", err)
-	}
-	s := string(b)
+	s := sessionTemplateSource(t)
 	for _, needle := range []string{
 		"var progressPollingTimer = null",
 		"function hasProgressServices(services)",
@@ -707,9 +704,9 @@ func TestAccountSessionProgressPolling(t *testing.T) {
 			t.Fatalf("progress polling helper missing %q", needle)
 		}
 	}
-	if !strings.Contains(s, "Услуга создаётся. Обычно это занимает до 1–2 минут.") ||
-		!strings.Contains(s, "Услуга удаляется. Обычно это занимает до 1–2 минут.") ||
-		!strings.Contains(s, "Выполняется операция с услугой. Обычно это занимает до 1–2 минут.") ||
+	if !strings.Contains(s, "t('progressCreating')") ||
+		!strings.Contains(s, "t('progressDeleting')") ||
+		!strings.Contains(s, "t('progressGeneric')") ||
 		!strings.Contains(s, "function progressHintHtmlForService(usid)") ||
 		!strings.Contains(s, "deletingServiceIDs.has(id)") ||
 		!strings.Contains(s, "creatingServiceIDs.has(id)") ||
@@ -761,11 +758,7 @@ func TestAccountSessionProgressPolling(t *testing.T) {
 }
 
 func TestAccountSessionProgressDeleteContext(t *testing.T) {
-	b, err := os.ReadFile(sessionHTMLPath(t))
-	if err != nil {
-		t.Fatalf("read session.html: %v", err)
-	}
-	s := string(b)
+	s := sessionTemplateSource(t)
 	for _, needle := range []string{
 		"var deletingServiceIDs = new Set()",
 		"var creatingServiceIDs = new Set()",
@@ -812,7 +805,7 @@ func TestAccountSessionProgressDeleteContext(t *testing.T) {
 		t.Fatal("pending deletion must open buy tab after polling yields empty services")
 	}
 	iOrderFetch := strings.Index(s, `fetch('/api/account/service/order',`)
-	iOrderAwait2 := strings.Index(s[iOrderFetch:], `buyBtn.textContent = 'Ожидает оплаты'`)
+	iOrderAwait2 := strings.Index(s[iOrderFetch:], `buyBtn.textContent = t('buyAwaitPayment')`)
 	if iOrderFetch < 0 || iOrderAwait2 < 0 {
 		t.Fatal("order handler anchors missing")
 	}

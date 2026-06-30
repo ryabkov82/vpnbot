@@ -39,6 +39,7 @@ type accountWebApp interface {
 type accountLoginStartRequestJSON struct {
 	Email   string `json:"email"`
 	Website string `json:"website"`
+	Lang    string `json:"lang"`
 }
 
 type accountLoginStartOKJSON struct {
@@ -134,6 +135,10 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			return
 		}
 		loginURL := base + "/account/session?token=" + url.QueryEscape(magicTok)
+		locale := normalizeAccountLocale(req.Lang)
+		if locale == accountLocaleEN {
+			loginURL += "&lang=en"
+		}
 
 		if err := email.SendAccountLoginEmail(cfg, normEmail, loginURL); err != nil {
 			if errors.Is(err, email.ErrNotConfigured) {

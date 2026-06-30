@@ -401,7 +401,10 @@ func TestGoogleOAuthCallback_EmailNotVerified(t *testing.T) {
 
 func TestRenderedAccountLogin_GoogleBlockedWhenUnavailable(t *testing.T) {
 	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("k", 40), false, "cid", "https://x/c", "")
-	out := renderedAccountLoginPageHTML(cfg)
+	out, err := renderedAccountLoginPageHTML(cfg, accountLocaleRU)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(string(out), "/api/account/google/start") ||
 		strings.Contains(string(out), "Войти с Google") {
 		t.Fatal("google link must be absent when oauth unavailable")
@@ -414,7 +417,11 @@ func TestRenderedAccountLogin_GoogleBlockedWhenUnavailable(t *testing.T) {
 func TestRenderedAccountLogin_GoogleLinkWhenConfigured(t *testing.T) {
 	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("m", 40), true, "cid",
 		"https://connect.vpn-for-friends.com/api/account/google/callback", "sekrit")
-	html := string(renderedAccountLoginPageHTML(cfg))
+	htmlBytes, err := renderedAccountLoginPageHTML(cfg, accountLocaleRU)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlBytes)
 	if !strings.Contains(html, "Войти с Google") ||
 		!strings.Contains(html, `/api/account/google/start`) ||
 		!strings.Contains(html, ">или</p>") {

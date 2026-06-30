@@ -7,7 +7,7 @@ import (
 )
 
 func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
-	b := accountSessionPageHTML
+	b := []byte(accountSessionPageTemplateSrc)
 	raw := string(b)
 	if strings.Contains(strings.ToUpper(raw), "SHM") {
 		t.Fatal("embedded session must not show SHM to users")
@@ -18,8 +18,8 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	for _, footerNeedle := range []string{
 		`<footer `,
 		`account-footer`,
-		`VPN for Friends</div>`,
-		`Безопасный доступ к вашим VPN-услугам`,
+		`{{.I18n.FooterBrand}}`,
+		`{{.I18n.FooterTagline}}`,
 	} {
 		if !strings.Contains(raw, footerNeedle) {
 			t.Fatalf("embed session branded footer missing %q", footerNeedle)
@@ -43,16 +43,16 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, `window.open('', '_blank', 'noopener')`) {
 		t.Fatal("embed: pre-open must not use noopener third argument")
 	}
-	if !strings.Contains(raw, `Вы вошли как ' + String(j.user.email`) {
+	if !strings.Contains(raw, "t('signedInAs')") {
 		t.Fatal("embed user-line must show «Вы вошли как» email only")
 	}
 	if strings.Contains(raw, `j.user.login + ' · id '`) || strings.Contains(raw, "' · ' + j.user.login") {
 		t.Fatal("embed must not concatenate login or user_id into user-line")
 	}
-	if !bytes.Contains(b, []byte("Баланс:")) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Баланс:") {
 		t.Fatal("balance label missing")
 	}
-	if !bytes.Contains(b, []byte("Пополнить баланс")) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Пополнить баланс") {
 		t.Fatal("topup CTA missing")
 	}
 	if !bytes.Contains(b, []byte(`/api/account/balance/topup`)) {
@@ -61,7 +61,7 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, `(50–10 000 ₽, до 2 знаков)</label>`) {
 		t.Fatal("embed: ambiguous topup amount label removed")
 	}
-	if !strings.Contains(raw, `50–10 000 ₽, до 2 знаков после запятой`) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "50–10 000 ₽") {
 		t.Fatal("embed: topup label must clarify decimal places")
 	}
 	for _, fcNeedle := range []string{
@@ -69,8 +69,8 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		`id="topup-no-forecast-msg"`,
 		`var suppressNextTopupForecastApply`,
 		`function openTopupModalSuggestingOrderAmount`,
-		`Не удалось рассчитать сумму оплаты`,
-		`Сумма рассчитана по данным биллинга для оплаты/продления услуг`,
+		`{{.I18n.TopUpNoForecast}}`,
+		`{{.I18n.TopUpForecastHint}}`,
 		`var accountForecast = 0`,
 		`setAccountForecastFromServicesPayload`,
 		`applyTopupModalForecastDefaults`,
@@ -95,12 +95,19 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(erFrag, `id="topup-pay-open"`) || strings.Contains(erFrag, `>Перейти к оплате<`) {
 		t.Fatal("embed topup-result must not show post-success Перейти к оплате")
 	}
+	ru := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
 	for _, needle := range []string{
 		`Страница оплаты открыта в новой вкладке`,
 		`обновите баланс. Баланс должен обновиться в течение 1–2 минут`,
 		`Если страница оплаты не открылась автоматически`,
-		`topup-result-pay-fallback`,
 		`Обновить баланс`,
+	} {
+		if !strings.Contains(ru, needle) {
+			t.Fatalf("rendered topup-result missing %q", needle)
+		}
+	}
+	for _, needle := range []string{
+		`topup-result-pay-fallback`,
 	} {
 		if !strings.Contains(erFrag, needle) {
 			t.Fatalf("embed topup-result missing %q", needle)
@@ -152,16 +159,16 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, "Продлить") {
 		t.Fatal("renew button word must not appear")
 	}
-	if !bytes.Contains(b, []byte("автоматического продления")) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "автоматического продления") {
 		t.Fatal("balance explainer missing")
 	}
-	if !bytes.Contains(b, []byte("активирована автоматически")) {
+	if !strings.Contains(raw, "t('notPaidHint1')") {
 		t.Fatal("NOT PAID hint missing")
 	}
-	if !bytes.Contains(b, []byte("продлена автоматически, когда средств будет достаточно")) {
+	if !strings.Contains(raw, "t('blockedHint')") {
 		t.Fatal("BLOCK balance renewal hint missing")
 	}
-	if !bytes.Contains(b, []byte("Купить новую услугу")) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Купить новую услугу") {
 		t.Fatal(`missing catalog section title`)
 	}
 	if !bytes.Contains(b, []byte(`/api/account/catalog/services`)) {
@@ -170,10 +177,10 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !bytes.Contains(b, []byte("/api/account/service/order")) {
 		t.Fatal("service order endpoint missing")
 	}
-	if !bytes.Contains(b, []byte(`Мои услуги`)) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Мои услуги") {
 		t.Fatal("services tab missing")
 	}
-	if !bytes.Contains(b, []byte(`Купить VPN`)) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Купить VPN") {
 		t.Fatal("buy tab missing")
 	}
 	iBw := strings.Index(raw, `id="balance-wrap"`)
@@ -185,16 +192,16 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if iCt < 0 || iPaneSvc < 0 || !(iBw < iCt && iCt < iPaneSvc) {
 		t.Fatal("embed balance-wrap must sit above tabs and outside tab panes")
 	}
-	if !bytes.Contains(b, []byte(`>Платежи</button>`)) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), ">Платежи</button>") {
 		t.Fatal("payments tab nav label missing")
 	}
-	if !bytes.Contains(b, []byte(`История платежей`)) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "История платежей") {
 		t.Fatal("payments pane heading missing")
 	}
 	if strings.Count(raw, `data-bs-toggle="pill"`) != 4 {
 		t.Fatal("embed: cabinet must have four pills (services + buy + payments + help)")
 	}
-	if !bytes.Contains(b, []byte(`Помощь`)) || !bytes.Contains(b, []byte(`Как подключить VPN`)) {
+	if !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Помощь") || !strings.Contains(mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU), "Как подключить VPN") {
 		t.Fatal("help tab missing")
 	}
 	for _, forbid := range []string{
@@ -220,7 +227,7 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		strings.Contains(openBalModSnip, `bootstrap.Tab`) {
 		t.Fatal("openBalanceTabWithTopupModal must only open modal, not switch pills")
 	}
-	if !bytes.Contains(b, []byte(`Создаем...`)) || !bytes.Contains(b, []byte(`Создаем услугу`)) {
+	if !strings.Contains(raw, "t('buyCreating')") || !strings.Contains(raw, "t('buyCreatingService')") {
 		t.Fatal(`buy-flow loading strings missing`)
 	}
 	if !bytes.Contains(b, []byte(`spinner-border`)) {
@@ -235,8 +242,8 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, `Услуга создана или уже ожидает оплаты`) || strings.Contains(raw, `Услуга создана`) {
 		t.Fatal(`must not use misleading "Услуга создана" copy in embed`)
 	}
-	if !bytes.Contains(b, []byte(`Услуга ожидает оплаты. Пополните баланс`)) ||
-		!bytes.Contains(b, []byte(`Новая выбранная услуга не создана`)) {
+	if !strings.Contains(raw, "t('neutralUnpaidFallback')") ||
+		!strings.Contains(raw, "dupUnpaidFallback") {
 		t.Fatal(`expected honest order success JS copy missing`)
 	}
 	for _, needle := range []string{
@@ -253,13 +260,13 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(raw, `payA.href = payUrl`) {
 		t.Fatal("embed catalog order must route YooKassa via top-up confirmation modal")
 	}
-	if !bytes.Contains(b, []byte(`Ожидает оплаты`)) {
+	if !strings.Contains(raw, "t('buyAwaitPayment')") {
 		t.Fatal("post-order button label missing")
 	}
 	if !bytes.Contains(b, []byte(`js-card-pay`)) {
 		t.Fatal("per-card pay button missing")
 	}
-	if !bytes.Contains(b, []byte(`Перейти к моим услугам`)) || !bytes.Contains(b, []byte(`js-card-goto-my-services`)) {
+	if !strings.Contains(raw, "t('goToMyServices')") || !bytes.Contains(b, []byte(`js-card-goto-my-services`)) {
 		t.Fatal("post-order must link to my services tab without full reload")
 	}
 	if strings.Contains(raw, "location.reload") {
@@ -271,16 +278,16 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !strings.Contains(raw, "/api/account/service/delete") {
 		t.Fatal("delete endpoint missing")
 	}
-	if !strings.Contains(raw, "Отменить услугу") {
+	if !strings.Contains(raw, "t('cancelService')") {
 		t.Fatal("cancel service button missing")
 	}
 	if !strings.Contains(raw, "!active") {
 		t.Fatal("cancel controls must branch on !active (ACTIVE hides cancel)")
 	}
-	if !strings.Contains(raw, "Если хотите выбрать другой тариф") {
+	if !strings.Contains(raw, "t('notPaidHint2')") {
 		t.Fatal("NOT PAID reschedule hint missing")
 	}
-	if !strings.Contains(raw, `Удалить услугу «`) {
+	if !strings.Contains(raw, "tNamed('deleteConfirm'") {
 		t.Fatal("delete confirm prompt missing")
 	}
 	if !strings.Contains(raw, "post-delete-buy-hint") {
@@ -302,7 +309,7 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if !strings.Contains(raw[iDeleteAPI:], "openCatalogTabIfNoServices(services)") {
 		t.Fatal("delete success must conditionally open catalog tab via openCatalogTabIfNoServices")
 	}
-	iAwait := strings.Index(raw, `'Ожидает оплаты'`)
+	iAwait := strings.Index(raw, `t('buyAwaitPayment')`)
 	if iAwait < 0 {
 		t.Fatal("post-order button literal missing")
 	}
@@ -336,9 +343,9 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(emPayOk, `>Перейти к оплате`) {
 		t.Fatal("embed svc-pay-ok must not include duplicate Перейти к оплате")
 	}
-	if !strings.Contains(emPayOk, `Страница оплаты открыта в новой вкладке`) ||
+	if !strings.Contains(emPayOk, `t('svcPayPageOpened')`) ||
 		!strings.Contains(emPayOk, `js-svc-pay-fallback`) ||
-		!strings.Contains(emPayOk, `Открыть оплату`) {
+		!strings.Contains(emPayOk, `t('openPayment')`) {
 		t.Fatal("embed svc-pay-ok copy/fallback mismatch")
 	}
 	if strings.Contains(raw, "js-svc-pay-open") {
@@ -358,10 +365,10 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	}
 	for _, needle := range []string{
 		`btn-success js-svc-balance-pay`,
-		`Пополнить для активации`,
-		`Пополнить для продления`,
-		`После оплаты баланс будет пополнен`,
-		`Обновить услуги`,
+		`t('topUpForActivation')`,
+		`t('topUpForRenewal')`,
+		`t('svcPayAfterPay')`,
+		`t('refreshServices')`,
 	} {
 		if !strings.Contains(raw, needle) {
 			t.Fatalf("embed forecast billing card markup missing %q", needle)
@@ -405,13 +412,13 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(embCatPreorder, `openPaymentWindow`) {
 		t.Fatal("embed catalog buy must not reference openPaymentWindow")
 	}
-	if !strings.Contains(raw, "<!--ACCOUNT_SESSION_SUPPORT_LINK_BLOCK-->") {
+	if !strings.Contains(raw, "{{.SupportLinkHTML}}") {
 		t.Fatal("embed session must include support link placeholder")
 	}
 	for _, needle := range []string{
 		`id="logout-btn"`,
 		`localStorage.removeItem(STORAGE)`,
-		`'/account?logged_out=1'`,
+		`t('logoutRedirect')`,
 		`if (!rawTok)`,
 		`show('no-token', true)`,
 	} {

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	accountTokenTypAccount       = "account"
+	accountTokenTypAccount      = "account"
 	accountTokenTypSignup       = "account_signup"
 	accountTokenTypTelegramLink = "account_telegram_link"
 	accountTokenTypLinkEmail    = "account_link_email"
