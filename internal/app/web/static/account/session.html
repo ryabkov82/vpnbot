@@ -460,6 +460,9 @@
 						var monthlyHtml = monthlyTxt
 							? '<div class="small text-secondary">' + escapeHtml(monthlyTxt) + '</div>'
 							: '';
+						var catalogPeriodMetaHtml = (acfg.lang === 'en')
+							? ''
+							: '<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>';
 						var catCls = String(s.tier || '') === 'premium'
 							? 'card rounded-3 border border-primary border-opacity-25 bg-body-secondary tariff-order-card h-100'
 							: 'card rounded-3 border border-secondary bg-body-secondary tariff-order-card h-100';
@@ -471,7 +474,7 @@
 							premTariffHint +
 							'<div class="small text-secondary mt-2 mb-3 flex-grow-1" style="white-space:pre-wrap">' + descEsc + '</div>' +
 							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-auto">' +
-							'<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>' +
+							catalogPeriodMetaHtml +
 							'<div><div class="fw-bold">' + escapeHtml(priceMain) + '</div>' + monthlyHtml + '</div>' +
 							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">' + t('buyBtn') + '</button>' +
 							'</div>' +

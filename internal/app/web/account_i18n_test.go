@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
+	"github.com/ryabkov82/vpnbot/internal/models"
 )
 
 func mustRenderAccountLoginHTML(t *testing.T, cfg *config.Config, locale accountLocale) string {
@@ -313,6 +315,84 @@ func TestRenderedAccountSession_EN_TopupModal(t *testing.T) {
 		if strings.Contains(html, forbid) {
 			t.Fatalf("EN top-up modal must not contain %q", forbid)
 		}
+	}
+}
+
+func TestRenderedAccountSession_EN_CatalogCardNoPeriodMeta(t *testing.T) {
+	html := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleEN)
+	if !strings.Contains(html, "catalogPeriodMetaHtml") ||
+		!strings.Contains(html, "acfg.lang === 'en'") {
+		t.Fatal("EN catalog must skip period meta row when lang is en")
+	}
+	iCat := strings.Index(html, "function loadAccountCatalog")
+	if iCat < 0 {
+		t.Fatal("loadAccountCatalog missing")
+	}
+	catBlock := html[iCat:]
+	if iEnd := strings.Index(catBlock, "function attachConnect"); iEnd > 0 {
+		catBlock = catBlock[:iEnd]
+	}
+	if !strings.Contains(catBlock, "catalogPeriodMetaHtml +") {
+		t.Fatal("EN catalog card layout must use catalogPeriodMetaHtml")
+	}
+	for _, needle := range []string{
+		`"catalogMonthsSuffix":" mo."`,
+		"display_amount_text",
+		"display_monthly_text",
+	} {
+		if !strings.Contains(html, needle) {
+			t.Fatalf("EN session missing %q", needle)
+		}
+	}
+	for _, forbid := range []string{"1 mo.", "3 mo.", "6 mo.", "12 mo."} {
+		if strings.Contains(html, forbid) {
+			t.Fatalf("EN session must not contain static period meta %q", forbid)
+		}
+	}
+}
+
+func TestRenderedAccountSession_EN_CatalogAPIStillShowsTitlesAndUSD(t *testing.T) {
+	cfg := orderStartTestCfg()
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 1, "lg", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{
+		shmServices: []models.Service{
+			serviceWithPricing(3, "1 месяц", 150, 1, 200),
+			serviceWithPricing(4, "3 месяца", 450, 3, 500),
+		},
+	}
+	rec := httptest.NewRecorder()
+	serveAccountCatalogServices(cfg, st).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/account/catalog/services?token="+tok+"&lang=en", nil))
+	var out publicServicesListJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	want := map[int]struct{ name, price, monthly string }{
+		3: {"1 month", "$2", "$2/mo"},
+		4: {"3 months", "$5", "$1.67/mo"},
+	}
+	for _, svc := range out.Services {
+		w, ok := want[svc.ServiceID]
+		if !ok {
+			continue
+		}
+		if svc.Name != w.name || svc.DisplayAmountText != w.price || svc.DisplayMonthlyText != w.monthly {
+			t.Fatalf("service %d: %#v want %#v", svc.ServiceID, svc, w)
+		}
+	}
+}
+
+func TestRenderedAccountSession_RU_CatalogCardKeepsPeriodMeta(t *testing.T) {
+	html := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
+	if !strings.Contains(html, "catalogPeriodMetaHtml") ||
+		!strings.Contains(html, "catalogMonthsLabel(Number(s.period))") {
+		t.Fatal("RU catalog must keep period meta rendering")
+	}
+	if !strings.Contains(html, `"catalogMonthsSuffix":" мес."`) {
+		t.Fatal("RU catalog months suffix missing")
 	}
 }
 
