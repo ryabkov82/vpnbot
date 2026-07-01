@@ -603,38 +603,39 @@ func buildAccountTopupPaymentMethodsHTML(i accountI18n, locale accountLocale) te
 	if strings.TrimSpace(i.TopUpCurrencyNote) != "" {
 		note = fmt.Sprintf(`<div class="small text-secondary mt-2 mb-0">%s</div>`, template.HTMLEscapeString(i.TopUpCurrencyNote))
 	}
-	cryptoFirst := locale == accountLocaleEN
-	yooChecked := " checked"
+	cryptoOnly := locale == accountLocaleEN
 	cryptoChecked := ""
-	if cryptoFirst {
-		yooChecked = ""
+	yooChecked := " checked"
+	if cryptoOnly {
 		cryptoChecked = " checked"
+		yooChecked = ""
 	}
-	cryptoBlock := fmt.Sprintf(`<div class="col-12 col-sm-6">
+	cryptoBlock := fmt.Sprintf(`<div class="col-12%s">
 									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
 										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="cryptocloud"%s>
 										<span class="fw-semibold">%s</span>
 										<span class="d-block small text-secondary mt-1">%s</span>
 									</label>
 								</div>`,
+		map[bool]string{true: "", false: " col-sm-6"}[cryptoOnly],
 		cryptoChecked,
 		template.HTMLEscapeString(i.PaymentMethodCrypto),
 		template.HTMLEscapeString(i.PaymentMethodCryptoDesc),
 	)
-	yooBlock := fmt.Sprintf(`<div class="col-12 col-sm-6">
+	methodCols := cryptoBlock
+	if !cryptoOnly {
+		yooBlock := fmt.Sprintf(`<div class="col-12 col-sm-6">
 									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
 										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="yookassa"%s>
 										<span class="fw-semibold">%s</span>
 										<span class="d-block small text-secondary mt-1">%s</span>
 									</label>
 								</div>`,
-		yooChecked,
-		template.HTMLEscapeString(i.PaymentMethodCard),
-		template.HTMLEscapeString(i.PaymentMethodCardDesc),
-	)
-	methodCols := yooBlock + cryptoBlock
-	if cryptoFirst {
-		methodCols = cryptoBlock + yooBlock
+			yooChecked,
+			template.HTMLEscapeString(i.PaymentMethodCard),
+			template.HTMLEscapeString(i.PaymentMethodCardDesc),
+		)
+		methodCols = yooBlock + cryptoBlock
 	}
 	block := fmt.Sprintf(`<div class="mb-3" id="topup-payment-methods" role="radiogroup" aria-label="%s">
 							<div class="small text-secondary mb-2">%s</div>

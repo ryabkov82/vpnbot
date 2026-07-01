@@ -455,7 +455,7 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 	if strings.Contains(topSubmitSnip, `pendingDirectPaymentUrl`) {
 		t.Fatal("topup-submit must only create payment via /balance/topup, not prepared direct URL")
 	}
-	iRawTop := strings.Index(topSubmitSnip, `String(customIn.value`)
+	iRawTop := strings.Index(topSubmitSnip, `parseTopupAmountInput(customIn.value)`)
 	iFetchTop := strings.Index(topSubmitSnip, `var topupEndpoint = selectedTopupBalanceURL()`)
 	if iRawTop < 0 || iFetchTop < 0 || iRawTop >= iFetchTop {
 		t.Fatal("topup-submit must read #topup-custom before POST /balance/topup")

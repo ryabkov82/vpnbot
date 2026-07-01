@@ -184,7 +184,11 @@
 						</div>
 						<div class="mb-3">
 							<label for="topup-custom" class="form-label">{{.I18n.TopUpCustomLabel}}</label>
+							{{if eq .Locale "en"}}
+							<input type="text" inputmode="decimal" lang="en" class="form-control" id="topup-custom" placeholder="{{.I18n.TopUpCustomPlaceholder}}" autocomplete="off">
+							{{else}}
 							<input type="number" class="form-control" id="topup-custom" min="50" max="10000" step="0.01" placeholder="{{.I18n.TopUpCustomPlaceholder}}">
+							{{end}}
 							<div id="topup-forecast-hint" class="form-text text-secondary small d-none">{{.I18n.TopUpForecastHint}}</div>
 						</div>
 						<div class="alert alert-danger py-2 small d-none" id="topup-modal-err"></div>
@@ -335,6 +339,34 @@
 			var cfg = window.VFF_ACCOUNT || {};
 			var cur = cfg.currencyDisplay || '₽';
 			return fmtMoney(n) + ' ' + cur;
+		}
+
+		function formatTopupAmountInput(n) {
+			if (typeof n !== 'number' || !isFinite(n)) {
+				return '';
+			}
+			var v = Math.round(n * 100) / 100;
+			var cfg = window.VFF_ACCOUNT || {};
+			if (cfg.lang === 'en') {
+				if (Math.abs(v - Math.round(v)) < 1e-9) {
+					return String(Math.round(v));
+				}
+				return v.toFixed(2);
+			}
+			return String(v);
+		}
+
+		function parseTopupAmountInput(raw) {
+			var s = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
+			return parseFloat(s);
+		}
+
+		function setTopupCustomAmount(amt) {
+			var customIn = document.getElementById('topup-custom');
+			if (!customIn || typeof amt !== 'number' || !isFinite(amt)) {
+				return;
+			}
+			customIn.value = formatTopupAmountInput(amt);
 		}
 
 		function catalogMonthsLabel(v) {
@@ -647,7 +679,7 @@
 				amt = 10000;
 			}
 			amt = Math.round(amt * 100) / 100;
-			customIn.value = String(amt);
+			setTopupCustomAmount(amt);
 			hintEl.classList.remove('d-none');
 		}
 
@@ -684,7 +716,10 @@
 			}
 			document.querySelectorAll('.amt-quick').forEach(function (b) {
 				b.addEventListener('click', function () {
-					customIn.value = b.getAttribute('data-amt');
+					var presetAmt = parseFloat(b.getAttribute('data-amt'));
+					if (!isNaN(presetAmt)) {
+						setTopupCustomAmount(presetAmt);
+					}
 					var qh = document.getElementById('topup-forecast-hint');
 					if (qh) {
 						qh.classList.add('d-none');
@@ -696,8 +731,7 @@
 				});
 			});
 			document.getElementById('topup-submit').addEventListener('click', function () {
-				var raw = String(customIn.value || '').trim().replace(',', '.');
-				var amt = parseFloat(raw);
+				var amt = parseTopupAmountInput(customIn.value);
 				var errEl = document.getElementById('topup-modal-err');
 				errEl.classList.add('d-none');
 				if (isNaN(amt) || !svcTopupAmountUsable(amt)) {
@@ -1133,8 +1167,7 @@
 			}
 			var ciAmt = document.getElementById('topup-custom');
 			if (ciAmt && typeof amtOrder === 'number' && isFinite(amtOrder) && amtOrder > 0) {
-				var normalizedOrderAmt = Math.round(amtOrder * 100) / 100;
-				ciAmt.value = String(normalizedOrderAmt);
+				setTopupCustomAmount(Math.round(amtOrder * 100) / 100);
 			}
 			suppressNextTopupForecastApply = true;
 			openBalanceTabWithTopupModal();

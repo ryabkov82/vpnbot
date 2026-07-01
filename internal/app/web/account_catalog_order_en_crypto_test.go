@@ -130,13 +130,28 @@ func TestRenderedAccountSession_EN_DefaultCryptoPaymentMethod(t *testing.T) {
 	if !strings.Contains(raw, `name="topup-payment-method" value="cryptocloud" checked`) {
 		t.Fatal("EN session must default to cryptocloud payment method")
 	}
-	if strings.Contains(raw, `name="topup-payment-method" value="yookassa" checked`) {
-		t.Fatal("EN session must not default to yookassa")
+	if strings.Contains(raw, `value="yookassa"`) {
+		t.Fatal("EN session must not include yookassa payment method")
 	}
-	idxCrypto := strings.Index(raw, `value="cryptocloud"`)
-	idxYoo := strings.Index(raw, `value="yookassa"`)
-	if idxCrypto < 0 || idxYoo < 0 || idxCrypto > idxYoo {
-		t.Fatal("EN session must list cryptocloud before yookassa")
+	for _, needle := range []string{
+		"Cryptocurrency",
+		"/api/account/balance/topup/cryptocloud",
+		"cfg.lang === 'en'",
+		"formatTopupAmountInput",
+		"setTopupCustomAmount",
+		"parseTopupAmountInput",
+	} {
+		if !strings.Contains(raw, needle) {
+			t.Fatalf("EN session missing %q", needle)
+		}
+	}
+	for _, forbid := range []string{
+		"Bank card",
+		"Card payment via the current payment gateway",
+	} {
+		if strings.Contains(raw, forbid) {
+			t.Fatalf("EN session must not contain %q", forbid)
+		}
 	}
 }
 

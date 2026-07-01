@@ -125,7 +125,7 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 	if strings.Contains(tsSnip, `pendingDirectPaymentUrl`) {
 		t.Fatal("embed topup-submit must only use /balance/topup")
 	}
-	iRawEmbed := strings.Index(tsSnip, `String(customIn.value`)
+	iRawEmbed := strings.Index(tsSnip, `parseTopupAmountInput(customIn.value)`)
 	tsF := strings.Index(tsSnip, `var topupEndpoint = selectedTopupBalanceURL()`)
 	if iRawEmbed < 0 || tsF < 0 || iRawEmbed >= tsF {
 		t.Fatal("embed topup-submit must read amount input before POST /balance/topup")

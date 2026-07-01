@@ -48,6 +48,10 @@ const accountTopupPaymentEndpointJSStub = `		function selectedTopupBalanceURL() 
 		}`
 
 const accountTopupPaymentEndpointJS = `		function selectedTopupBalanceURL() {
+			var cfg = window.VFF_ACCOUNT || {};
+			if (cfg.lang === 'en') {
+				return '/api/account/balance/topup/cryptocloud';
+			}
 			var picked = document.querySelector('input[name="topup-payment-method"]:checked');
 			var method = picked ? String(picked.value || '').trim() : '';
 			if (method === 'cryptocloud') {

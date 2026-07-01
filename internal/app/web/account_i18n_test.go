@@ -217,8 +217,8 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 		">Buy VPN</button>",
 		">Payments</button>",
 		">Help</button>",
-		"Bank card",
 		"Cryptocurrency",
+		"/api/account/balance/topup/cryptocloud",
 		"Top up internal balance",
 		"150 (≈ $2)",
 		"300 (≈ $4)",
@@ -239,6 +239,8 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 	for _, forbid := range []string{
 		"150 RUB",
 		"300 RUB",
+		"Bank card",
+		"Card payment via the current payment gateway",
 		"bypass", "unblock", "no limits", "unrestricted",
 		"invisible", "hide everything", "restricted networks",
 	} {
@@ -261,6 +263,12 @@ func TestRenderedAccountSession_RU_TopupModalUnchanged(t *testing.T) {
 		"150 ₽",
 		"300 ₽",
 		"50–10 000 ₽",
+		`name="topup-payment-method" value="yookassa" checked`,
+		`name="topup-payment-method" value="cryptocloud"`,
+		"Банковская карта",
+		"Криптовалюта",
+		`id="topup-custom" min="50" max="10000" step="0.01"`,
+		`type="number"`,
 	} {
 		if !strings.Contains(html, needle) {
 			t.Fatalf("RU session missing %q", needle)
@@ -272,17 +280,36 @@ func TestRenderedAccountSession_EN_TopupModal(t *testing.T) {
 	html := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleEN)
 	for _, needle := range []string{
 		"Top up internal balance",
+		`id="topup-custom"`,
+		`type="text"`,
+		`inputmode="decimal"`,
+		`lang="en"`,
 		`data-amt="150">150 (≈ $2)<`,
 		`data-amt="300">300 (≈ $4)<`,
-		`data-amt="450">450 (≈ $6)<`,
-		`data-amt="600">600 (≈ $8)<`,
 		"Custom internal amount: 50–10,000",
+		"function formatTopupAmountInput",
+		"function setTopupCustomAmount",
+		"function parseTopupAmountInput",
+		"setTopupCustomAmount(amt)",
+		"setTopupCustomAmount(presetAmt)",
+		"setTopupCustomAmount(Math.round(amtOrder * 100) / 100)",
+		"parseTopupAmountInput(customIn.value)",
 	} {
 		if !strings.Contains(html, needle) {
 			t.Fatalf("EN top-up modal missing %q", needle)
 		}
 	}
-	for _, forbid := range []string{"150 RUB", "300 RUB", "450 RUB", "600 RUB"} {
+	for _, forbid := range []string{
+		"150 RUB",
+		"300 RUB",
+		"450 RUB",
+		"600 RUB",
+		`id="topup-custom" min="50"`,
+		`customIn.value = b.getAttribute('data-amt')`,
+		`customIn.value = String(`,
+		`ciAmt.value = formatTopupAmountInput`,
+		`customIn.value = fmtMoney`,
+	} {
 		if strings.Contains(html, forbid) {
 			t.Fatalf("EN top-up modal must not contain %q", forbid)
 		}

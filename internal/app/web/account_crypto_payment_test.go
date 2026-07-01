@@ -43,6 +43,7 @@ func TestServeAccountBalanceTopupCrypto_SuccessPaymentURL(t *testing.T) {
 
 func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
 	ru := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
+	en := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleEN)
 	for _, needle := range []string{
 		`id="topup-payment-methods"`,
 		`name="topup-payment-method" value="yookassa" checked`,
@@ -67,5 +68,14 @@ func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
 		if strings.Contains(strings.ToLower(ru), forbid) {
 			t.Fatalf("rendered session contains risky copy %q", forbid)
 		}
+	}
+	if strings.Contains(en, "Bank card") || strings.Contains(en, "Card payment via the current payment gateway") {
+		t.Fatal("EN session must not show bank card payment method")
+	}
+	if !strings.Contains(en, "Cryptocurrency") || !strings.Contains(en, "/api/account/balance/topup/cryptocloud") {
+		t.Fatal("EN session must show crypto-only top-up flow")
+	}
+	if strings.Contains(en, `value="yookassa"`) {
+		t.Fatal("EN session must not include yookassa radio")
 	}
 }
