@@ -42,7 +42,7 @@ func TestServeAccountBalanceTopupCrypto_SuccessPaymentURL(t *testing.T) {
 }
 
 func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
-	raw := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
+	ru := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
 	for _, needle := range []string{
 		`id="topup-payment-methods"`,
 		`name="topup-payment-method" value="yookassa" checked`,
@@ -57,14 +57,14 @@ func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
 		`var topupEndpoint = selectedTopupBalanceURL()`,
 		`non_json_response`,
 		`topup non-json response`,
-		`Не удалось создать счет Trybit`,
+		`Не удалось создать ссылку на крипто-оплату`,
 	} {
-		if !strings.Contains(raw, needle) {
-			t.Fatalf("rendered session missing %q", needle)
+		if !strings.Contains(ru, needle) {
+			t.Fatalf("rendered RU session missing %q", needle)
 		}
 	}
 	for _, forbid := range []string{"аноним", "обход блокировок", "без ограничений"} {
-		if strings.Contains(strings.ToLower(raw), forbid) {
+		if strings.Contains(strings.ToLower(ru), forbid) {
 			t.Fatalf("rendered session contains risky copy %q", forbid)
 		}
 	}

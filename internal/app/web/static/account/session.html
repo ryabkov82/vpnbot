@@ -234,6 +234,7 @@
 				delete_failed: 'errDeleteFailed',
 				service_not_found: 'errServiceNotFound',
 				order_failed: 'errOrderFailed',
+				crypto_payment_url_failed: 'cryptoPaymentLinkFailed',
 				non_json_response: 'errNonJSONResponse'
 			};
 			if (code && map[code]) return t(map[code]);
@@ -501,10 +502,9 @@
 										rn = String(y.j.returned_service_name).trim();
 									}
 									if (!rn) { rn = t('catalogPlanFallback'); }
+									var isENAccount = (window.VFF_ACCOUNT || {}).lang === 'en';
 									var serverMsg = (y.j && y.j.message) ? String(y.j.message).trim() : '';
-									if ((window.VFF_ACCOUNT || {}).lang !== 'ru') {
-										serverMsg = '';
-									}
+									var paymentUrl = (y.j && y.j.payment_url) ? String(y.j.payment_url).trim() : '';
 									var dupMsgFallback = tNamed('dupUnpaidFallback', { name: rn });
 									var neutralMsgFallback = t('neutralUnpaidFallback');
 									var orderMsg = serverMsg || ((y.j && y.j.existing_unpaid === true) ? dupMsgFallback : neutralMsgFallback);
@@ -519,6 +519,16 @@
 										var cardsEl = document.getElementById('cards');
 										if (cardsEl) {
 											cardsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+										}
+										if (isENAccount && paymentUrl && typeof orderAmtNum === 'number' && isFinite(orderAmtNum) && orderAmtNum > 0) {
+											hideOrderSuccessHint();
+											var orderPayWin = openPaymentWindow();
+											if (navigatePaymentWindow(orderPayWin, paymentUrl)) {
+												showOrderSuccessHint(orderMsg);
+											} else {
+												showOrderSuccessHint(orderMsg);
+											}
+											return;
 										}
 										if (typeof orderAmtNum === 'number' && isFinite(orderAmtNum) && orderAmtNum > 0) {
 											hideOrderSuccessHint();

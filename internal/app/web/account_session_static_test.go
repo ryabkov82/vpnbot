@@ -307,8 +307,13 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 		t.Fatal("successful order must refresh snapshot then open services tab")
 	}
 	if !strings.Contains(orderOkFragment, "orderAmtNum > 0") ||
-		!strings.Contains(orderOkFragment, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") {
-		t.Fatal("catalog order with positive amount must open top-up modal only when amount > 0")
+		(!strings.Contains(orderOkFragment, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") &&
+			!strings.Contains(orderOkFragment, "isENAccount && paymentUrl")) {
+		t.Fatal("catalog order with positive amount must open top-up modal for RU or crypto payment for EN")
+	}
+	if !strings.Contains(orderOkFragment, "isENAccount") || !strings.Contains(orderOkFragment, "paymentUrl") ||
+		!strings.Contains(orderOkFragment, "navigatePaymentWindow(orderPayWin, paymentUrl)") {
+		t.Fatal("catalog order EN path must open crypto payment URL from order response")
 	}
 	if !strings.Contains(orderOkFragment, "showOrderSuccessHint(orderMsg)") {
 		t.Fatal("catalog order without top-up amount must show order-success hint on services tab")

@@ -106,7 +106,7 @@ func renderedAccountSessionPageHTML(cfg *config.Config, locale accountLocale, r 
 		LangENActive:            locale == accountLocaleEN,
 		NoTokenLoginURL:         accountNoTokenLoginURL(locale),
 		SupportLinkHTML:         buildAccountSessionSupportLinkHTML(cfg, i18n),
-		TopupPaymentMethodsHTML: buildAccountTopupPaymentMethodsHTML(i18n),
+		TopupPaymentMethodsHTML: buildAccountTopupPaymentMethodsHTML(i18n, locale),
 		AccountConfigJSON:       marshalAccountJSConfig(locale),
 		I18nJSON:                marshalAccountI18nJS(i18n),
 		BalanceCurrency:         accountCurrencyDisplay(locale),

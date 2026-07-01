@@ -329,8 +329,12 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 		t.Fatal("embed successful order must refresh services and open services tab")
 	}
 	if !strings.Contains(postOrderFrag, "orderAmtNum > 0") ||
-		!strings.Contains(postOrderFrag, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") {
-		t.Fatal("embed catalog positive-amount flow must suggest top-up via standard modal when amount > 0")
+		(!strings.Contains(postOrderFrag, "openTopupModalSuggestingOrderAmount(orderAmtNum, orderMsg)") &&
+			!strings.Contains(postOrderFrag, "isENAccount && paymentUrl")) {
+		t.Fatal("embed catalog positive-amount flow must open top-up modal for RU or crypto payment for EN")
+	}
+	if !strings.Contains(postOrderFrag, "isENAccount") || !strings.Contains(postOrderFrag, "navigatePaymentWindow(orderPayWin, paymentUrl)") {
+		t.Fatal("embed EN order success must open crypto payment URL from order response")
 	}
 	idxPayOk := strings.Index(raw, `"svc-pay-ok mt-2 d-none"`)
 	if idxPayOk < 0 {

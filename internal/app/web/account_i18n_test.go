@@ -223,7 +223,7 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 		"Custom amount: 50–10,000 RUB, up to 2 decimal places",
 		"Internal balance:",
 		"Balance is maintained in RUB",
-		"Prices are shown in USD. Internal balance is maintained in RUB.",
+		"Prices are shown in USD for convenience. Internal balance is maintained in RUB. The final crypto invoice is calculated from the internal RUB amount by the payment provider.",
 		"Choose a VPN plan. We will create a payment link for the selected amount. The service will be activated after payment is completed.",
 		"Balance is shown in RUB. Crypto payment options may display available currencies on the payment provider page.",
 		`"currencyDisplay":"RUB"`,

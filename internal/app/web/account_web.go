@@ -878,16 +878,33 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 
 		orderStatus := strings.TrimSpace(order.Status)
 		existingUnpaid := strings.EqualFold(orderStatus, "NOT PAID") && order.BaseServiceID != svc.ServiceID
-		msg := accountServiceOrderPendingMessage
-		if existingUnpaid {
-			msg = accountServiceOrderExistingUnpaidMessage
-		} else if !needsTopUp {
-			msg = accountServiceOrderCreatedNoPaymentMessage
+		noPaymentNeeded := !needsTopUp
+		locale := resolveAccountLocale(r)
+
+		paymentURL := ""
+		if locale == accountLocaleEN && needsTopUp && amount > 0 {
+			baseURL := ""
+			if cfg != nil {
+				baseURL = cfg.API.BaseURL
+			}
+			var err error
+			paymentURL, err = payments.BuildCryptoCloudPaymentURL(baseURL, claims.UserID, amount, time.Now().Unix())
+			if err != nil {
+				slog.Error("account service order: BuildCryptoCloudPaymentURL", "err", err, "user_id", claims.UserID, "amount", amount)
+				writeJSONError(w, http.StatusInternalServerError, "crypto_payment_url_failed")
+				return
+			}
 		}
+
+		msg := accountServiceOrderMessage(locale, existingUnpaid, noPaymentNeeded, amount, paymentURL != "")
 
 		retName := strings.TrimSpace(order.Name)
 		if retName == "" {
-			retName = "Тариф"
+			if locale == accountLocaleEN {
+				retName = "Plan"
+			} else {
+				retName = "Тариф"
+			}
 		}
 
 		writeJSON(w, http.StatusOK, accountServiceOrderOKJSON{
@@ -896,7 +913,7 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			UserServiceID:       order.ServiceID,
 			UserServiceStatus:   orderStatus,
 			Amount:              amount,
-			PaymentURL:          "",
+			PaymentURL:          paymentURL,
 			Message:             msg,
 			ExistingUnpaid:      existingUnpaid,
 			RequestedServiceID:  req.ServiceID,

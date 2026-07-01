@@ -393,7 +393,7 @@ func accountI18nEN() accountI18n {
 		BuyNewServiceTitle:   "Buy a new service",
 		BuyNewServiceDesc:    "Choose a VPN plan. We will create a payment link for the selected amount. The service will be activated after payment is completed.",
 		PostDeleteBuyHint:    "You can now choose another plan.",
-		CatalogPricingNotice: "Prices are shown in USD. Internal balance is maintained in RUB.",
+		CatalogPricingNotice: "Prices are shown in USD for convenience. Internal balance is maintained in RUB. The final crypto invoice is calculated from the internal RUB amount by the payment provider.",
 
 		PaymentsHeading:     "Payment history",
 		PaymentsRefreshBtn:  "Refresh",
@@ -446,7 +446,8 @@ func (i accountI18n) jsMessages() map[string]string {
 		"connectNotReady":          pickJS(i, "Подключение пока недоступно", "Connection is not available yet"),
 		"topupAmountRequired":      pickJS(i, "Укажите сумму", "Enter an amount"),
 		"topupAmountInvalid":       pickJS(i, "Сумма 50–10 000 ₽, до 2 знаков после запятой", "Amount must be 50–10,000 RUB, up to 2 decimal places"),
-		"trybitInvoiceFailed":      pickJS(i, "Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.", "Failed to create a Trybit invoice. Try again later or contact support."),
+		"trybitInvoiceFailed":      pickJS(i, "Не удалось создать счет Trybit. Попробуйте позже или обратитесь в поддержку.", "Could not create a crypto payment link. Please try again or contact support."),
+		"cryptoPaymentLinkFailed":  pickJS(i, "Не удалось создать ссылку на крипто-оплату. Попробуйте позже или обратитесь в поддержку.", "Could not create a crypto payment link. Please try again or contact support."),
 		"paymentInvoiceFailed":     pickJS(i, "Не удалось создать счет на оплату. Попробуйте позже или обратитесь в поддержку.", "Failed to create a payment invoice. Try again later or contact support."),
 		"paymentLinkUnavailable":   pickJS(i, "Ссылка на оплату недоступна", "Payment link is not available"),
 		"paymentsLoading":          pickJS(i, "Загружаем платежи…", "Loading payments…"),
@@ -597,28 +598,48 @@ type accountSessionPageData struct {
 	SiteURL                 string
 }
 
-func buildAccountTopupPaymentMethodsHTML(i accountI18n) template.HTML {
+func buildAccountTopupPaymentMethodsHTML(i accountI18n, locale accountLocale) template.HTML {
 	note := ""
 	if strings.TrimSpace(i.TopUpCurrencyNote) != "" {
 		note = fmt.Sprintf(`<div class="small text-secondary mt-2 mb-0">%s</div>`, template.HTMLEscapeString(i.TopUpCurrencyNote))
 	}
+	cryptoFirst := locale == accountLocaleEN
+	yooChecked := " checked"
+	cryptoChecked := ""
+	if cryptoFirst {
+		yooChecked = ""
+		cryptoChecked = " checked"
+	}
+	cryptoBlock := fmt.Sprintf(`<div class="col-12 col-sm-6">
+									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
+										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="cryptocloud"%s>
+										<span class="fw-semibold">%s</span>
+										<span class="d-block small text-secondary mt-1">%s</span>
+									</label>
+								</div>`,
+		cryptoChecked,
+		template.HTMLEscapeString(i.PaymentMethodCrypto),
+		template.HTMLEscapeString(i.PaymentMethodCryptoDesc),
+	)
+	yooBlock := fmt.Sprintf(`<div class="col-12 col-sm-6">
+									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
+										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="yookassa"%s>
+										<span class="fw-semibold">%s</span>
+										<span class="d-block small text-secondary mt-1">%s</span>
+									</label>
+								</div>`,
+		yooChecked,
+		template.HTMLEscapeString(i.PaymentMethodCard),
+		template.HTMLEscapeString(i.PaymentMethodCardDesc),
+	)
+	methodCols := yooBlock + cryptoBlock
+	if cryptoFirst {
+		methodCols = cryptoBlock + yooBlock
+	}
 	block := fmt.Sprintf(`<div class="mb-3" id="topup-payment-methods" role="radiogroup" aria-label="%s">
 							<div class="small text-secondary mb-2">%s</div>
 							<div class="row g-2">
-								<div class="col-12 col-sm-6">
-									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
-										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="yookassa" checked>
-										<span class="fw-semibold">%s</span>
-										<span class="d-block small text-secondary mt-1">%s</span>
-									</label>
-								</div>
-								<div class="col-12 col-sm-6">
-									<label class="d-block h-100 rounded-3 border border-secondary p-3 bg-body">
-										<input class="form-check-input me-2" type="radio" name="topup-payment-method" value="cryptocloud">
-										<span class="fw-semibold">%s</span>
-										<span class="d-block small text-secondary mt-1">%s</span>
-									</label>
-								</div>
+								%s
 							</div>
 							<div class="alert alert-warning py-2 small mt-3 mb-2">%s</div>
 							<div class="small text-secondary">%s</div>
@@ -626,10 +647,7 @@ func buildAccountTopupPaymentMethodsHTML(i accountI18n) template.HTML {
 						</div>`,
 		template.HTMLEscapeString(i.PaymentMethodHeading),
 		template.HTMLEscapeString(i.PaymentMethodHeading),
-		template.HTMLEscapeString(i.PaymentMethodCard),
-		template.HTMLEscapeString(i.PaymentMethodCardDesc),
-		template.HTMLEscapeString(i.PaymentMethodCrypto),
-		template.HTMLEscapeString(i.PaymentMethodCryptoDesc),
+		methodCols,
 		template.HTMLEscapeString(i.PaymentMethodTrybitWarn),
 		i.PaymentMethodSupport,
 		note,
