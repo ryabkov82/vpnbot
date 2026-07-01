@@ -24,6 +24,16 @@ type publicServiceJSON struct {
 	Tier        string   `json:"tier"`
 	ConnectApp  string   `json:"connect_app"`
 	Badges      []string `json:"badges"`
+
+	PublicCode               string  `json:"public_code,omitempty"`
+	ActualCurrency           string  `json:"actual_currency"`
+	ActualAmount             float64 `json:"actual_amount"`
+	InternationalEnabled     bool    `json:"international_enabled"`
+	InternationalCurrency    string  `json:"international_currency,omitempty"`
+	InternationalAmountCents int64   `json:"international_amount_cents,omitempty"`
+	DisplayCurrency          string  `json:"display_currency"`
+	DisplayAmountText        string  `json:"display_amount_text"`
+	DisplayMonthlyText       string  `json:"display_monthly_text,omitempty"`
 }
 
 type publicServicesListJSON struct {
@@ -31,7 +41,7 @@ type publicServicesListJSON struct {
 }
 
 // buildPublicServiceRowsFromList — публичные поля тарифов (BuildServicePreview), trial из cfg исключается.
-func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service) []publicServiceJSON {
+func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service, locale accountLocale) []publicServiceJSON {
 	trialID := 0
 	if cfg != nil && cfg.Features.Trial.Enabled && cfg.Features.Trial.BaseServiceID > 0 {
 		trialID = cfg.Features.Trial.BaseServiceID
@@ -44,24 +54,33 @@ func buildPublicServiceRowsFromList(cfg *config.Config, list []models.Service) [
 			continue
 		}
 		preview := models.BuildServicePreview(s)
-		name := strings.TrimSpace(preview.Title)
+		catLocale := models.CatalogLocaleRU
+		fallbackName := "Тариф"
+		if locale == accountLocaleEN {
+			catLocale = models.CatalogLocaleEN
+			fallbackName = "Plan"
+		}
+		title, description := models.BuildCatalogServiceTexts(s, catLocale)
+		name := strings.TrimSpace(title)
 		if name == "" {
-			name = "Тариф"
+			name = fallbackName
 		}
 		tier, conn, badges := tierConnectBadgesFromCatalog(cfg, s)
 		if badges == nil {
 			badges = []string{}
 		}
-		out = append(out, publicServiceJSON{
+		row := publicServiceJSON{
 			ServiceID:   s.ServiceID,
 			Name:        name,
 			Cost:        preview.Cost,
 			Period:      float64(s.Period),
-			Description: preview.Description,
+			Description: description,
 			Tier:        tier,
 			ConnectApp:  conn,
 			Badges:      badges,
-		})
+		}
+		applyPublicServicePricing(&row, s, preview.Cost, locale)
+		out = append(out, row)
 	}
 	sortPublicTariffRowsPremiumLast(out)
 	return out
@@ -113,7 +132,7 @@ func servePublicServices(cfg *config.Config, app publicServicesApp) http.Handler
 			return
 		}
 
-		out := buildPublicServiceRowsFromList(cfg, list)
+		out := buildPublicServiceRowsFromList(cfg, list, accountLocaleRU)
 
 		writeJSON(w, http.StatusOK, publicServicesListJSON{Services: out})
 	}

@@ -80,9 +80,10 @@ type accountI18n struct {
 	DashboardTitle string
 
 	// Buy tab
-	BuyNewServiceTitle string
-	BuyNewServiceDesc  string
-	PostDeleteBuyHint  string
+	BuyNewServiceTitle   string
+	BuyNewServiceDesc    string
+	PostDeleteBuyHint    string
+	CatalogPricingNotice string
 
 	// Payments tab
 	PaymentsHeading     string
@@ -373,8 +374,8 @@ func accountI18nEN() accountI18n {
 		SessionInvalidLink:       "This sign-in link is invalid or expired.",
 		SessionInvalidLinkAction: "Request a new sign-in link",
 
-		BalanceLabel:        "Balance:",
-		BalanceExplainer:    "Balance is used for payments and automatic service renewal.",
+		BalanceLabel:        "Internal balance:",
+		BalanceExplainer:    "Balance is maintained in RUB and used for payments and automatic service renewal.",
 		TopUpBalanceBtn:     "Top up balance",
 		TopUpResultHeading:  "The payment page opened in a new tab.",
 		TopUpResultDetail:   "After payment, return to your account and refresh the balance. It should update within 1–2 minutes.",
@@ -389,9 +390,10 @@ func accountI18nEN() accountI18n {
 
 		DashboardTitle: "Account",
 
-		BuyNewServiceTitle: "Buy a new service",
-		BuyNewServiceDesc:  "Choose a plan below. Payment can be made by link; the balance will be topped up for the selected amount, and the unpaid service will activate when there are enough funds.",
-		PostDeleteBuyHint:  "You can now choose another plan.",
+		BuyNewServiceTitle:   "Buy a new service",
+		BuyNewServiceDesc:    "Choose a VPN plan. We will create a payment link for the selected amount. The service will be activated after payment is completed.",
+		PostDeleteBuyHint:    "You can now choose another plan.",
+		CatalogPricingNotice: "Prices are shown in USD. Internal balance is maintained in RUB.",
 
 		PaymentsHeading:     "Payment history",
 		PaymentsRefreshBtn:  "Refresh",

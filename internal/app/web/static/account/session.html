@@ -130,6 +130,9 @@
 						<div id="post-delete-buy-hint" class="alert alert-info py-2 small d-none mb-2" role="status">{{.I18n.PostDeleteBuyHint}}</div>
 						<h2 class="h6 fw-semibold mb-2">{{.I18n.BuyNewServiceTitle}}</h2>
 						<p class="small text-secondary mb-2">{{.I18n.BuyNewServiceDesc}}</p>
+						{{if eq .Locale "en"}}
+						<p class="small text-secondary mb-2">{{.I18n.CatalogPricingNotice}}</p>
+						{{end}}
 						<div class="alert alert-danger py-2 small d-none mb-3" id="catalog-err-box" role="alert"></div>
 						<p class="small text-secondary d-none mb-2" id="catalog-loading-msg"></p>
 						<div id="catalog-tariffs" class="row g-2"></div>
@@ -379,7 +382,12 @@
 			document.getElementById('catalog-loading-msg').classList.remove('d-none');
 			document.getElementById('catalog-loading-msg').textContent = t('catalogLoading');
 			document.getElementById('catalog-tariffs').innerHTML = '';
-			fetch('/api/account/catalog/services?token=' + encodeURIComponent(tok))
+			var catalogUrl = '/api/account/catalog/services?token=' + encodeURIComponent(tok);
+			var acfg = window.VFF_ACCOUNT || {};
+			if (acfg.lang === 'en') {
+				catalogUrl += '&lang=en';
+			}
+			fetch(catalogUrl)
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
 				.then(function (x) {
 					document.getElementById('catalog-loading-msg').classList.add('d-none');
@@ -411,6 +419,14 @@
 						if (isHappTariff) {
 							premTariffHint = '<p class="small text-secondary mt-2 mb-0 lh-base">' + t('premiumTariffHint') + '</p>';
 						}
+						var priceMain = String(s.display_amount_text || '').trim();
+						if (!priceMain) {
+							priceMain = fmtMoneyWithCurrency(Number(s.cost));
+						}
+						var monthlyTxt = String(s.display_monthly_text || '').trim();
+						var monthlyHtml = monthlyTxt
+							? '<div class="small text-secondary">' + escapeHtml(monthlyTxt) + '</div>'
+							: '';
 						var catCls = String(s.tier || '') === 'premium'
 							? 'card rounded-3 border border-primary border-opacity-25 bg-body-secondary tariff-order-card h-100'
 							: 'card rounded-3 border border-secondary bg-body-secondary tariff-order-card h-100';
@@ -423,7 +439,7 @@
 							'<div class="small text-secondary mt-2 mb-3 flex-grow-1" style="white-space:pre-wrap">' + descEsc + '</div>' +
 							'<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-auto">' +
 							'<div class="small text-secondary">' + escapeHtml(catalogMonthsLabel(Number(s.period))) + '</div>' +
-							'<div class="fw-bold">' + escapeHtml(fmtMoneyWithCurrency(Number(s.cost))) + '</div>' +
+							'<div><div class="fw-bold">' + escapeHtml(priceMain) + '</div>' + monthlyHtml + '</div>' +
 							'<button type="button" class="btn btn-sm btn-primary js-buy-catalog" data-service-id="' + sid + '">' + t('buyBtn') + '</button>' +
 							'</div>' +
 							'<div class="catalog-card-spinner mt-3 d-none text-secondary small align-items-center' +

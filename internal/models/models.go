@@ -72,9 +72,31 @@ type ServiceRemnawaveConfig struct {
 	Bot               ServiceBotConfig `json:"bot"`
 }
 
+// ServicePricingConfig — service.config.pricing (SHM international catalog).
+type ServicePricingConfig struct {
+	PublicCode               string `json:"public_code"`
+	InternationalEnabled     bool   `json:"international_enabled"`
+	InternationalCurrency    string `json:"international_currency"`
+	InternationalAmountCents int64  `json:"international_amount_cents"`
+}
+
+// ServiceDisplayLocaleConfig — localized title/description for catalog UI.
+type ServiceDisplayLocaleConfig struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// ServiceDisplayConfig — service.config.display (SHM localized catalog copy).
+type ServiceDisplayConfig struct {
+	RU ServiceDisplayLocaleConfig `json:"ru"`
+	EN ServiceDisplayLocaleConfig `json:"en"`
+}
+
 // ServiceConfig — service.config из ответа /shm/v1/admin/service.
 type ServiceConfig struct {
 	Remnawave ServiceRemnawaveConfig `json:"remnawave"`
+	Pricing   ServicePricingConfig   `json:"pricing"`
+	Display   ServiceDisplayConfig   `json:"display"`
 }
 
 type Service struct {

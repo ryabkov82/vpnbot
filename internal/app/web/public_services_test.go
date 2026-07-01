@@ -219,7 +219,7 @@ func TestBuildPublicServiceRowsFromList_StandardRowsBeforePremium_ThenPeriodCost
 		stdSvc(101, 1, 110),
 		premiumSvc(501, 3, 100),
 	}
-	out := buildPublicServiceRowsFromList(cfg, list)
+	out := buildPublicServiceRowsFromList(cfg, list, accountLocaleRU)
 	got := make([]int, len(out))
 	for i := range out {
 		got[i] = out[i].ServiceID

@@ -759,7 +759,8 @@ func serveAccountCatalogServices(cfg *config.Config, app accountWebApp) http.Han
 			return
 		}
 
-		out := buildPublicServiceRowsFromList(cfg, list)
+		locale := resolveAccountLocale(r)
+		out := buildPublicServiceRowsFromList(cfg, list, locale)
 		writeJSON(w, http.StatusOK, publicServicesListJSON{Services: out})
 	}
 }
