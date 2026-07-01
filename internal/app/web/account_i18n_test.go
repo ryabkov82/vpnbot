@@ -219,13 +219,16 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 		">Help</button>",
 		"Bank card",
 		"Cryptocurrency",
-		"150 RUB",
-		"Custom amount: 50–10,000 RUB, up to 2 decimal places",
+		"Top up internal balance",
+		"150 (≈ $2)",
+		"300 (≈ $4)",
+		"Custom internal amount: 50–10,000",
+		"This amount is calculated by the billing system for service payment or renewal.",
 		"Internal balance:",
 		"Balance is maintained in RUB",
 		"Prices are shown in USD for convenience. Internal balance is maintained in RUB. The final crypto invoice is calculated from the internal RUB amount by the payment provider.",
+		"Prices are shown in USD for convenience. Your internal balance is RUB-based. The crypto invoice will show the final equivalent amount on the payment provider page.",
 		"Choose a VPN plan. We will create a payment link for the selected amount. The service will be activated after payment is completed.",
-		"Balance is shown in RUB. Crypto payment options may display available currencies on the payment provider page.",
 		`"currencyDisplay":"RUB"`,
 		"Premium connection via Happ app.",
 	} {
@@ -234,6 +237,8 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 		}
 	}
 	for _, forbid := range []string{
+		"150 RUB",
+		"300 RUB",
 		"bypass", "unblock", "no limits", "unrestricted",
 		"invisible", "hide everything", "restricted networks",
 	} {
@@ -246,6 +251,41 @@ func TestRenderedAccountSession_EN(t *testing.T) {
 	}
 	if !strings.Contains(html, "RUB") && !strings.Contains(html, `"currency":"RUB"`) {
 		t.Fatal("EN session must show RUB as account currency")
+	}
+}
+
+func TestRenderedAccountSession_RU_TopupModalUnchanged(t *testing.T) {
+	html := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleRU)
+	for _, needle := range []string{
+		"Пополнение баланса",
+		"150 ₽",
+		"300 ₽",
+		"50–10 000 ₽",
+	} {
+		if !strings.Contains(html, needle) {
+			t.Fatalf("RU session missing %q", needle)
+		}
+	}
+}
+
+func TestRenderedAccountSession_EN_TopupModal(t *testing.T) {
+	html := mustRenderAccountSessionHTML(t, orderStartTestCfg(), accountLocaleEN)
+	for _, needle := range []string{
+		"Top up internal balance",
+		`data-amt="150">150 (≈ $2)<`,
+		`data-amt="300">300 (≈ $4)<`,
+		`data-amt="450">450 (≈ $6)<`,
+		`data-amt="600">600 (≈ $8)<`,
+		"Custom internal amount: 50–10,000",
+	} {
+		if !strings.Contains(html, needle) {
+			t.Fatalf("EN top-up modal missing %q", needle)
+		}
+	}
+	for _, forbid := range []string{"150 RUB", "300 RUB", "450 RUB", "600 RUB"} {
+		if strings.Contains(html, forbid) {
+			t.Fatalf("EN top-up modal must not contain %q", forbid)
+		}
 	}
 }
 
