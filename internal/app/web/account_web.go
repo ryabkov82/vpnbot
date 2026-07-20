@@ -19,6 +19,15 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
+// cfgServiceCategory — разрешённая категория услуг текущего экземпляра приложения
+// (services.category из конфига). Пустая строка = legacy-поведение без ограничения.
+func cfgServiceCategory(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.Services.Category)
+}
+
 // accountWebApp — кабинет (тесты через stub).
 type accountWebApp interface {
 	GetUserByID(userID int) (*models.User, error)
@@ -564,6 +573,11 @@ func serveAccountServiceConnect(cfg *config.Config, app accountWebApp) http.Hand
 			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}
+		// Услуга другой категории недоступна: ссылку подключения (в т.ч. Premium URL) не строим.
+		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), us.Category) {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
 
 		st := strings.TrimSpace(us.Status)
 		if !strings.EqualFold(st, "ACTIVE") {
@@ -848,6 +862,12 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			writeJSONError(w, http.StatusNotFound, "service_not_found")
 			return
 		}
+		// Защитная проверка категории перед заказом (даже если GetServiceByID уже фильтрует):
+		// услуга другой категории неотличима от отсутствующей.
+		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), svc.Category) {
+			writeJSONError(w, http.StatusNotFound, "service_not_found")
+			return
+		}
 
 		order, err := app.ServiceOrderByUserID(claims.UserID, svc.ServiceID)
 		if err != nil {
@@ -989,6 +1009,11 @@ func serveAccountServiceDelete(cfg *config.Config, app accountWebApp) http.Handl
 			return
 		}
 		if us.UserID != claims.UserID || us.ServiceID != req.UserServiceID {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		// Услуга другой категории недоступна для удаления через этот экземпляр приложения.
+		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), us.Category) {
 			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}

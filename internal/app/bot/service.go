@@ -44,6 +44,19 @@ func NewService(service *service.Service, cfg *config.Config) *Service {
 	}
 }
 
+// orderServiceCategoryAllowed — авторизационная проверка категории услуги перед заказом:
+// разрешена только категория services.category из конфига (пустая = legacy без ограничения).
+func orderServiceCategoryAllowed(cfg *config.Config, svc *models.Service) bool {
+	if svc == nil {
+		return false
+	}
+	expected := ""
+	if cfg != nil {
+		expected = cfg.Services.Category
+	}
+	return models.ServiceCategoryAllowed(expected, svc.Category)
+}
+
 func (s *Service) logoPhoto(caption string) *telebot.Photo {
 	url := s.config.Assets.LogoURL
 	if url == "" {
@@ -428,7 +441,24 @@ func (s *Service) handleServiceBuy(c telebot.Context, serviceID string) error {
 
 func (s *Service) handleServiceOrder(c telebot.Context, serviceID string) error {
 
-	_, err := s.service.ServiceOrder(c.Chat().ID, serviceID)
+	sid, err := strconv.Atoi(serviceID)
+	if err != nil {
+		return c.Send("⚠️ Некорректная услуга")
+	}
+
+	// Перед заказом убеждаемся, что услуга существует и принадлежит разрешённой категории.
+	// Услуга другой категории обрабатывается как отсутствующая.
+	svc, err := s.service.GetServiceByID(sid)
+	if err != nil || svc == nil {
+		log.Printf("handleServiceOrder: GetServiceByID %s: %v", serviceID, err)
+		return c.Send("⚠️ Услуга не найдена")
+	}
+	if !orderServiceCategoryAllowed(s.config, svc) {
+		log.Printf("handleServiceOrder: service %d category %q not allowed", svc.ServiceID, svc.Category)
+		return c.Send("⚠️ Услуга не найдена")
+	}
+
+	_, err = s.service.ServiceOrder(c.Chat().ID, serviceID)
 
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
@@ -487,10 +517,15 @@ func (s *Service) handleTrial(c telebot.Context) error {
 		return c.Send("ℹ️ Тестовая услуга уже была заказана ранее")
 	}
 
-	// Найдём тестовую услугу по ID (через сервисный слой; внутри APIClient — filter allow_to_order=1)
+	// Найдём тестовую услугу по ID (через сервисный слой; внутри APIClient — filter allow_to_order=1 и category)
 	svc, err := s.service.GetServiceByID(trialCfg.BaseServiceID)
 	if err != nil || svc == nil {
 		log.Printf("Не удалось получить тестовую услугу %d: %v", trialCfg.BaseServiceID, err)
+		return c.Send("⚠️ Тестовая услуга временно недоступна")
+	}
+	// Trial-путь не позволяет обойти проверку категории.
+	if !orderServiceCategoryAllowed(s.config, svc) {
+		log.Printf("handleTrial: trial service %d category %q not allowed", svc.ServiceID, svc.Category)
 		return c.Send("⚠️ Тестовая услуга временно недоступна")
 	}
 
@@ -1086,10 +1121,13 @@ func (s *Service) buildTrialRow(c telebot.Context, m *telebot.ReplyMarkup) (tele
 		return telebot.Row{}, false, nil
 	}
 
-	// 3) Получаем услугу (с allow_to_order=1 внутри API)
+	// 3) Получаем услугу (с allow_to_order=1 и category внутри API)
 	svc, err := s.service.GetServiceByID(trialCfg.BaseServiceID)
 	if err != nil || svc == nil || svc.Name == "" {
 		return telebot.Row{}, false, nil // услуги нет/недоступна — тихо не показываем
+	}
+	if !orderServiceCategoryAllowed(s.config, svc) {
+		return telebot.Row{}, false, nil // услуга другой категории — как отсутствующая
 	}
 
 	// 4) Готовим кнопку

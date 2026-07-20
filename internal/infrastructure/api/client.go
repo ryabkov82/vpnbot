@@ -592,8 +592,7 @@ func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
 	f := map[string]any{
 		"user_id": userID,
 	}
-	category := c.config.Services.Category
-	if category != "" {
+	if category := c.expectedServiceCategory(); category != "" {
 		f["category"] = category
 	}
 
@@ -638,6 +637,10 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 	f := map[string]any{
 		"user_service_id": serviceID,
 	}
+	expectedCategory := c.expectedServiceCategory()
+	if expectedCategory != "" {
+		f["category"] = expectedCategory
+	}
 	fb, err := json.Marshal(f)
 	if err != nil {
 		return nil, fmt.Errorf("marshal filter: %w", err)
@@ -671,6 +674,12 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 
 	if len(result.Data) > 0 {
 		us := result.Data[0]
+		// Локальная проверка категории до любых дополнительных запросов (в т.ч. Marzban-ключа):
+		// услуга другой категории обрабатывается как отсутствующая.
+		if !models.ServiceCategoryAllowed(expectedCategory, us.Category) {
+			return nil, nil
+		}
+		// Префикс vpn-mz- здесь определяет технический тип услуги (Marzban), а не авторизацию.
 		if strings.HasPrefix(us.Category, "vpn-mz-") && us.Status == "ACTIVE" {
 			userKey, err := c.GetUserKeyMarzban(us.UserID, us.ServiceID)
 			if err != nil {
@@ -763,14 +772,25 @@ func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
 	return nil
 }
 
+// expectedServiceCategory — разрешённая категория услуг из конфигурации (пустая строка = без ограничения).
+func (c *APIClient) expectedServiceCategory() string {
+	if c.config == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.config.Services.Category)
+}
+
 // internal/infrastructure/api/client.go
 func (c *APIClient) GetServiceByID(serviceID int) (*models.Service, error) {
-	// Формируем filter: {"service_id": <id>, "allow_to_order": 1}
+	// Формируем filter: {"service_id": <id>, "allow_to_order": 1, "category": <cat>}
+	// category добавляем только если задана в конфиге.
 	f := map[string]any{
 		"service_id":     serviceID,
 		"allow_to_order": 1,
-		// при необходимости можно добавить:
-		// "category": s.config.Services.Category,
+	}
+	expectedCategory := c.expectedServiceCategory()
+	if expectedCategory != "" {
+		f["category"] = expectedCategory
 	}
 	fb, err := json.Marshal(f)
 	if err != nil {
@@ -803,9 +823,15 @@ func (c *APIClient) GetServiceByID(serviceID int) (*models.Service, error) {
 		return nil, err
 	}
 	if len(out.Data) == 0 {
-		return nil, fmt.Errorf("service %d not found", serviceID)
+		return nil, fmt.Errorf("service %d not found: %w", serviceID, ErrServiceNotFound)
 	}
-	return &out.Data[0], nil
+	svc := out.Data[0]
+	// Локальная проверка категории: не доверяем только фильтру SHM.
+	// Услуга другой категории неотличима от отсутствующей.
+	if !models.ServiceCategoryAllowed(expectedCategory, svc.Category) {
+		return nil, fmt.Errorf("service %d not found: %w", serviceID, ErrServiceNotFound)
+	}
+	return &svc, nil
 }
 
 func (c *APIClient) GetServices() ([]models.Service, error) {
@@ -815,8 +841,7 @@ func (c *APIClient) GetServices() ([]models.Service, error) {
 	f := map[string]any{
 		"allow_to_order": 1,
 	}
-	category := c.config.Services.Category
-	if category != "" {
+	if category := c.expectedServiceCategory(); category != "" {
 		f["category"] = category
 	}
 	fb, err := json.Marshal(f)

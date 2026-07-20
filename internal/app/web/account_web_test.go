@@ -25,8 +25,9 @@ type stubAccountWeb struct {
 	servicesErr    error
 	single         map[int]*models.UserService
 
-	balance    *models.UserBalance
-	balanceErr error
+	balance      *models.UserBalance
+	balanceErr   error
+	balanceCalls int
 
 	pays    []models.UserPay
 	paysErr error
@@ -37,10 +38,11 @@ type stubAccountWeb struct {
 	svcByID     map[int]*models.Service
 	getSvcByErr error
 
-	serviceOrderRet *models.UserService
-	serviceOrderErr error
-	serviceOrderUID int
-	serviceOrderSID int
+	serviceOrderRet   *models.UserService
+	serviceOrderErr   error
+	serviceOrderUID   int
+	serviceOrderSID   int
+	serviceOrderCalls int
 
 	deleteCalls             int
 	deleteErr               error
@@ -94,6 +96,7 @@ func (s *stubAccountWeb) LinkWebEmailForTelegramUser(userID int, telegramChatID 
 }
 
 func (s *stubAccountWeb) GetUserBalanceByUserID(userID int) (*models.UserBalance, error) {
+	s.balanceCalls++
 	if s.balanceErr != nil {
 		return nil, s.balanceErr
 	}
@@ -155,6 +158,7 @@ func (s *stubAccountWeb) GetServiceByID(serviceID int) (*models.Service, error) 
 }
 
 func (s *stubAccountWeb) ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error) {
+	s.serviceOrderCalls++
 	s.serviceOrderUID = userID
 	s.serviceOrderSID = serviceID
 	if s.serviceOrderErr != nil {

@@ -119,6 +119,12 @@ func serveAdminWebOrderTest(cfg *config.Config, app adminWebOrderApp) http.Handl
 			writeJSONError(w, http.StatusNotFound, "service_not_found")
 			return
 		}
+		// Admin-token не даёт обойти ограничение категории текущего экземпляра приложения:
+		// проверяем до создания/поиска пользователя и до заказа.
+		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), svc.Category) {
+			writeJSONError(w, http.StatusNotFound, "service_not_found")
+			return
+		}
 
 		user, _, err := app.FindOrCreateWebUser(req.Email)
 		if err != nil {

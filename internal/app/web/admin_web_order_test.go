@@ -14,12 +14,14 @@ import (
 )
 
 type stubAdminWebOrderApp struct {
-	svc      *models.Service
-	svcErr   error
-	user     *models.User
-	userErr  error
-	order    *models.UserService
-	orderErr error
+	svc        *models.Service
+	svcErr     error
+	user       *models.User
+	userErr    error
+	userCalls  int
+	order      *models.UserService
+	orderErr   error
+	orderCalls int
 }
 
 func (s *stubAdminWebOrderApp) GetServiceByID(serviceID int) (*models.Service, error) {
@@ -30,6 +32,7 @@ func (s *stubAdminWebOrderApp) GetServiceByID(serviceID int) (*models.Service, e
 }
 
 func (s *stubAdminWebOrderApp) FindOrCreateWebUser(email string) (*models.User, bool, error) {
+	s.userCalls++
 	if s.userErr != nil {
 		return nil, false, s.userErr
 	}
@@ -37,6 +40,7 @@ func (s *stubAdminWebOrderApp) FindOrCreateWebUser(email string) (*models.User, 
 }
 
 func (s *stubAdminWebOrderApp) ServiceOrderByUserID(userID int, serviceID int) (*models.UserService, error) {
+	s.orderCalls++
 	if s.orderErr != nil {
 		return nil, s.orderErr
 	}

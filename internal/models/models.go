@@ -106,6 +106,7 @@ type Service struct {
 	Cost         float64        `json:"cost"`
 	Period       float32        `json:"period"`
 	AllowToOrder int            `json:"allow_to_order"`
+	Category     string         `json:"category"`
 	Config       *ServiceConfig `json:"config"`
 }
 
