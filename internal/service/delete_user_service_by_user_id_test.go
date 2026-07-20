@@ -11,7 +11,7 @@ import (
 )
 
 func TestDeleteUserServiceByUserID_InvalidUserID(t *testing.T) {
-	s := NewService(nil)
+	s := NewService(nil, config.BrandConfig{})
 	err := s.DeleteUserServiceByUserID(0, "5")
 	if err == nil || !strings.Contains(err.Error(), "invalid user id") {
 		t.Fatalf("want invalid user id, got %v", err)
@@ -19,7 +19,7 @@ func TestDeleteUserServiceByUserID_InvalidUserID(t *testing.T) {
 }
 
 func TestDeleteUserServiceByUserID_InvalidServiceID(t *testing.T) {
-	s := NewService(nil)
+	s := NewService(nil, config.BrandConfig{})
 	for _, sid := range []string{"", "   ", "\t"} {
 		err := s.DeleteUserServiceByUserID(10, sid)
 		if err == nil || !strings.Contains(err.Error(), "invalid service id") {
@@ -44,7 +44,7 @@ func TestDeleteUserServiceByUserID_ProxyToAPIOK(t *testing.T) {
 	cfg.API.BaseURL = srv.URL
 	cfg.API.Timeout = 5
 	cli := api.NewAPIClient(cfg)
-	s := NewService(cli)
+	s := NewService(cli, config.BrandConfig{})
 
 	err := s.DeleteUserServiceByUserID(42, "337")
 	if err != nil {

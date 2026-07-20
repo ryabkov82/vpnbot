@@ -53,7 +53,7 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 		return nil, ErrTelegramChatMismatch
 	}
 
-	webLogin := webuser.WebLoginFromEmail(normEmail)
+	webLogin := webuser.WebLoginFromEmailWithPrefix(normEmail, s.webLoginPrefix())
 
 	byLogin, err := s.apiClient.GetUserByLogin(webLogin)
 	if err != nil {

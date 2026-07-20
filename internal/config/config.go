@@ -3,10 +3,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type TrialFeature struct {
@@ -102,18 +102,34 @@ type Config struct {
 
 	RemnawaveAPIURL   string `json:"remnawave_api_url"`
 	RemnawaveAPIToken string `json:"remnawave_api_token"`
+
+	// Brand — один активный бренд процесса. Если id пуст в JSON — синтезируется VFF из legacy-полей.
+	Brand BrandConfig `json:"brand"`
 }
 
+const envConfigPath = "VPNBOT_CONFIG"
+
+// Load загружает конфигурацию процесса: VPNBOT_CONFIG или стандартный поиск путей.
+// При ошибке завершает процесс (совместимость с существующим поведением).
 func Load() *Config {
-	// Получаем абсолютный путь к директории исполняемого файла
+	cfg, err := loadConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	return cfg
+}
+
+func loadConfig() (*Config, error) {
+	if p := strings.TrimSpace(os.Getenv(envConfigPath)); p != "" {
+		return LoadFromFile(p)
+	}
+
 	_, filename, _, _ := runtime.Caller(0)
 	rootDir := filepath.Dir(filepath.Dir(filepath.Dir(filename)))
-
-	// Возможные расположения конфига
 	configPaths := []string{
-		filepath.Join(rootDir, "configs", "config.json"), // Основной путь
-		filepath.Join(".", "configs", "config.json"),     // Для go run
-		"config.json", // Текущая директория
+		filepath.Join(rootDir, "configs", "config.json"),
+		filepath.Join(".", "configs", "config.json"),
+		"config.json",
 	}
 
 	var configFile string
@@ -123,27 +139,34 @@ func Load() *Config {
 			break
 		}
 	}
-
 	if configFile == "" {
-		panic("конфигурационный файл не найден. Проверьте пути: " + fmt.Sprintf("%v", configPaths))
+		return nil, fmt.Errorf("конфигурационный файл не найден. Проверьте пути: %v", configPaths)
 	}
+	return LoadFromFile(configFile)
+}
 
-	file, err := os.Open(configFile)
+// LoadFromFile читает JSON-конфиг из указанного пути, нормализует бренд и валидирует.
+func LoadFromFile(path string) (*Config, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("путь к конфигурации пуст")
+	}
+	file, err := os.Open(path)
 	if err != nil {
-		log.Fatal("Ошибка загрузки конфига:", err)
+		return nil, fmt.Errorf("не удалось открыть конфигурацию %q: %w", path, err)
 	}
 	defer file.Close()
 
-	config := &Config{}
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&config); err != nil {
-		log.Fatal("Ошибка парсинга конфига:", err)
+	cfg := &Config{}
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(cfg); err != nil {
+		return nil, fmt.Errorf("ошибка парсинга конфигурации %q: %w", path, err)
 	}
-
-	// 5. Валидация
-	if config.Telegram.Token == "" {
-		panic("требуется Telegram токен в конфиге")
+	if err := cfg.Normalize(); err != nil {
+		return nil, err
 	}
-
-	return config
+	if strings.TrimSpace(cfg.Telegram.Token) == "" {
+		return nil, fmt.Errorf("требуется Telegram токен в конфиге")
+	}
+	return cfg, nil
 }

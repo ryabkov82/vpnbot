@@ -7,13 +7,11 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
-// publicOrderBaseURL — базовый URL сайта для ссылок в письмах (magic-link /account/session): WebSales.public_base_url или scheme://Host.
+// publicOrderBaseURL — базовый URL сайта для ссылок в письмах (magic-link /account/session):
+// эффективный PublicBaseURL бренда или scheme://Host.
 func publicOrderBaseURL(cfg *config.Config, r *http.Request) string {
-	if cfg != nil {
-		b := strings.TrimRight(strings.TrimSpace(cfg.WebSales.PublicBaseURL), "/")
-		if b != "" {
-			return b
-		}
+	if b := cfg.PublicBaseURL(); b != "" {
+		return b
 	}
 	if r != nil && r.Host != "" {
 		scheme := "http"

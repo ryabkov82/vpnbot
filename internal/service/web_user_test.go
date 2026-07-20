@@ -8,6 +8,11 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
+const (
+	testWebLoginPrefix = "web_"
+	testWebUserSource  = "vpn-for-friends.com"
+)
+
 type testWebUserRegistrar struct {
 	login2User *models.User
 
@@ -43,7 +48,7 @@ func TestFindOrCreateWebUser_FoundExistingPrimaryLogin(t *testing.T) {
 	existing := &models.User{ID: 7, Login: login}
 	reg := &testWebUserRegistrar{firstGet: existing, secondAndLater: existing}
 
-	u, created, err := findOrCreateWebUser(reg, "  Known@Example.COM ")
+	u, created, err := findOrCreateWebUser(reg, "  Known@Example.COM ", testWebLoginPrefix, testWebUserSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +78,7 @@ func TestFindOrCreateWebUser_FoundViaLogin2(t *testing.T) {
 		login2User: linked,
 	}
 
-	u, created, err := findOrCreateWebUser(reg, "linked@Example.COM")
+	u, created, err := findOrCreateWebUser(reg, "linked@Example.COM", testWebLoginPrefix, testWebUserSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +105,7 @@ func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 		secondAndLater: newUser,
 	}
 
-	u, registered, err := findOrCreateWebUser(reg, "new@example.com")
+	u, registered, err := findOrCreateWebUser(reg, "new@example.com", testWebLoginPrefix, testWebUserSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +130,7 @@ func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 	if reg.lastReg.Password == "" {
 		t.Fatal("expected non-empty password")
 	}
-	if reg.lastReg.Settings.Web.Email != "new@example.com" || reg.lastReg.Settings.Web.Source != webUserSource {
+	if reg.lastReg.Settings.Web.Email != "new@example.com" || reg.lastReg.Settings.Web.Source != testWebUserSource {
 		t.Fatalf("web settings: %#v", reg.lastReg.Settings.Web)
 	}
 }
@@ -135,7 +140,7 @@ func TestFindOrCreateWebUser_RegisterError(t *testing.T) {
 		firstGet: nil,
 		regErr:   errors.New("api down"),
 	}
-	_, _, err := findOrCreateWebUser(reg, "x@y.zz")
+	_, _, err := findOrCreateWebUser(reg, "x@y.zz", testWebLoginPrefix, testWebUserSource)
 	if err == nil {
 		t.Fatal("want error")
 	}
@@ -145,9 +150,38 @@ func TestFindOrCreateWebUser_NotFoundAfterRegister(t *testing.T) {
 	reg := &testWebUserRegistrar{
 		firstGet: nil,
 	}
-	_, _, err := findOrCreateWebUser(reg, "gone@example.com")
+	_, _, err := findOrCreateWebUser(reg, "gone@example.com", testWebLoginPrefix, testWebUserSource)
 	if err == nil {
 		t.Fatal("want error when reload returns nil")
+	}
+}
+
+func TestFindOrCreateWebUser_ExplicitOtherPrefix(t *testing.T) {
+	em := "fc@example.com"
+	fcLogin := webuser.WebLoginFromEmailWithPrefix(em, "web_fc_")
+	vffLogin := webuser.WebLoginFromEmail(em)
+	if fcLogin == vffLogin {
+		t.Fatal("fc and vff logins must differ")
+	}
+	reg := &testWebUserRegistrar{
+		firstGet:       nil,
+		secondAndLater: &models.User{ID: 55, Login: fcLogin},
+	}
+	u, created, err := findOrCreateWebUser(reg, em, "web_fc_", "friends-connect.club")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || u.Login != fcLogin {
+		t.Fatalf("want created with fc login, got created=%v login=%q", created, u.Login)
+	}
+	if reg.lastReg == nil || reg.lastReg.Login != fcLogin {
+		t.Fatalf("RegisterUser login: %#v", reg.lastReg)
+	}
+	if reg.lastReg.Settings.Web.Source != "friends-connect.club" {
+		t.Fatalf("source: %q", reg.lastReg.Settings.Web.Source)
+	}
+	if reg.getCalls < 1 {
+		t.Fatal("expected GetUserByLogin with fc prefix")
 	}
 }
 

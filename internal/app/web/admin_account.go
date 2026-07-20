@@ -78,7 +78,7 @@ func serveAdminAccountTest(cfg *config.Config, app adminAccountTestApp) http.Han
 			return
 		}
 
-		login := webuser.WebLoginFromEmail(emailNorm)
+		login := webuser.WebLoginFromEmailWithPrefix(emailNorm, cfg.WebUserLoginPrefix())
 		user, err := app.GetUserByLogin(login)
 		if err != nil {
 			slog.Error("admin account test: GetUserByLogin", "err", err)

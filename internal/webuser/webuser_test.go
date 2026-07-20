@@ -2,6 +2,7 @@ package webuser
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,34 @@ func TestWebLoginFromEmail_Stability(t *testing.T) {
 	}
 	if a[:4] != "web_" {
 		t.Fatalf("prefix: %q", a)
+	}
+}
+
+func TestWebLoginFromEmailWithPrefix_VFFCompatible(t *testing.T) {
+	email := "user@example.com"
+	legacy := WebLoginFromEmail(email)
+	withPrefix := WebLoginFromEmailWithPrefix(email, "web_")
+	if legacy != withPrefix {
+		t.Fatalf("VFF prefix must match legacy byte-for-byte: %q vs %q", legacy, withPrefix)
+	}
+}
+
+func TestWebLoginFromEmailWithPrefix_DifferentPrefixSameHash(t *testing.T) {
+	email := "user@example.com"
+	vff := WebLoginFromEmailWithPrefix(email, "web_")
+	fc := WebLoginFromEmailWithPrefix(email, "web_fc_")
+	if vff == fc {
+		t.Fatal("different prefixes must produce different logins")
+	}
+	if !strings.HasPrefix(vff, "web_") || !strings.HasPrefix(fc, "web_fc_") {
+		t.Fatalf("prefixes: %q %q", vff, fc)
+	}
+	vffHash := strings.TrimPrefix(vff, "web_")
+	fcHash := strings.TrimPrefix(fc, "web_fc_")
+	if vffHash != fcHash {
+		t.Fatalf("hash part must be identical: %q vs %q", vffHash, fcHash)
+	}
+	if len(vffHash) != 16 {
+		t.Fatalf("hash len: %d", len(vffHash))
 	}
 }

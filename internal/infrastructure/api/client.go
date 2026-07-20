@@ -772,12 +772,12 @@ func (c *APIClient) DeleteUserService(userID int, serviceID string) error {
 	return nil
 }
 
-// expectedServiceCategory — разрешённая категория услуг из конфигурации (пустая строка = без ограничения).
+// expectedServiceCategory — разрешённая категория услуг из эффективного бренда (пустая строка = без ограничения).
 func (c *APIClient) expectedServiceCategory() string {
-	if c.config == nil {
+	if c == nil || c.config == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.config.Services.Category)
+	return c.config.ServiceCategory()
 }
 
 // internal/infrastructure/api/client.go

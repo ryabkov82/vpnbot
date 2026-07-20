@@ -45,16 +45,12 @@ func NewService(service *service.Service, cfg *config.Config) *Service {
 }
 
 // orderServiceCategoryAllowed — авторизационная проверка категории услуги перед заказом:
-// разрешена только категория services.category из конфига (пустая = legacy без ограничения).
+// разрешена только эффективная категория активного бренда (пустая = legacy без ограничения).
 func orderServiceCategoryAllowed(cfg *config.Config, svc *models.Service) bool {
 	if svc == nil {
 		return false
 	}
-	expected := ""
-	if cfg != nil {
-		expected = cfg.Services.Category
-	}
-	return models.ServiceCategoryAllowed(expected, svc.Category)
+	return models.ServiceCategoryAllowed(cfg.ServiceCategory(), svc.Category)
 }
 
 func (s *Service) logoPhoto(caption string) *telebot.Photo {
@@ -233,7 +229,7 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	}
 
 	// профиль оплаты из конфига (дефолт — telegram_bot)
-	paymentProfile := s.config.Payments.Profile
+	paymentProfile := s.config.PaymentProfile()
 	if paymentProfile == "" {
 		paymentProfile = "telegram_bot"
 	}
@@ -1136,7 +1132,7 @@ func (s *Service) buildTrialRow(c telebot.Context, m *telebot.ReplyMarkup) (tele
 }
 
 func (s *Service) telegramWebCabinetURL(chatID int64, shmUserID int) string {
-	base := strings.TrimRight(strings.TrimSpace(s.config.WebSales.PublicBaseURL), "/")
+	base := strings.TrimRight(strings.TrimSpace(s.config.PublicBaseURL()), "/")
 	secret := strings.TrimSpace(s.config.WebSales.OrderTokenSecret)
 	if base == "" || secret == "" || chatID <= 0 || shmUserID <= 0 {
 		return ""

@@ -11,6 +11,8 @@ import (
 // ErrInvalidEmail возвращается из NormalizeEmail при неверном адресе.
 var ErrInvalidEmail = errors.New("invalid email")
 
+const defaultWebLoginPrefix = "web_"
+
 // NormalizeEmail: trim, lower-case для адресной части, проверка через net/mail.ParseAddress.
 func NormalizeEmail(email string) (string, error) {
 	s := strings.TrimSpace(email)
@@ -27,11 +29,21 @@ func NormalizeEmail(email string) (string, error) {
 	return strings.ToLower(addr.Address), nil
 }
 
-// WebLoginFromEmail строит стабильный login: web_ + первые 16 hex-символов SHA256(normalized).
-// normalized = strings.ToLower(strings.TrimSpace(email)).
-func WebLoginFromEmail(email string) string {
+// WebLoginFromEmailWithPrefix строит стабильный login: <prefix> + первые 16 hex SHA256(normalized).
+// normalized = strings.ToLower(strings.TrimSpace(email)). Пустой prefix трактуется как "web_".
+func WebLoginFromEmailWithPrefix(email, prefix string) string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = defaultWebLoginPrefix
+	}
 	norm := strings.ToLower(strings.TrimSpace(email))
 	sum := sha256.Sum256([]byte(norm))
 	h := hex.EncodeToString(sum[:])
-	return "web_" + h[:16]
+	return prefix + h[:16]
+}
+
+// WebLoginFromEmail строит стабильный login: web_ + первые 16 hex-символов SHA256(normalized).
+// Сохранена для совместимости; эквивалентна WebLoginFromEmailWithPrefix(email, "web_").
+func WebLoginFromEmail(email string) string {
+	return WebLoginFromEmailWithPrefix(email, defaultWebLoginPrefix)
 }

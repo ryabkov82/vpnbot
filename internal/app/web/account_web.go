@@ -20,12 +20,9 @@ import (
 )
 
 // cfgServiceCategory — разрешённая категория услуг текущего экземпляра приложения
-// (services.category из конфига). Пустая строка = legacy-поведение без ограничения.
+// (эффективная категория активного бренда). Пустая строка = legacy-поведение без ограничения.
 func cfgServiceCategory(cfg *config.Config) string {
-	if cfg == nil {
-		return ""
-	}
-	return strings.TrimSpace(cfg.Services.Category)
+	return cfg.ServiceCategory()
 }
 
 // accountWebApp — кабинет (тесты через stub).
@@ -119,7 +116,7 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			return
 		}
 
-		login := webuser.WebLoginFromEmail(normEmail)
+		login := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
 		var shmUser *models.User
 		if linkByEmail != nil {
 			shmUser = linkByEmail
@@ -225,7 +222,7 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return
 		}
-		wantLogin := webuser.WebLoginFromEmail(normEmail)
+		wantLogin := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
 		if strings.TrimSpace(signup.Login) != wantLogin {
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return

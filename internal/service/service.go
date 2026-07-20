@@ -11,6 +11,7 @@ import (
 
 	"github.com/skip2/go-qrcode"
 
+	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
 )
@@ -21,18 +22,49 @@ var (
 
 type Service struct {
 	apiClient          *api.APIClient
+	brand              config.BrandConfig
 	trialTakenCache    map[int64]bool
 	trialCacheMu       sync.RWMutex
 	trialEligibleUntil map[int64]time.Time
 	trialMu            sync.RWMutex
 }
 
-func NewService(apiClient *api.APIClient) *Service {
+// NewService создаёт use-case слой с активным брендом процесса (web-login prefix и source).
+// Пустой brand.ID даёт VFF-defaults для login prefix/source (совместимость unit-тестов).
+func NewService(apiClient *api.APIClient, brand config.BrandConfig) *Service {
 	return &Service{
 		apiClient:          apiClient,
+		brand:              effectiveServiceBrand(brand),
 		trialTakenCache:    make(map[int64]bool),
 		trialEligibleUntil: make(map[int64]time.Time),
 	}
+}
+
+func effectiveServiceBrand(brand config.BrandConfig) config.BrandConfig {
+	cfg := &config.Config{Brand: brand}
+	return cfg.EffectiveBrand()
+}
+
+func (s *Service) webLoginPrefix() string {
+	if s == nil {
+		return "web_"
+	}
+	p := strings.TrimSpace(s.brand.WebUserLoginPrefix)
+	if p == "" {
+		return "web_"
+	}
+	return p
+}
+
+func (s *Service) webUserSource() string {
+	if s == nil {
+		return "vpn-for-friends.com"
+	}
+	src := strings.TrimSpace(s.brand.WebUserSource)
+	if src == "" {
+		return "vpn-for-friends.com"
+	}
+	return src
 }
 
 // --- внутренние хелперы для кэша (private) ---

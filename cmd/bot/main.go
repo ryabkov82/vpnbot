@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// 4. Инициализация UseCase
-	service := service.NewService(apiClient)
+	service := service.NewService(apiClient, cfg.EffectiveBrand())
 
 	// 5. Создание сервиса бота
 	botService := bot.NewService(service, cfg)
