@@ -134,12 +134,6 @@ func (s *Service) GetUserServices(userID int64) ([]models.UserService, error) {
 
 }
 
-func (s *Service) GetUserService(serviceID string) (*models.UserService, error) {
-
-	return s.apiClient.GetUserService(serviceID)
-
-}
-
 func (s *Service) GetUserByLogin(login string) (*models.User, error) {
 	return s.apiClient.GetUserByLogin(login)
 }
@@ -164,54 +158,41 @@ func (s *Service) GetUserBalanceByUserID(userID int) (*models.UserBalance, error
 	return s.apiClient.GetUserBalance(userID)
 }
 
-func (s *Service) DownloadUserKey(userID int64, serviceID string) ([]byte, error) {
-
-	user, err := s.GetUser(userID)
+func (s *Service) DownloadUserKey(telegramChatID int64, serviceID string) ([]byte, error) {
+	us, user, err := s.GetOwnedUserServiceByTelegramID(telegramChatID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-
+	_ = us
 	return s.apiClient.DownloadUserKey(user.ID, serviceID)
 }
 
-func (s *Service) GetQRCodeUserKey(userID int64, serviceID string) ([]byte, error) {
-
-	fileBytes, err := s.DownloadUserKey(userID, serviceID)
-
+func (s *Service) GetQRCodeUserKey(telegramChatID int64, serviceID string) ([]byte, error) {
+	fileBytes, err := s.DownloadUserKey(telegramChatID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-
 	return GenerateQRCode(string(fileBytes))
-
 }
 
-func (s *Service) GetUserKeyMarzban(userID int64, serviceID string) (*models.UserKeyMarzban, error) {
-
-	user, err := s.GetUser(userID)
+func (s *Service) GetUserKeyMarzban(telegramChatID int64, serviceID string) (*models.UserKeyMarzban, error) {
+	us, user, err := s.GetOwnedUserServiceByTelegramID(telegramChatID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Преобразование строки в int
-	srvID, err := strconv.Atoi(serviceID)
-	if err != nil {
-		return nil, err
+	if us.KeyMarzban.SubscriptionURL != "" || len(us.KeyMarzban.Links) > 0 {
+		k := us.KeyMarzban
+		return &k, nil
 	}
-
-	return s.apiClient.GetUserKeyMarzban(user.ID, srvID)
-
+	return s.apiClient.GetUserKeyMarzban(user.ID, us.ServiceID)
 }
 
-func (s *Service) DeleteUserService(userID int64, serviceID string) error {
-
-	user, err := s.GetUser(userID)
+func (s *Service) DeleteUserService(telegramChatID int64, serviceID string) error {
+	_, user, err := s.GetOwnedUserServiceByTelegramID(telegramChatID, serviceID)
 	if err != nil {
 		return err
 	}
-
 	return s.apiClient.DeleteUserService(user.ID, serviceID)
-
 }
 
 // generateQRCode создает QR-код из текста и возвращает PNG в виде []byte
@@ -269,15 +250,13 @@ func (s *Service) ServiceOrderByUserID(userID int, serviceID int) (*models.UserS
 	return s.apiClient.ServiceOrder(userID, serviceID)
 }
 
-// DeleteUserServiceByUserID удаляет user_service по числовому user_id (личный кабинет).
+// DeleteUserServiceByUserID удаляет user_service по числовому user_id (личный кабинет)
+// только после централизованной ownership-проверки.
 func (s *Service) DeleteUserServiceByUserID(userID int, userServiceID string) error {
-	if userID <= 0 {
-		return errors.New("invalid user id")
+	if _, err := s.GetOwnedUserServiceByUserID(userID, userServiceID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(userServiceID) == "" {
-		return errors.New("invalid service id")
-	}
-	return s.apiClient.DeleteUserService(userID, userServiceID)
+	return s.apiClient.DeleteUserService(userID, strings.TrimSpace(userServiceID))
 }
 
 func (s *Service) GetUserPays(userID int64) ([]models.UserPay, error) {

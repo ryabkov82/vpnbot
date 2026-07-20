@@ -12,6 +12,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -626,16 +627,54 @@ func (c *APIClient) GetUserServices(userID int) ([]models.UserService, error) {
 		return nil, err
 	}
 
-	return result.Data, nil
+	expectedCategory := c.expectedServiceCategory()
+	out := make([]models.UserService, 0, len(result.Data))
+	for i := range result.Data {
+		us := result.Data[i]
+		if us.UserID != userID {
+			slog.Error("GetUserServices: SHM returned row with unexpected user_id",
+				"requested_user_id", userID, "row_user_id", us.UserID, "user_service_id", us.ServiceID)
+			continue
+		}
+		if !models.ServiceCategoryAllowed(expectedCategory, us.Category) {
+			slog.Error("GetUserServices: SHM returned row outside active category",
+				"requested_user_id", userID, "user_service_id", us.ServiceID, "category", us.Category)
+			continue
+		}
+		out = append(out, us)
+	}
+	return out, nil
 
 }
 
-func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error) {
+func parsePositiveUserServiceID(userServiceID string) (int, error) {
+	s := strings.TrimSpace(userServiceID)
+	if s == "" {
+		return 0, fmt.Errorf("invalid user service id")
+	}
+	id, err := strconv.Atoi(s)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid user service id")
+	}
+	return id, nil
+}
 
-	// Собираем filter как JSON:
-	// {"user_service_id": <serviceID>, "category": "<category>"} — category добавляем, если задана
+// GetUserServiceByUserID загружает user_service только в контексте владельца.
+// Несуществующая, чужая или внекатегорийная услуга → ErrUserServiceUnavailable (без различия причин).
+func (c *APIClient) GetUserServiceByUserID(userID int, userServiceID string) (*models.UserService, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("invalid user id")
+	}
+	usID, err := parsePositiveUserServiceID(userServiceID)
+	if err != nil {
+		return nil, err
+	}
+	userServiceIDTrimmed := strings.TrimSpace(userServiceID)
+
+	// Фильтр: user_id + user_service_id (строка, как в прежнем GetUserService) + category при наличии.
 	f := map[string]any{
-		"user_service_id": serviceID,
+		"user_id":         userID,
+		"user_service_id": userServiceIDTrimmed,
 	}
 	expectedCategory := c.expectedServiceCategory()
 	if expectedCategory != "" {
@@ -655,43 +694,38 @@ func (c *APIClient) GetUserService(serviceID string) (*models.UserService, error
 		return nil, err
 	}
 
-	// Выполняем GET-запрос
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Парсим ответ
 	type ServiceResponse struct {
 		Data []models.UserService `json:"data"`
 	}
-
 	var result ServiceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-
-	if len(result.Data) > 0 {
-		us := result.Data[0]
-		// Локальная проверка категории до любых дополнительных запросов (в т.ч. Marzban-ключа):
-		// услуга другой категории обрабатывается как отсутствующая.
-		if !models.ServiceCategoryAllowed(expectedCategory, us.Category) {
-			return nil, nil
-		}
-		// Префикс vpn-mz- здесь определяет технический тип услуги (Marzban), а не авторизацию.
-		if strings.HasPrefix(us.Category, "vpn-mz-") && us.Status == "ACTIVE" {
-			userKey, err := c.GetUserKeyMarzban(us.UserID, us.ServiceID)
-			if err != nil {
-				return nil, err
-			}
-			us.KeyMarzban = *userKey
-		}
-		return &us, nil
+	if len(result.Data) == 0 {
+		return nil, ErrUserServiceUnavailable
 	}
 
-	return nil, nil
+	us := result.Data[0]
+	// Локальные проверки до Marzban/storage: не доверяем фильтру SHM.
+	if us.UserID != userID || us.ServiceID != usID || !models.ServiceCategoryAllowed(expectedCategory, us.Category) {
+		return nil, ErrUserServiceUnavailable
+	}
 
+	// Префикс vpn-mz- — технический тип (Marzban), не авторизация.
+	if strings.HasPrefix(us.Category, "vpn-mz-") && us.Status == "ACTIVE" {
+		userKey, err := c.GetUserKeyMarzban(us.UserID, us.ServiceID)
+		if err != nil {
+			return nil, err
+		}
+		us.KeyMarzban = *userKey
+	}
+	return &us, nil
 }
 
 func (c *APIClient) GetUserKeyMarzban(userID int, serviceID int) (*models.UserKeyMarzban, error) {

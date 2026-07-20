@@ -19,6 +19,10 @@ func categoryTestCfg(category string) *config.Config {
 	return cfg
 }
 
+func stubWithCategory(category string) *stubAccountWeb {
+	return &stubAccountWeb{requireCategory: category}
+}
+
 // --- POST /api/account/service/order ---
 
 func TestServeAccountServiceOrder_AllowedCategoryOrdered(t *testing.T) {
@@ -127,6 +131,7 @@ func TestServeAccountConnect_OtherCategoryForbiddenNoURL(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
+		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
 			336: {
 				UserID:     10, // услуга принадлежит пользователю — блокирует именно категория
@@ -156,6 +161,7 @@ func TestServeAccountConnect_OtherCategoryPremiumURLNotBuilt(t *testing.T) {
 	cfg.PremiumLinkSigningSecret = "premium-secret-premium-secret-xx"
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
+		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
 			337: {
 				UserID:    10,
@@ -196,6 +202,20 @@ func TestServeAccountConnect_OwnershipStillEnforcedWithCategory(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("ownership check broken: want 403 got %d", rec.Code)
 	}
+	assertJSONErrorField(t, rec.Body.String(), "forbidden")
+}
+
+func TestServeAccountConnect_MissingServiceSameForbidden(t *testing.T) {
+	cfg := categoryTestCfg("vpn-mz-main")
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	st := &stubAccountWeb{} // single == nil → ErrUserServiceUnavailable
+	rec := httptest.NewRecorder()
+	serveAccountServiceConnect(cfg, st).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/account/service/connect?token="+tok+"&user_service_id=404", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("want 403 got %d: %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "forbidden")
 }
 
 // --- POST /api/account/service/delete ---
@@ -223,6 +243,7 @@ func TestServeAccountServiceDelete_OtherCategoryForbiddenNoDelete(t *testing.T) 
 	cfg := categoryTestCfg("vpn-mz-main")
 	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
+		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
 			500: {UserID: 10, ServiceID: 500, Status: "NOT PAID", Category: "vpn-mz-other"},
 		},

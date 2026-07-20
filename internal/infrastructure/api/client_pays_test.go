@@ -25,7 +25,7 @@ func TestGetUserPays_OKAndEmptyData(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := APIClient{
-		ServerURL: srv.URL,
+		ServerURL:  srv.URL,
 		HTTPClient: srv.Client(),
 	}
 

@@ -156,11 +156,12 @@ func TestGetServiceByID_NotOrderableStillUnavailable(t *testing.T) {
 	}
 }
 
-// --- GetUserService ---
+// --- GetUserServiceByUserID ---
 
 type userServiceTestBackend struct {
 	t           *testing.T
 	userService models.UserService
+	emptyData   bool
 	filter      map[string]interface{}
 	marzbanHits int
 }
@@ -170,6 +171,10 @@ func (b *userServiceTestBackend) handler() http.HandlerFunc {
 		switch {
 		case r.URL.Path == "/shm/v1/admin/user/service":
 			b.filter = mustUnescapeFilter(b.t, r.URL.Query().Get("filter"))
+			if b.emptyData {
+				writeUserServiceData(b.t, w, nil)
+				return
+			}
 			writeUserServiceData(b.t, w, []models.UserService{b.userService})
 		case strings.HasPrefix(r.URL.Path, "/shm/v1/storage/manage/vpn_mrzb_"):
 			b.marzbanHits++
@@ -181,7 +186,7 @@ func (b *userServiceTestBackend) handler() http.HandlerFunc {
 	}
 }
 
-func TestGetUserService_CategoryAddedToFilterAndAllowedReturned(t *testing.T) {
+func TestGetUserServiceByUserID_CategoryAndOwnerFilterOK(t *testing.T) {
 	be := &userServiceTestBackend{t: t, userService: models.UserService{
 		ServiceID: 42, UserID: 5, Status: "ACTIVE", Category: "vpn-mz-main",
 	}}
@@ -189,7 +194,7 @@ func TestGetUserService_CategoryAddedToFilterAndAllowedReturned(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := newCategoryTestClient(srv, "vpn-mz-main")
-	us, err := c.GetUserService("42")
+	us, err := c.GetUserServiceByUserID(5, "42")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,18 +204,52 @@ func TestGetUserService_CategoryAddedToFilterAndAllowedReturned(t *testing.T) {
 	if be.filter["category"] != "vpn-mz-main" {
 		t.Fatalf("category must be in SHM filter: %#v", be.filter)
 	}
+	if be.filter["user_id"] != float64(5) {
+		t.Fatalf("user_id filter: %#v", be.filter)
+	}
 	if be.filter["user_service_id"] != "42" {
-		t.Fatalf("user_service_id filter: %#v", be.filter)
+		t.Fatalf("user_service_id filter must be string: %#v", be.filter)
 	}
 	if be.marzbanHits != 1 {
-		t.Fatalf("marzban key must be fetched for allowed active vpn-mz service, hits=%d", be.marzbanHits)
-	}
-	if us.KeyMarzban.SubscriptionURL == "" {
-		t.Fatal("subscription url must be filled")
+		t.Fatalf("marzban key must be fetched after checks, hits=%d", be.marzbanHits)
 	}
 }
 
-func TestGetUserService_OtherCategoryUnavailableAndNoMarzbanCall(t *testing.T) {
+func TestGetUserServiceByUserID_OtherUserUnavailableNoMarzban(t *testing.T) {
+	be := &userServiceTestBackend{t: t, userService: models.UserService{
+		ServiceID: 42, UserID: 999, Status: "ACTIVE", Category: "vpn-mz-main",
+	}}
+	srv := httptest.NewServer(be.handler())
+	t.Cleanup(srv.Close)
+
+	c := newCategoryTestClient(srv, "vpn-mz-main")
+	us, err := c.GetUserServiceByUserID(5, "42")
+	if us != nil || !errors.Is(err, ErrUserServiceUnavailable) {
+		t.Fatalf("want unavailable, got us=%v err=%v", us, err)
+	}
+	if be.marzbanHits != 0 {
+		t.Fatalf("marzban must not be called, hits=%d", be.marzbanHits)
+	}
+}
+
+func TestGetUserServiceByUserID_OtherServiceIDUnavailable(t *testing.T) {
+	be := &userServiceTestBackend{t: t, userService: models.UserService{
+		ServiceID: 99, UserID: 5, Status: "ACTIVE", Category: "vpn-mz-main",
+	}}
+	srv := httptest.NewServer(be.handler())
+	t.Cleanup(srv.Close)
+
+	c := newCategoryTestClient(srv, "vpn-mz-main")
+	us, err := c.GetUserServiceByUserID(5, "42")
+	if us != nil || !errors.Is(err, ErrUserServiceUnavailable) {
+		t.Fatalf("want unavailable, got us=%v err=%v", us, err)
+	}
+	if be.marzbanHits != 0 {
+		t.Fatalf("marzban hits=%d", be.marzbanHits)
+	}
+}
+
+func TestGetUserServiceByUserID_OtherCategoryUnavailableNoMarzban(t *testing.T) {
 	be := &userServiceTestBackend{t: t, userService: models.UserService{
 		ServiceID: 42, UserID: 5, Status: "ACTIVE", Category: "vpn-mz-other",
 	}}
@@ -218,19 +257,44 @@ func TestGetUserService_OtherCategoryUnavailableAndNoMarzbanCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := newCategoryTestClient(srv, "vpn-mz-main")
-	us, err := c.GetUserService("42")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if us != nil {
-		t.Fatalf("user service of other category must be unavailable: %+v", us)
+	us, err := c.GetUserServiceByUserID(5, "42")
+	if us != nil || !errors.Is(err, ErrUserServiceUnavailable) {
+		t.Fatalf("want unavailable, got us=%v err=%v", us, err)
 	}
 	if be.marzbanHits != 0 {
-		t.Fatalf("marzban key must NOT be fetched for other category, hits=%d", be.marzbanHits)
+		t.Fatalf("marzban hits=%d", be.marzbanHits)
 	}
 }
 
-func TestGetUserService_EmptyCategoryLegacy(t *testing.T) {
+func TestGetUserServiceByUserID_EmptyDataUnavailable(t *testing.T) {
+	be := &userServiceTestBackend{t: t, emptyData: true}
+	srv := httptest.NewServer(be.handler())
+	t.Cleanup(srv.Close)
+
+	c := newCategoryTestClient(srv, "vpn-mz-main")
+	us, err := c.GetUserServiceByUserID(5, "42")
+	if us != nil || !errors.Is(err, ErrUserServiceUnavailable) {
+		t.Fatalf("want unavailable, got us=%v err=%v", us, err)
+	}
+}
+
+func TestGetUserServiceByUserID_InvalidArgs(t *testing.T) {
+	c := &APIClient{}
+	cases := []struct {
+		uid int
+		sid string
+	}{
+		{0, "1"}, {-1, "1"}, {1, ""}, {1, "   "}, {1, "x"}, {1, "0"}, {1, "-3"},
+	}
+	for _, tc := range cases {
+		_, err := c.GetUserServiceByUserID(tc.uid, tc.sid)
+		if err == nil {
+			t.Fatalf("uid=%d sid=%q: want error", tc.uid, tc.sid)
+		}
+	}
+}
+
+func TestGetUserServiceByUserID_EmptyCategoryLegacy(t *testing.T) {
 	be := &userServiceTestBackend{t: t, userService: models.UserService{
 		ServiceID: 42, UserID: 5, Status: "ACTIVE", Category: "vpn-mz-whatever",
 	}}
@@ -238,7 +302,7 @@ func TestGetUserService_EmptyCategoryLegacy(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := newCategoryTestClient(srv, "")
-	us, err := c.GetUserService("42")
+	us, err := c.GetUserServiceByUserID(5, "42")
 	if err != nil {
 		t.Fatal(err)
 	}

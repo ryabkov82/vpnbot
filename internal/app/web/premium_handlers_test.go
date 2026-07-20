@@ -20,8 +20,8 @@ func (noopPremiumApp) GetUserByID(int) (*models.User, error) {
 	panic("noopPremiumApp.GetUserByID must not be called")
 }
 
-func (noopPremiumApp) GetUserService(string) (*models.UserService, error) {
-	panic("noopPremiumApp.GetUserService must not be called")
+func (noopPremiumApp) GetOwnedUserServiceByUserID(int, string) (*models.UserService, error) {
+	panic("noopPremiumApp.GetOwnedUserServiceByUserID must not be called")
 }
 
 func TestServePremiumService_NoAccessToken(t *testing.T) {

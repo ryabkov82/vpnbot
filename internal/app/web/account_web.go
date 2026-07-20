@@ -16,6 +16,7 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/email"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/payments"
+	appService "github.com/ryabkov82/vpnbot/internal/service"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
@@ -33,7 +34,7 @@ type accountWebApp interface {
 	FindOrCreateWebUser(email string) (*models.User, bool, error)
 	LinkWebEmailForTelegramUser(userID int, telegramChatID int64, email string, source string) (*models.User, error)
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
-	GetUserService(serviceID string) (*models.UserService, error)
+	GetOwnedUserServiceByUserID(userID int, userServiceID string) (*models.UserService, error)
 	GetUserBalanceByUserID(userID int) (*models.UserBalance, error)
 	GetUserPaysByUserID(userID int) ([]models.UserPay, error)
 	GetServices() ([]models.Service, error)
@@ -556,23 +557,14 @@ func serveAccountServiceConnect(cfg *config.Config, app accountWebApp) http.Hand
 			return
 		}
 
-		us, err := app.GetUserService(strconv.Itoa(userSvcID))
+		us, err := app.GetOwnedUserServiceByUserID(claims.UserID, strconv.Itoa(userSvcID))
 		if err != nil {
-			slog.Error("account connect: GetUserService", "err", err)
+			if errors.Is(err, appService.ErrUserServiceUnavailable) {
+				writeJSONError(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			slog.Error("account connect: GetOwnedUserServiceByUserID", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
-			return
-		}
-		if us == nil {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
-			return
-		}
-		if us.UserID != claims.UserID || us.ServiceID != userSvcID {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
-			return
-		}
-		// Услуга другой категории недоступна: ссылку подключения (в т.ч. Premium URL) не строим.
-		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), us.Category) {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}
 
@@ -995,23 +987,14 @@ func serveAccountServiceDelete(cfg *config.Config, app accountWebApp) http.Handl
 		}
 
 		usKey := strconv.Itoa(req.UserServiceID)
-		us, err := app.GetUserService(usKey)
+		us, err := app.GetOwnedUserServiceByUserID(claims.UserID, usKey)
 		if err != nil {
-			slog.Error("account service delete: GetUserService", "err", err)
+			if errors.Is(err, appService.ErrUserServiceUnavailable) {
+				writeJSONError(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			slog.Error("account service delete: GetOwnedUserServiceByUserID", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
-			return
-		}
-		if us == nil {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
-			return
-		}
-		if us.UserID != claims.UserID || us.ServiceID != req.UserServiceID {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
-			return
-		}
-		// Услуга другой категории недоступна для удаления через этот экземпляр приложения.
-		if !models.ServiceCategoryAllowed(cfgServiceCategory(cfg), us.Category) {
-			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}
 
@@ -1021,6 +1004,10 @@ func serveAccountServiceDelete(cfg *config.Config, app accountWebApp) http.Handl
 		}
 
 		if err := app.DeleteUserServiceByUserID(claims.UserID, usKey); err != nil {
+			if errors.Is(err, appService.ErrUserServiceUnavailable) {
+				writeJSONError(w, http.StatusForbidden, "forbidden")
+				return
+			}
 			slog.Error("account service delete: DeleteUserServiceByUserID", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "delete_failed")
 			return

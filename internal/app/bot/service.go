@@ -22,11 +22,6 @@ import (
 
 const defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"
 
-var (
-	ErrOwnedServiceNotFound  = errors.New("owned service not found")
-	ErrOwnedServiceForbidden = errors.New("owned service forbidden")
-)
-
 // Service содержит бизнес-логику обработки команд
 type Service struct {
 	service *service.Service
@@ -543,28 +538,9 @@ func (s *Service) isPremiumAntiBlock(us *models.UserService) bool {
 	return models.IsPremiumAntiBlockUserService(us, s.config.PremiumSquadName)
 }
 
-// loadOwnedUserService загружает услугу и проверяет, что она принадлежит Telegram-пользователю.
+// loadOwnedUserService — тонкая обёртка над централизованной ownership-проверкой service-слоя.
 func (s *Service) loadOwnedUserService(telegramUserID int64, serviceID string) (*models.UserService, *models.User, error) {
-	user, err := s.service.GetUser(telegramUserID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if user == nil {
-		return nil, nil, service.ErrUserNotFound
-	}
-	us, err := s.service.GetUserService(serviceID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if us == nil {
-		return nil, nil, ErrOwnedServiceNotFound
-	}
-	if us.UserID != user.ID {
-		log.Printf("owned service forbidden: telegramUserID=%d serviceID=%s user.ID=%d us.UserID=%d",
-			telegramUserID, serviceID, user.ID, us.UserID)
-		return nil, nil, ErrOwnedServiceForbidden
-	}
-	return us, user, nil
+	return s.service.GetOwnedUserServiceByTelegramID(telegramUserID, serviceID)
 }
 
 func (s *Service) buildPremiumConnectURL(userServiceID int, telegramUserID int64) string {
@@ -612,7 +588,7 @@ func (s *Service) handleService(c telebot.Context, serviceID string) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при получении информации по услуге: %v", err)
@@ -724,7 +700,7 @@ func (s *Service) handleDownloadUserKey(c telebot.Context, serviceID string) err
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при проверке услуги: %v", err)
@@ -757,7 +733,7 @@ func (s *Service) handleShowMZ(c telebot.Context, serviceID string) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при проверке услуги: %v", err)
@@ -827,7 +803,7 @@ func (s *Service) handleShowQR(c telebot.Context, serviceID string) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при проверке услуги: %v", err)
@@ -867,7 +843,7 @@ func (s *Service) handleDelete(c telebot.Context, serviceID string) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при проверке услуги перед удалением: %v", err)
@@ -903,7 +879,7 @@ func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) err
 		if errors.Is(err, service.ErrUserNotFound) {
 			return s.showRegistrationMenu(c)
 		}
-		if errors.Is(err, ErrOwnedServiceNotFound) || errors.Is(err, ErrOwnedServiceForbidden) {
+		if errors.Is(err, service.ErrUserServiceUnavailable) {
 			return c.Send("⚠️ Услуга не найдена или недоступна")
 		}
 		log.Printf("Ошибка при проверке услуги перед удалением: %v", err)

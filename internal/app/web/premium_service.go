@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	appService "github.com/ryabkov82/vpnbot/internal/service"
 )
 
 type premiumServiceJSON struct {
@@ -49,7 +51,7 @@ func writePremiumForbidden(w http.ResponseWriter) {
 type premiumAPIApp interface {
 	GetUser(chatID int64) (*models.User, error)
 	GetUserByID(userID int) (*models.User, error)
-	GetUserService(serviceID string) (*models.UserService, error)
+	GetOwnedUserServiceByUserID(userID int, userServiceID string) (*models.UserService, error)
 }
 
 func resolvePremiumTokenUser(app premiumAPIApp, claims *PremiumAccessClaims) (*models.User, error) {
@@ -96,18 +98,14 @@ func loadPremiumUserServiceForRequest(w http.ResponseWriter, r *http.Request, cf
 		return nil, false
 	}
 
-	us, err := app.GetUserService(strconv.Itoa(id))
+	us, err := app.GetOwnedUserServiceByUserID(user.ID, strconv.Itoa(id))
 	if err != nil {
-		log.Printf("api/premium GetUserService: %v", err)
+		if errors.Is(err, appService.ErrUserServiceUnavailable) {
+			writePremiumForbidden(w)
+			return nil, false
+		}
+		log.Printf("api/premium GetOwnedUserServiceByUserID: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
-		return nil, false
-	}
-	if us == nil {
-		writeJSONError(w, http.StatusNotFound, "service not found")
-		return nil, false
-	}
-	if us.UserID != user.ID {
-		writePremiumForbidden(w)
 		return nil, false
 	}
 

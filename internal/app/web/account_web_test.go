@@ -15,15 +15,17 @@ import (
 
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	appService "github.com/ryabkov82/vpnbot/internal/service"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
 type stubAccountWeb struct {
-	userByLogin    *models.User
-	userByLoginErr error
-	services       []models.UserService
-	servicesErr    error
-	single         map[int]*models.UserService
+	userByLogin     *models.User
+	userByLoginErr  error
+	services        []models.UserService
+	servicesErr     error
+	single          map[int]*models.UserService
+	requireCategory string // если задана — имитация фильтра категории бренда
 
 	balance      *models.UserBalance
 	balanceErr   error
@@ -131,12 +133,21 @@ func (s *stubAccountWeb) GetUserServicesByUserID(userID int) ([]models.UserServi
 	return s.services, nil
 }
 
-func (s *stubAccountWeb) GetUserService(serviceID string) (*models.UserService, error) {
+func (s *stubAccountWeb) GetOwnedUserServiceByUserID(userID int, userServiceID string) (*models.UserService, error) {
 	if s.single == nil {
-		return nil, nil
+		return nil, appService.ErrUserServiceUnavailable
 	}
-	id, _ := strconv.Atoi(serviceID)
+	id, err := strconv.Atoi(userServiceID)
+	if err != nil || id <= 0 {
+		return nil, appService.ErrUserServiceUnavailable
+	}
 	us := s.single[id]
+	if us == nil || us.UserID != userID || us.ServiceID != id {
+		return nil, appService.ErrUserServiceUnavailable
+	}
+	if s.requireCategory != "" && strings.TrimSpace(us.Category) != strings.TrimSpace(s.requireCategory) {
+		return nil, appService.ErrUserServiceUnavailable
+	}
 	return us, nil
 }
 
