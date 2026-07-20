@@ -1,2 +1,6 @@
 .env
 configs/*.json
+config-vff.json
+configs/config-vff.json
+*.production.json
+dist/configcheck-linux-amd64
