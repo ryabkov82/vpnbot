@@ -328,6 +328,15 @@ brand_rollout_tx_init() {
   return 0
 }
 
+brand_rollout_cleanup_tx_backups() {
+  # Best-effort; never remove BINARY_BACKUP.
+  rm -f "${ROLLOUT_TX_DIR}/backups/config.bak" \
+    "${ROLLOUT_TX_DIR}/backups/dropin.bak" \
+    "${ROLLOUT_TX_DIR}/backups/marker.bak" \
+    "${ROLLOUT_TX_DIR}/recovery/dropin.intended" 2>/dev/null || true
+  return 0
+}
+
 brand_rollout_safe_abort_cleanup() {
   # Only when mutation never started.
   brand_rollout_tx_load || true
@@ -335,26 +344,34 @@ brand_rollout_safe_abort_cleanup() {
     return 1
   fi
   TX_STATUS=aborted_before_mutation
-  brand_rollout_tx_write || true
+  brand_rollout_tx_write || {
+    brand_rollout_critical "safe abort manifest write failed"
+    return "${ROLLOUT_RC_CRITICAL}"
+  }
   if [[ -n "${BINARY_BACKUP:-}" && -f "${BINARY_BACKUP}" ]]; then
-    brand_checked_rm "${BINARY_BACKUP}" || return 1
+    brand_checked_rm "${BINARY_BACKUP}" || {
+      brand_rollout_critical "safe abort binary backup remove failed"
+      return "${ROLLOUT_RC_CRITICAL}"
+    }
   fi
   # Best-effort remove any leftover staging files for this TX.
   rm -f "${REMOTE_EXPLICIT_CONFIG}.new.${TX_ID}" \
     "${REMOTE_BINARY}.new.${TX_ID}" \
     "${DROPIN_FILE}.new.${TX_ID}" 2>/dev/null || true
-  if [[ -d "${ROLLOUT_TX_DIR}" ]]; then
-    # Safe-abort only: remove this transaction directory tree (known TX_ID path).
-    find "${ROLLOUT_TX_DIR}" -mindepth 1 -delete 2>/dev/null || true
-    if ! rmdir "${ROLLOUT_TX_DIR}" 2>/dev/null; then
-      brand_err "rollout-${BRAND_LABEL}: failed to remove transaction dir after safe abort"
-      brand_rollout_critical "safe abort cleanup failed"
-      return "${ROLLOUT_RC_CRITICAL}"
-    fi
-  fi
+
+  # Release lock before deleting the transaction directory so a failed release
+  # leaves recoverable manifest/state on disk.
   if ! brand_rollout_lock_release; then
     brand_rollout_critical "safe abort lock release failed"
     return "${ROLLOUT_RC_CRITICAL}"
+  fi
+
+  if [[ -d "${ROLLOUT_TX_DIR}" ]]; then
+    find "${ROLLOUT_TX_DIR}" -mindepth 1 -delete 2>/dev/null || true
+    if ! rmdir "${ROLLOUT_TX_DIR}" 2>/dev/null; then
+      brand_err "rollout-${BRAND_LABEL}: safe abort lock released but transaction dir cleanup failed: ${ROLLOUT_TX_DIR}"
+      return 1
+    fi
   fi
   return 0
 }
@@ -741,13 +758,18 @@ brand_rollout_remove_if_ours() {
 
 brand_rollout_rollback() {
   brand_rollout_paths_init || return "${ROLLOUT_RC_CRITICAL}"
-  brand_rollout_lock_owns || return "${ROLLOUT_RC_CRITICAL}"
   brand_rollout_tx_load || return "${ROLLOUT_RC_CRITICAL}"
 
   if [[ "${TX_STATUS:-}" == "rolled_back" ]]; then
     brand_err "rollout-${BRAND_LABEL}: rollout failed; previous state restored"
     return "${ROLLOUT_RC_ROLLED_BACK}"
   fi
+  if [[ "${TX_STATUS:-}" == "completed" ]]; then
+    brand_err "rollout-${BRAND_LABEL}: rollback not allowed for completed transaction"
+    return 1
+  fi
+
+  brand_rollout_lock_owns || return "${ROLLOUT_RC_CRITICAL}"
 
   TX_STATUS=rolling_back
   brand_rollout_tx_write || return "${ROLLOUT_RC_CRITICAL}"
@@ -956,37 +978,82 @@ brand_rollout_rollback() {
 
 brand_rollout_finalize() {
   brand_rollout_paths_init || return 1
-  brand_rollout_lock_owns || return "${ROLLOUT_RC_CRITICAL}"
   brand_rollout_tx_load || return "${ROLLOUT_RC_CRITICAL}"
 
-  if [[ "${TX_STATUS:-}" == "completed" && "${ROLLOUT_COMPLETED:-0}" == "1" ]]; then
-    brand_log "rollout-${BRAND_LABEL}: finalize idempotent OK"
-    brand_rollout_lock_release || true
-    return 0
-  fi
+  case "${TX_STATUS:-}" in
+    completed)
+      if [[ "${ROLLOUT_COMPLETED:-0}" != "1" ]]; then
+        brand_err "rollout-${BRAND_LABEL}: finalize not allowed from status ${TX_STATUS}"
+        return 1
+      fi
+      brand_log "rollout-${BRAND_LABEL}: finalize idempotent OK"
+      # Partial prior failure may have left the lock held after completed was recorded.
+      if [[ -d "${ROLLOUT_LOCK_DIR}" ]]; then
+        brand_rollout_lock_owns || return "${ROLLOUT_RC_CRITICAL}"
+        if ! brand_rollout_lock_release; then
+          brand_err "CRITICAL: ${BRAND_LABEL} finalize lock release failed"
+          brand_err "transaction.id=${TX_ID}"
+          brand_err "transaction.dir=${ROLLOUT_TX_DIR}"
+          brand_err "lock=${ROLLOUT_LOCK_DIR}"
+          brand_err "make brand-rollout-recover BRAND=${EXPECTED_BRAND_ID} TX_ID=${TX_ID} ACTION=status"
+          return "${ROLLOUT_RC_CRITICAL}"
+        fi
+      fi
+      brand_rollout_cleanup_tx_backups
+      return 0
+      ;;
+    pending_smoke|finalizing)
+      ;;
+    *)
+      brand_err "rollout-${BRAND_LABEL}: finalize not allowed from status ${TX_STATUS:-}"
+      return 1
+      ;;
+  esac
 
-  TX_STATUS=finalizing
-  brand_rollout_tx_write || return "${ROLLOUT_RC_CRITICAL}"
+  brand_rollout_lock_owns || return "${ROLLOUT_RC_CRITICAL}"
 
   local marker_tmp="${ROLLOUT_MARKER}.new.${TX_ID}"
-  printf '%s\n' "${BINARY_BACKUP}" >"${marker_tmp}" || {
-    brand_rollout_critical "finalize marker write failed"
-    return "${ROLLOUT_RC_CRITICAL}"
-  }
-  brand_checked_chmod 0600 "${marker_tmp}" || {
-    brand_checked_rm "${marker_tmp}" || true
-    brand_rollout_critical "finalize marker chmod failed"
-    return "${ROLLOUT_RC_CRITICAL}"
-  }
-  brand_checked_mv "${marker_tmp}" "${ROLLOUT_MARKER}" || {
-    brand_checked_rm "${marker_tmp}" || true
-    brand_rollout_critical "finalize marker mv failed"
-    return "${ROLLOUT_RC_CRITICAL}"
-  }
-  MARKER_PUBLISHED=1
-  brand_rollout_tx_write || return "${ROLLOUT_RC_CRITICAL}"
+  local mcontent=""
+  local need_marker_mv=1
 
-  local mcontent
+  # Resume after crash: marker intent already recorded and content already correct.
+  if [[ "${MARKER_PUBLISHED:-0}" == "1" && -f "${ROLLOUT_MARKER}" ]]; then
+    mcontent="$(tr -d '\n' <"${ROLLOUT_MARKER}" 2>/dev/null || true)"
+    if [[ "${mcontent}" == "${BINARY_BACKUP}" ]]; then
+      need_marker_mv=0
+    fi
+  fi
+
+  if [[ "${need_marker_mv}" -eq 1 ]]; then
+    printf '%s\n' "${BINARY_BACKUP}" >"${marker_tmp}" || {
+      brand_rollout_critical "finalize marker write failed"
+      return "${ROLLOUT_RC_CRITICAL}"
+    }
+    brand_checked_chmod 0600 "${marker_tmp}" || {
+      brand_checked_rm "${marker_tmp}" || true
+      brand_rollout_critical "finalize marker chmod failed"
+      return "${ROLLOUT_RC_CRITICAL}"
+    }
+
+    # Intent before atomic replace: marker may be changed after this point.
+    MARKER_PUBLISHED=1
+    TX_STATUS=finalizing
+    brand_rollout_tx_write || {
+      brand_checked_rm "${marker_tmp}" || true
+      brand_rollout_critical "finalize marker intent write failed"
+      return "${ROLLOUT_RC_CRITICAL}"
+    }
+
+    brand_checked_mv "${marker_tmp}" "${ROLLOUT_MARKER}" || {
+      brand_checked_rm "${marker_tmp}" || true
+      brand_rollout_critical "finalize marker mv failed"
+      return "${ROLLOUT_RC_CRITICAL}"
+    }
+  else
+    TX_STATUS=finalizing
+    brand_rollout_tx_write || return "${ROLLOUT_RC_CRITICAL}"
+  fi
+
   mcontent="$(tr -d '\n' <"${ROLLOUT_MARKER}" 2>/dev/null || true)"
   if [[ "${mcontent}" != "${BINARY_BACKUP}" ]]; then
     brand_rollout_critical "finalize marker content mismatch"
@@ -997,16 +1064,18 @@ brand_rollout_finalize() {
   TX_STATUS=completed
   brand_rollout_tx_write || return "${ROLLOUT_RC_CRITICAL}"
 
-  rm -f "${ROLLOUT_TX_DIR}/backups/config.bak" \
-    "${ROLLOUT_TX_DIR}/backups/dropin.bak" \
-    "${ROLLOUT_TX_DIR}/backups/marker.bak" \
-    "${ROLLOUT_TX_DIR}/recovery/dropin.intended" 2>/dev/null || true
-
+  # Keep recovery backups until lock release succeeds.
   if ! brand_rollout_lock_release; then
-    brand_rollout_critical "finalize lock release failed"
+    # Status stays completed so recovery finalize can retry release + cleanup.
+    brand_err "CRITICAL: ${BRAND_LABEL} finalize lock release failed"
+    brand_err "transaction.id=${TX_ID}"
+    brand_err "transaction.dir=${ROLLOUT_TX_DIR}"
+    brand_err "lock=${ROLLOUT_LOCK_DIR}"
+    brand_err "make brand-rollout-recover BRAND=${EXPECTED_BRAND_ID} TX_ID=${TX_ID} ACTION=status"
     return "${ROLLOUT_RC_CRITICAL}"
   fi
 
+  brand_rollout_cleanup_tx_backups
   brand_log "rollout-${BRAND_LABEL}: finalized (binary backup retained)"
   return 0
 }

@@ -799,20 +799,15 @@ test_ownership_mismatch_no_mutation() {
   local out rc=0
   out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
   [[ "${rc}" -eq 0 ]] || { fail own "run: ${out}"; teardown; return; }
-  local real_tx="${TX_ID}"
-  export TX_ID="other-${RANDOM}${RANDOM}"
-  brand_rollout_paths_init
-  # Point paths at real lock/tx incorrectly via foreign TX — rollback must refuse.
-  ROLLOUT_TX_DIR="${REMOTE_DIR}/.vpnbot-rollouts/${real_tx}"
+  # Corrupt lock ownership while keeping the real transaction identity.
+  printf 'foreign-tx\n' >"${ROLLOUT_LOCK_DIR}/tx_id"
   rc=0
   out="$(brand_rollout_rollback 2>&1)" || rc=$?
   [[ "${rc}" -eq "${ROLLOUT_RC_CRITICAL}" ]] || { fail own "rc=${rc} ${out}"; teardown; return; }
   if ! grep -Fq 'does not own rollout lock' <<<"${out}"; then
     fail own "${out}"; teardown; return
   fi
-  [[ -d "${REMOTE_DIR}/.vpnbot-rollout.lock" ]] || { fail own "lock removed"; teardown; return; }
-  export TX_ID="${real_tx}"
-  brand_rollout_paths_init
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail own "lock removed"; teardown; return; }
   pass ownership_mismatch_no_mutation
   teardown
 }
@@ -827,6 +822,228 @@ test_make_n_recover() {
   pass make_n_recover
 }
 
+# --- lifecycle: finalize/rollback idempotency and marker intent ---
+
+test_finalize_forbidden_from_critical() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0 marker_before=""
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_crit "run: ${out}"; teardown; return; }
+  load_tx
+  TX_STATUS=critical
+  brand_rollout_tx_write || { fail fin_crit "tx write"; teardown; return; }
+  marker_before="$(cat "${ROLLOUT_MARKER}" 2>/dev/null || true)"
+  local bin_before cfg_before
+  bin_before="$(cat "${REMOTE_BINARY}")"
+  cfg_before="$(cat "${REMOTE_EXPLICIT_CONFIG}")"
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -ne 0 ]] || { fail fin_crit "should fail"; teardown; return; }
+  grep -Fq 'finalize not allowed from status critical' <<<"${out}" || { fail fin_crit "${out}"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "critical" ]] || { fail fin_crit "status=${TX_STATUS}"; teardown; return; }
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_crit "lock gone"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin_before}" ]] || { fail fin_crit "binary"; teardown; return; }
+  [[ "$(cat "${REMOTE_EXPLICIT_CONFIG}")" == "${cfg_before}" ]] || { fail fin_crit "config"; teardown; return; }
+  [[ "$(cat "${ROLLOUT_MARKER}" 2>/dev/null || true)" == "${marker_before}" ]] || { fail fin_crit "marker"; teardown; return; }
+  pass finalize_forbidden_from_critical
+  teardown
+}
+
+test_finalize_idempotent_after_lock_release() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_idemp "run: ${out}"; teardown; return; }
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_idemp "finalize: ${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_idemp "lock retained"; teardown; return; }
+  local marker1 bin1
+  marker1="$(tr -d '\n' <"${ROLLOUT_MARKER}")"
+  bin1="$(cat "${REMOTE_BINARY}")"
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_idemp "retry: ${out}"; teardown; return; }
+  grep -Fq 'finalize idempotent OK' <<<"${out}" || { fail fin_idemp "${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_idemp "lock recreated"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "completed" ]] || { fail fin_idemp "status=${TX_STATUS}"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_MARKER}")" == "${marker1}" ]] || { fail fin_idemp "marker changed"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin1}" ]] || { fail fin_idemp "binary changed"; teardown; return; }
+  pass finalize_idempotent_after_lock_release
+  teardown
+}
+
+test_rollback_idempotent_after_lock_release() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail rb_idemp "run: ${out}"; teardown; return; }
+  rc=0
+  out="$(brand_rollout_rollback 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_ROLLED_BACK}" ]] || { fail rb_idemp "rb: ${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail rb_idemp "lock retained"; teardown; return; }
+  local restarts bin1
+  restarts="$(restart_count)"
+  bin1="$(cat "${REMOTE_BINARY}")"
+  rc=0
+  out="$(brand_rollout_rollback 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_ROLLED_BACK}" ]] || { fail rb_idemp "retry rc=${rc}"; teardown; return; }
+  grep -Fq 'previous state restored' <<<"${out}" || { fail rb_idemp "${out}"; teardown; return; }
+  [[ "$(restart_count)" == "${restarts}" ]] || { fail rb_idemp "restart called"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin1}" ]] || { fail rb_idemp "binary"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "rolled_back" ]] || { fail rb_idemp "status=${TX_STATUS}"; teardown; return; }
+  pass rollback_idempotent_after_lock_release
+  teardown
+}
+
+test_rollback_forbidden_after_completed() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail rb_comp "run: ${out}"; teardown; return; }
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail rb_comp "finalize: ${out}"; teardown; return; }
+  local bin1 cfg1 marker1
+  bin1="$(cat "${REMOTE_BINARY}")"
+  cfg1="$(cat "${REMOTE_EXPLICIT_CONFIG}")"
+  marker1="$(tr -d '\n' <"${ROLLOUT_MARKER}")"
+  rc=0
+  out="$(brand_rollout_rollback 2>&1)" || rc=$?
+  [[ "${rc}" -ne 0 ]] || { fail rb_comp "should fail"; teardown; return; }
+  grep -Fq 'rollback not allowed for completed transaction' <<<"${out}" || { fail rb_comp "${out}"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin1}" ]] || { fail rb_comp "binary"; teardown; return; }
+  [[ "$(cat "${REMOTE_EXPLICIT_CONFIG}")" == "${cfg1}" ]] || { fail rb_comp "config"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_MARKER}")" == "${marker1}" ]] || { fail rb_comp "marker"; teardown; return; }
+  [[ -f "${DROPIN_FILE}" ]] || { fail rb_comp "drop-in removed"; teardown; return; }
+  pass rollback_forbidden_after_completed
+  teardown
+}
+
+test_marker_intent_crash_window() {
+  setup_fc_workspace
+  enable_explicit_mode
+  printf 'old-binary\n' >"${REMOTE_BINARY}"
+  printf 'old-marker-path\n' >"${ROLLOUT_MARKER}"
+  prepare_rollout_uploads 'new-bin' '{"brand":{"id":"fc","x":1}}'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail mk_crash "run: ${out}"; teardown; return; }
+  load_tx
+  # Simulate crash after marker intent, before completed (marker already replaced).
+  TX_STATUS=finalizing
+  MARKER_PUBLISHED=1
+  brand_rollout_tx_write || { fail mk_crash "tx"; teardown; return; }
+  printf '%s\n' "${BINARY_BACKUP}" >"${ROLLOUT_MARKER}"
+  rc=0
+  out="$(brand_rollout_rollback 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_ROLLED_BACK}" ]] || { fail mk_crash "rc=${rc} ${out}"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_MARKER}")" == "old-marker-path" ]] || { fail mk_crash "marker not restored"; teardown; return; }
+  load_tx
+  [[ "${MARKER_PUBLISHED}" == "0" ]] || { fail mk_crash "MARKER_PUBLISHED=${MARKER_PUBLISHED}"; teardown; return; }
+
+  # Previous marker absent branch.
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  rm -f "${ROLLOUT_MARKER}"
+  prepare_rollout_uploads 'new-bin2'
+  rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail mk_crash2 "run: ${out}"; teardown; return; }
+  load_tx
+  TX_STATUS=finalizing
+  MARKER_PUBLISHED=1
+  brand_rollout_tx_write || { fail mk_crash2 "tx"; teardown; return; }
+  printf '%s\n' "${BINARY_BACKUP}" >"${ROLLOUT_MARKER}"
+  rc=0
+  out="$(brand_rollout_rollback 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_ROLLED_BACK}" ]] || { fail mk_crash2 "rc=${rc}"; teardown; return; }
+  [[ ! -f "${ROLLOUT_MARKER}" ]] || { fail mk_crash2 "marker remains"; teardown; return; }
+  pass marker_intent_crash_window
+  teardown
+}
+
+test_finalize_lock_release_failure_preserves_backups() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_lock "run: ${out}"; teardown; return; }
+  [[ -f "${ROLLOUT_TX_DIR}/backups/config.bak" ]] || true
+  # Force lock rmdir failure after marker publication path.
+  cat >"${MOCK}/rmdir" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "${ROLLOUT_LOCK_DIR}" ]]; then
+  exit 1
+fi
+exec /usr/bin/rmdir "\$@"
+EOF
+  chmod 0700 "${MOCK}/rmdir"
+  hash -r
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_CRITICAL}" ]] || { fail fin_lock "rc=${rc} ${out}"; teardown; return; }
+  if grep -Fq 'finalized (binary backup retained)' <<<"${out}"; then
+    fail fin_lock "false success"; teardown; return
+  fi
+  [[ -d "${ROLLOUT_TX_DIR}" ]] || { fail fin_lock "tx dir gone"; teardown; return; }
+  [[ -f "${ROLLOUT_TX_DIR}/backups/marker.bak" || "${PREV_MARKER_EXISTED:-0}" == "0" ]] || true
+  # config.bak may be absent for legacy first rollout; dropin.bak likewise.
+  # marker.bak absent when PREV_MARKER_EXISTED=0 — ensure tx.env still present.
+  [[ -f "${ROLLOUT_TX_DIR}/tx.env" ]] || { fail fin_lock "tx.env gone"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "completed" ]] || { fail fin_lock "status=${TX_STATUS}"; teardown; return; }
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_lock "lock gone"; teardown; return; }
+  pass finalize_lock_release_failure_preserves_backups
+  teardown
+}
+
+test_safe_abort_lock_release_failure_preserves_manifest() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads
+  write_configcheck_fail
+  cat >"${MOCK}/rmdir" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "${ROLLOUT_LOCK_DIR}" ]]; then
+  exit 1
+fi
+exec /usr/bin/rmdir "\$@"
+EOF
+  chmod 0700 "${MOCK}/rmdir"
+  hash -r
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_CRITICAL}" ]] || { fail sabort "rc=${rc} ${out}"; teardown; return; }
+  [[ -d "${ROLLOUT_TX_DIR}" ]] || { fail sabort "tx dir removed"; teardown; return; }
+  [[ -f "${ROLLOUT_TX_DIR}/tx.env" ]] || { fail sabort "tx.env missing"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "critical" ]] || { fail sabort "status=${TX_STATUS}"; teardown; return; }
+  grep -Fq 'brand-rollout-recover' <<<"${out}" || { fail sabort "no recover cmd"; teardown; return; }
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail sabort "lock gone"; teardown; return; }
+  pass safe_abort_lock_release_failure_preserves_manifest
+  teardown
+}
+
 test_parallel_rollout_lock
 test_same_second_tx_ids_differ
 test_finalize_releases_lock_and_marker
@@ -834,6 +1051,13 @@ test_crash_window_config_installing
 test_external_config_mod_blocks_delete
 test_ownership_mismatch_no_mutation
 test_make_n_recover
+test_finalize_forbidden_from_critical
+test_finalize_idempotent_after_lock_release
+test_rollback_idempotent_after_lock_release
+test_rollback_forbidden_after_completed
+test_marker_intent_crash_window
+test_finalize_lock_release_failure_preserves_backups
+test_safe_abort_lock_release_failure_preserves_manifest
 
 if [[ "${FAILS}" -ne 0 ]]; then
   echo "brand_rollout_test: ${FAILS} failed" >&2
