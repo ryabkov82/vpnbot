@@ -38,6 +38,7 @@ type UserRegistrationRequest struct {
 }
 
 type UserSettings struct {
+	BrandID  string       `json:"brand_id,omitempty"`
 	Telegram TelegramInfo `json:"telegram"`
 	Web      WebInfo      `json:"web,omitempty"`
 }

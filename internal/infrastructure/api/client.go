@@ -86,56 +86,6 @@ func (c *APIClient) Authenticate() error {
 	return nil
 }
 
-func (c *APIClient) GetUser(chatID int64) (*models.User, error) {
-
-	login := fmt.Sprintf("@%d", chatID)
-	// Подготовка данных
-	filter := map[string]interface{}{
-		"login": login,
-	}
-
-	// Сериализация и кодирование
-	jsonBytes, _ := json.Marshal(filter)
-	encoded := url.QueryEscape(string(jsonBytes))
-
-	req, err := http.NewRequest(
-		"GET",
-		fmt.Sprintf("%s/shm/v1/admin/user?filter=%s", c.ServerURL, encoded),
-		nil)
-
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	type UserResponse struct {
-		Data []models.User `json:"data"`
-	}
-
-	var users UserResponse
-	if err := json.Unmarshal(body, &users); err != nil {
-		return nil, err
-	}
-
-	for _, user := range users.Data {
-		if user.Settings.Telegram.ChatID == chatID {
-			return &user, nil
-		}
-	}
-
-	return nil, nil
-}
-
 // GetUserByID возвращает пользователя по shm user_id (фильтр admin/user).
 func (c *APIClient) GetUserByID(userID int) (*models.User, error) {
 	if userID <= 0 {

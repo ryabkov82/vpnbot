@@ -15,7 +15,16 @@ import (
 func ownedTestCfg(category string) *config.Config {
 	cfg := &config.Config{}
 	cfg.API.Timeout = 5
+	// Telegram ownership идёт через brand-aware GetUser (VFF login=@<chat_id>).
+	cfg.Brand.ID = "vff"
+	cfg.Brand.Name = "VPN for Friends"
+	cfg.Brand.AllowedHosts = []string{"connect.vpn-for-friends.com"}
+	cfg.Brand.PublicBaseURL = "https://connect.vpn-for-friends.com"
+	cfg.Brand.LandingURL = "https://vpn-for-friends.com"
 	cfg.Brand.ServiceCategory = category
+	cfg.Brand.WebUserLoginPrefix = "web_"
+	cfg.Brand.WebUserSource = "vpn-for-friends.com"
+	cfg.Brand.PaymentProfile = "telegram_bot"
 	return cfg
 }
 

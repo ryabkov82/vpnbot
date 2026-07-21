@@ -89,7 +89,30 @@ func (s *Service) IsTrialEligible(chatID int64) bool {
 }
 
 func (s *Service) GetUser(chatID int64) (*models.User, error) {
-	return s.apiClient.GetUser(chatID)
+	if chatID <= 0 {
+		return nil, errors.New("invalid telegram chat id")
+	}
+	brandID := s.activeBrandID()
+	if brandID == "" {
+		return nil, errors.New("active brand id is required")
+	}
+	login := telegramSHMLogin(brandID, chatID)
+	user, err := s.apiClient.GetUserByLogin(login)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, nil
+	}
+	if user.Settings.Telegram.ChatID != chatID {
+		logIdentityMismatch("telegram_chat_id", user.Login, strings.TrimSpace(user.Settings.BrandID), chatID, user.Settings.Telegram.ChatID)
+		return nil, ErrUserIdentityMismatch
+	}
+	if !userBelongsToBrand(user, brandID, login) {
+		logIdentityMismatch("brand_id", user.Login, strings.TrimSpace(user.Settings.BrandID), chatID, user.Settings.Telegram.ChatID)
+		return nil, ErrUserIdentityMismatch
+	}
+	return user, nil
 }
 
 // GetUserByID — пользователь по числовому shm user_id (веб-кабинет, premium-токены).
@@ -98,6 +121,17 @@ func (s *Service) GetUserByID(userID int) (*models.User, error) {
 }
 
 func (s *Service) RegisterUser(user models.UserRegistrationRequest) error {
+	brandID := s.activeBrandID()
+	if brandID == "" {
+		return errors.New("active brand id is required")
+	}
+	chatID := user.Settings.Telegram.ChatID
+	if chatID <= 0 {
+		return errors.New("telegram chat_id must be positive")
+	}
+	// Канонические login и brand_id всегда задаёт service layer активного процесса.
+	user.Login = telegramSHMLogin(brandID, chatID)
+	user.Settings.BrandID = brandID
 	return s.apiClient.RegisterUser(user)
 }
 

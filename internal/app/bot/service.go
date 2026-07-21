@@ -908,13 +908,10 @@ func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) err
 func (s *Service) handleRegister(c telebot.Context) error {
 
 	user := c.Sender()
-
-	login := fmt.Sprintf("@%d", user.ID)
 	userID := fmt.Sprintf("%d", user.ID)
 
-	// Подготовка данных для регистрации
+	// Login и settings.brand_id задаёт service layer по активному бренду процесса.
 	regData := models.UserRegistrationRequest{
-		Login:    login,
 		Password: generatePassword(), // Функция генерации пароля
 		FullName: fmt.Sprintf("%s %s", user.FirstName, user.LastName),
 		Settings: models.UserSettings{
