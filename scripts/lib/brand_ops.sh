@@ -360,9 +360,8 @@ brand_rollback_binary() {
   chmod 0755 "${REMOTE_BINARY}"
   brand_cleanup_binary_temps
 
-  local start_time
-  start_time="$(date '+%Y-%m-%d %H:%M:%S')"
-
+  # Restored previous binary may predate new startup log markers.
+  # Only require systemd stability (active → sleep → active), not journal text.
   if ! systemctl restart "${SERVICE_NAME}"; then
     brand_err "deploy-${BRAND_LABEL}: binary rollback restart failed"
     return 1
@@ -376,11 +375,7 @@ brand_rollback_binary() {
     brand_err "deploy-${BRAND_LABEL}: binary rollback unit not active after stabilization"
     return 1
   fi
-  if ! brand_require_legacy_startup_log "${start_time}"; then
-    brand_err "deploy-${BRAND_LABEL}: binary rollback startup log check failed"
-    return 1
-  fi
-  brand_log "deploy-${BRAND_LABEL}: restored binary from ${bak}"
+  brand_log "deploy-${BRAND_LABEL}: previous binary restored and unit is stable"
   return 0
 }
 

@@ -13,7 +13,7 @@ VFF_PUBLIC_BASE_URL := https://connect.vpn-for-friends.com
 VFF_EXPECT_CATEGORY := vpn-mz-test
 VFF_EXPECT_PAYMENT_PROFILE := telegram_bot
 
-FC_SERVER_HOST := fra-01
+FC_SERVER_HOST := fr-mrs-1
 FC_SERVICE_NAME := bot-friends-connect.service
 FC_REMOTE_DIR := /opt/bot-friends-connect
 FC_REMOTE_BINARY := $(FC_REMOTE_DIR)/$(APP_NAME)

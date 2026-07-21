@@ -29,7 +29,7 @@ brand_profile_export() {
       ;;
     fc | FC)
       export SERVER_USER="${SERVER_USER:-root}"
-      export SERVER_HOST=fra-01
+      export SERVER_HOST=fr-mrs-1
       export SERVICE_NAME=bot-friends-connect.service
       export REMOTE_DIR=/opt/bot-friends-connect
       export REMOTE_BINARY=/opt/bot-friends-connect/bot

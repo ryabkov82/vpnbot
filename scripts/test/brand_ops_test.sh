@@ -40,12 +40,16 @@ case "\$cmd" in
     if [[ -f "${WORK}/restart_always_fail" ]]; then exit 1; fi
     if [[ -f "${DROPIN_FILE}" ]]; then
       printf '%s\n' "FOO=1 ${EXPECTED_ENV}" >"${WORK}/state_env"
-      printf 'active brand: id=%s name="X"\n' "${EXPECTED_BRAND_ID}" >>"${WORK}/journal/log"
-      printf 'telegram bot configured\n' >>"${WORK}/journal/log"
+      if [[ ! -f "${WORK}/no_startup_markers" ]]; then
+        printf 'active brand: id=%s name="X"\n' "${EXPECTED_BRAND_ID}" >>"${WORK}/journal/log"
+        printf 'telegram bot configured\n' >>"${WORK}/journal/log"
+      fi
       printf 'active\n' >"${WORK}/state_active"
     elif [[ -f "${REMOTE_BINARY}" ]]; then
-      printf 'active brand: id=vff name="synth"\n' >>"${WORK}/journal/log"
-      printf 'telegram bot configured\n' >>"${WORK}/journal/log"
+      if [[ ! -f "${WORK}/no_startup_markers" ]]; then
+        printf 'active brand: id=vff name="synth"\n' >>"${WORK}/journal/log"
+        printf 'telegram bot configured\n' >>"${WORK}/journal/log"
+      fi
       printf 'active\n' >"${WORK}/state_active"
       printf 'FOO=1\n' >"${WORK}/state_env"
     else
@@ -152,15 +156,47 @@ EOF
 
 teardown() { rm -rf "${WORK:-}"; }
 
-# 1. profiles export different hosts
-test_profiles_differ() {
+# 1. VFF and FC share fr-mrs-1 but differ on service/paths/brand/smoke/expectations
+test_profiles_same_host_differ_elsewhere() {
   brand_profile_export vff
-  local vff_host="${SERVER_HOST}" vff_svc="${SERVICE_NAME}"
+  local vff_host="${SERVER_HOST}" vff_svc="${SERVICE_NAME}" vff_dir="${REMOTE_DIR}"
+  local vff_bin="${REMOTE_BINARY}" vff_legacy="${REMOTE_LEGACY_CONFIG}"
+  local vff_explicit="${REMOTE_EXPLICIT_CONFIG}" vff_dropin="${DROPIN_FILE}"
+  local vff_brand="${EXPECTED_BRAND_ID}" vff_smoke="${SMOKE_BASE_URL}"
+  local vff_cat="${EXPECT_SERVICE_CATEGORY}" vff_pay="${EXPECT_PAYMENT_PROFILE}"
+
   brand_profile_export fc
-  if [[ "${SERVER_HOST}" == "${vff_host}" ]]; then fail profiles "same host"; return; fi
-  if [[ "${SERVICE_NAME}" == "${vff_svc}" ]]; then fail profiles "same service"; return; fi
+  if [[ "${vff_host}" != "fr-mrs-1" || "${SERVER_HOST}" != "fr-mrs-1" ]]; then
+    fail profiles "hosts want fr-mrs-1 (vff=${vff_host} fc=${SERVER_HOST})"; return
+  fi
+  if [[ "${SERVICE_NAME}" != "bot-friends-connect.service" ]]; then
+    fail profiles "fc SERVICE_NAME=${SERVICE_NAME}"; return
+  fi
+  if [[ "${REMOTE_DIR}" != "/opt/bot-friends-connect" ]]; then
+    fail profiles "fc REMOTE_DIR=${REMOTE_DIR}"; return
+  fi
+  if [[ "${REMOTE_BINARY}" != "/opt/bot-friends-connect/bot" ]]; then
+    fail profiles "fc REMOTE_BINARY=${REMOTE_BINARY}"; return
+  fi
+  if [[ "${REMOTE_LEGACY_CONFIG}" != "/opt/bot-friends-connect/config.json" ]]; then
+    fail profiles "fc REMOTE_LEGACY_CONFIG=${REMOTE_LEGACY_CONFIG}"; return
+  fi
+  if [[ "${REMOTE_EXPLICIT_CONFIG}" != "/opt/bot-friends-connect/config-fc.json" ]]; then
+    fail profiles "fc REMOTE_EXPLICIT_CONFIG=${REMOTE_EXPLICIT_CONFIG}"; return
+  fi
   if [[ "${EXPECTED_BRAND_ID}" != "fc" ]]; then fail profiles "fc id"; return; fi
-  pass profiles_differ
+
+  if [[ "${SERVICE_NAME}" == "${vff_svc}" ]]; then fail profiles "same SERVICE_NAME"; return; fi
+  if [[ "${REMOTE_DIR}" == "${vff_dir}" ]]; then fail profiles "same REMOTE_DIR"; return; fi
+  if [[ "${REMOTE_BINARY}" == "${vff_bin}" ]]; then fail profiles "same REMOTE_BINARY"; return; fi
+  if [[ "${REMOTE_LEGACY_CONFIG}" == "${vff_legacy}" ]]; then fail profiles "same REMOTE_LEGACY_CONFIG"; return; fi
+  if [[ "${REMOTE_EXPLICIT_CONFIG}" == "${vff_explicit}" ]]; then fail profiles "same REMOTE_EXPLICIT_CONFIG"; return; fi
+  if [[ "${DROPIN_FILE}" == "${vff_dropin}" ]]; then fail profiles "same DROPIN_FILE"; return; fi
+  if [[ "${EXPECTED_BRAND_ID}" == "${vff_brand}" ]]; then fail profiles "same EXPECTED_BRAND_ID"; return; fi
+  if [[ "${SMOKE_BASE_URL}" == "${vff_smoke}" ]]; then fail profiles "same SMOKE_BASE_URL"; return; fi
+  if [[ "${EXPECT_SERVICE_CATEGORY}" == "${vff_cat}" ]]; then fail profiles "same EXPECT_SERVICE_CATEGORY"; return; fi
+  if [[ "${EXPECT_PAYMENT_PROFILE}" == "${vff_pay}" ]]; then fail profiles "same EXPECT_PAYMENT_PROFILE"; return; fi
+  pass profiles_same_host_differ_elsewhere
 }
 
 # 2. missing required param stops
@@ -254,23 +290,105 @@ test_binary_rollback_second_active_fails() {
   teardown
 }
 
-# 7. marker-based rollback (manual / smoke path)
+# 7. marker-based rollback (manual / smoke path) succeeds without startup markers
 test_binary_marker_rollback() {
   setup_profile fc
   bak="${REMOTE_BINARY}.bak.manual"
   printf 'restored\n' >"${bak}"
   printf '%s\n' "${bak}" >"${REMOTE_DIR}/.vpnbot-last-binary-bak"
   printf 'broken\n' >"${REMOTE_BINARY}"
+  : >"${WORK}/no_startup_markers"
+  : >"${WORK}/journal/log"
   local out rc=0
   out="$(brand_rollback_binary_from_marker 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail binary_marker "${out}"; teardown; return; fi
   if ! grep -Fxq 'restored' "${REMOTE_BINARY}"; then fail binary_marker "not restored"; teardown; return; fi
+  if grep -Fq 'active brand:' "${WORK}/journal/log"; then
+    fail binary_marker "unexpected markers"; teardown; return
+  fi
+  if ! grep -Fq 'previous binary restored and unit is stable' <<<"${out}"; then
+    fail binary_marker "missing stable msg: ${out}"; teardown; return
+  fi
   # exact path required: no-arg automatic rollback must fail
   rc=0
   brand_rollback_binary >/dev/null 2>&1 || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail binary_marker "no-arg should fail"; teardown; return; fi
   pass binary_marker_rollback
   teardown
+}
+
+# 7b. old previous binary without startup markers: rollback OK, deploy fails, no CRITICAL
+test_old_binary_rollback_without_startup_markers() {
+  setup_profile fc
+  printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
+  printf 'broken-new-binary\n' >"${REMOTE_BINARY}.new"
+  : >"${WORK}/restart_fail_once"
+  : >"${WORK}/no_startup_markers"
+  : >"${WORK}/journal/log"
+  local out rc=0
+  out="$(brand_deploy_binary 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail old_bin_rollback "deploy should fail"; teardown; return; fi
+  if ! grep -Fxq 'old-fc-binary' "${REMOTE_BINARY}"; then
+    fail old_bin_rollback "content=$(cat "${REMOTE_BINARY}")"; teardown; return
+  fi
+  if grep -Fq 'active brand:' "${WORK}/journal/log" || grep -Fq 'telegram bot configured' "${WORK}/journal/log"; then
+    fail old_bin_rollback "journal unexpectedly has markers"; teardown; return
+  fi
+  if ! grep -Fq 'previous binary restored' <<<"${out}"; then
+    fail old_bin_rollback "missing restored: ${out}"; teardown; return
+  fi
+  if grep -Fq 'CRITICAL' <<<"${out}"; then
+    fail old_bin_rollback "unexpected CRITICAL: ${out}"; teardown; return
+  fi
+  pass old_binary_rollback_without_startup_markers
+  teardown
+}
+
+# 7c. new binary still requires startup markers; missing markers → rollback
+test_new_binary_requires_startup_markers() {
+  setup_profile fc
+  printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
+  printf 'new-binary-no-markers\n' >"${REMOTE_BINARY}.new"
+  : >"${WORK}/no_startup_markers"
+  : >"${WORK}/journal/log"
+  local out rc=0
+  out="$(brand_deploy_binary 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail new_bin_markers "deploy should fail"; teardown; return; fi
+  if ! grep -Fq 'startup log check failed' <<<"${out}"; then
+    fail new_bin_markers "missing startup reason: ${out}"; teardown; return
+  fi
+  if ! grep -Fq 'previous binary restored' <<<"${out}"; then
+    fail new_bin_markers "missing restored: ${out}"; teardown; return
+  fi
+  if ! grep -Fxq 'old-fc-binary' "${REMOTE_BINARY}"; then
+    fail new_bin_markers "not rolled back: $(cat "${REMOTE_BINARY}")"; teardown; return
+  fi
+  if grep -Fq 'CRITICAL' <<<"${out}"; then
+    fail new_bin_markers "unexpected CRITICAL: ${out}"; teardown; return
+  fi
+  pass new_binary_requires_startup_markers
+  teardown
+}
+
+# 7d. make -n deploy-fc uses fr-mrs-1 and FC paths (no production)
+test_make_n_deploy_fc_host() {
+  local out
+  out="$(make -n -C "${ROOT}" deploy-fc 2>&1)" || {
+    fail make_n_deploy_fc "make -n failed: ${out}"; return
+  }
+  if ! grep -Fq 'SERVER_HOST=fr-mrs-1' <<<"${out}"; then
+    fail make_n_deploy_fc "missing SERVER_HOST=fr-mrs-1: ${out}"; return
+  fi
+  if ! grep -Fq 'SERVICE_NAME=bot-friends-connect.service' <<<"${out}"; then
+    fail make_n_deploy_fc "missing SERVICE_NAME"; return
+  fi
+  if ! grep -Fq 'REMOTE_DIR=/opt/bot-friends-connect' <<<"${out}"; then
+    fail make_n_deploy_fc "missing REMOTE_DIR"; return
+  fi
+  if grep -Fq 'SERVER_HOST=fra-01' <<<"${out}"; then
+    fail make_n_deploy_fc "unexpected fra-01"; return
+  fi
+  pass make_n_deploy_fc_host
 }
 
 # 6–10. renderer FC/VFF
@@ -631,13 +749,16 @@ EOF
   rm -rf "${dir}"
 }
 
-test_profiles_differ
+test_profiles_same_host_differ_elsewhere
 test_missing_param
 test_binary_deploy_backup
 test_binary_restart_rollback_restores_content
 test_binary_rollback_critical
 test_binary_rollback_second_active_fails
 test_binary_marker_rollback
+test_old_binary_rollback_without_startup_markers
+test_new_binary_requires_startup_markers
+test_make_n_deploy_fc_host
 test_renderer
 test_renderer_source_eq_output
 test_renderer_keeps_output_on_error
