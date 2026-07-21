@@ -209,7 +209,10 @@ func FetchAll[T any](ctx context.Context, c *Client, path string, pageSize int, 
 			return nil, err
 		}
 		n := len(page.Data)
-		fp := pageFingerprint(page.Data, page.Offset, page.Limit, page.Items)
+		items := int(page.Items)
+		limit := int(page.Limit)
+		pageOffset := int(page.Offset)
+		fp := pageFingerprint(page.Data, pageOffset, limit, items)
 		if pageNum > 0 && fp == lastFingerprint {
 			return nil, fmt.Errorf("pagination stuck: repeated page at %s offset=%d", path, offset)
 		}
@@ -219,7 +222,7 @@ func FetchAll[T any](ctx context.Context, c *Client, path string, pageSize int, 
 			return all, nil
 		}
 		all = append(all, page.Data...)
-		if page.Items > 0 && offset+n >= page.Items {
+		if items > 0 && offset+n >= items {
 			return all, nil
 		}
 		nextOffset := offset + n

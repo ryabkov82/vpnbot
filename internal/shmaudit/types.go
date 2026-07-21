@@ -1,17 +1,58 @@
 package shmaudit
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
+// FlexibleInt принимает JSON number и decimal JSON string (SHM pagination metadata).
+type FlexibleInt int
+
+func (v *FlexibleInt) UnmarshalJSON(data []byte) error {
+	if v == nil {
+		return fmt.Errorf("FlexibleInt: nil receiver")
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*v = 0
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			*v = 0
+			return nil
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return fmt.Errorf("FlexibleInt: invalid string %q", s)
+		}
+		*v = FlexibleInt(n)
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return fmt.Errorf("FlexibleInt: %w", err)
+	}
+	*v = FlexibleInt(n)
+	return nil
+}
+
 // Page — универсальный envelope пагинации SHM Admin API.
 type Page[T any] struct {
-	Data   []T `json:"data"`
-	Items  int `json:"items"`
-	Limit  int `json:"limit"`
-	Offset int `json:"offset"`
-	Status int `json:"status"`
+	Data   []T         `json:"data"`
+	Items  FlexibleInt `json:"items"`
+	Limit  FlexibleInt `json:"limit"`
+	Offset FlexibleInt `json:"offset"`
+	Status FlexibleInt `json:"status"`
 }
 
 // AuditUser — пользователь для аудита (отдельная модель от runtime User).

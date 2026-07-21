@@ -300,7 +300,7 @@ func TestFetchAll_PaginationCases(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			n.Add(1)
 			_ = json.NewEncoder(w).Encode(Page[AuditUser]{
-				Data: []AuditUser{{UserID: int(n.Load())}}, Items: 0, Limit: 1, Offset: int(n.Load() - 1),
+				Data: []AuditUser{{UserID: int(n.Load())}}, Items: 0, Limit: 1, Offset: FlexibleInt(n.Load() - 1),
 			})
 		}))
 		defer srv.Close()
@@ -331,9 +331,32 @@ func pageServer(t *testing.T, pages map[int][]AuditUser, totalItems int) *httpte
 			data = []AuditUser{}
 		}
 		_ = json.NewEncoder(w).Encode(Page[AuditUser]{
-			Data: data, Items: totalItems, Limit: len(data), Offset: offset,
+			Data: data, Items: FlexibleInt(totalItems), Limit: FlexibleInt(len(data)), Offset: FlexibleInt(offset),
 		})
 	}))
+}
+
+func TestPage_DecodeNumberAndStringMetadata(t *testing.T) {
+	t.Run("numbers", func(t *testing.T) {
+		var page Page[AuditUser]
+		raw := []byte(`{"data":[],"items":10,"limit":250,"offset":0}`)
+		if err := json.Unmarshal(raw, &page); err != nil {
+			t.Fatal(err)
+		}
+		if int(page.Items) != 10 || int(page.Limit) != 250 || int(page.Offset) != 0 {
+			t.Fatalf("items=%d limit=%d offset=%d", page.Items, page.Limit, page.Offset)
+		}
+	})
+	t.Run("strings", func(t *testing.T) {
+		var page Page[AuditUser]
+		raw := []byte(`{"data":[],"items":"10","limit":"250","offset":"0"}`)
+		if err := json.Unmarshal(raw, &page); err != nil {
+			t.Fatal(err)
+		}
+		if int(page.Items) != 10 || int(page.Limit) != 250 || int(page.Offset) != 0 {
+			t.Fatalf("items=%d limit=%d offset=%d", page.Items, page.Limit, page.Offset)
+		}
+	})
 }
 
 func TestCredentialsNotInAuthError(t *testing.T) {
