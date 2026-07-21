@@ -8,7 +8,7 @@ LOCAL_CONFIGCHECK := ./dist/configcheck-linux-amd64
 # deploy/brands/<BRAND>.json via scripts/lib/brand_profile.sh.
 
 .PHONY: test build build-configcheck config-check \
-	brand-profile brand-deploy brand-rollout brand-config-render brand-config-deploy \
+	brand-profile brand-deploy brand-rollout brand-rollout-recover brand-config-render brand-config-deploy \
 	brand-config-activate brand-config-rollback brand-smoke brand-status \
 	brand-logs brand-rollback \
 	deploy status logs rollback smoke \
@@ -52,6 +52,12 @@ brand-rollout:
 	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-rollout BRAND=fc CONFIG=...)" >&2; exit 1; fi
 	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required" >&2; exit 1; fi
 	bash scripts/rollout-brand.sh "$(BRAND)" "$(CONFIG)"
+
+brand-rollout-recover:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-rollout-recover BRAND=fc TX_ID=... ACTION=status)" >&2; exit 1; fi
+	@if [ -z "$(TX_ID)" ]; then echo "TX_ID is required" >&2; exit 1; fi
+	@if [ -z "$(ACTION)" ]; then echo "ACTION is required (status|rollback|finalize)" >&2; exit 1; fi
+	bash scripts/recover-brand-rollout.sh "$(BRAND)" "$(TX_ID)" "$(ACTION)"
 
 brand-config-render:
 	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-render BRAND=fc SOURCE=... OUTPUT=...)" >&2; exit 1; fi

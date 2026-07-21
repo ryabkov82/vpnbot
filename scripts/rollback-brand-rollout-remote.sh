@@ -7,4 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/brand_ops.sh"
 
 brand_refresh_derived || exit 1
-brand_rollout_rollback
+brand_require_vars TX_ID || exit 1
+
+rc=0
+brand_rollout_rollback || rc=$?
+exit "${rc}"
