@@ -30,7 +30,8 @@ type Service struct {
 }
 
 // NewService создаёт use-case слой с активным брендом процесса (web-login prefix и source).
-// Пустой brand.ID даёт VFF-defaults для login prefix/source (совместимость unit-тестов).
+// В runtime brand приходит уже валидированным (Config.Normalize); пустой brand допустим
+// только в unit-тестах, где service-слой применяет свои дефолты login prefix/source.
 func NewService(apiClient *api.APIClient, brand config.BrandConfig) *Service {
 	return &Service{
 		apiClient:          apiClient,

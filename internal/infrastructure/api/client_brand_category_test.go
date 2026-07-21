@@ -6,9 +6,9 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
-func TestExpectedServiceCategory_ExplicitBrandWinsOverLegacy(t *testing.T) {
+func TestExpectedServiceCategory_ExplicitBrandUsed(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.Services.Category = "legacy-category"
+	cfg.Services.Category = "legacy-category" // legacy fields must never be read
 	cfg.Brand = config.BrandConfig{
 		ID:                 "vff",
 		Name:               "VPN for Friends",
@@ -26,11 +26,12 @@ func TestExpectedServiceCategory_ExplicitBrandWinsOverLegacy(t *testing.T) {
 	}
 }
 
-func TestExpectedServiceCategory_LegacyWhenBrandEmpty(t *testing.T) {
+func TestExpectedServiceCategory_EmptyWhenBrandEmpty(t *testing.T) {
+	// Legacy Services.Category больше не подмешивается: пустой brand → нет ограничения.
 	cfg := &config.Config{}
 	cfg.Services.Category = "legacy-category"
 	c := &APIClient{config: cfg}
-	if got := c.expectedServiceCategory(); got != "legacy-category" {
-		t.Fatalf("want legacy-category, got %q", got)
+	if got := c.expectedServiceCategory(); got != "" {
+		t.Fatalf("legacy category must not be synthesized, got %q", got)
 	}
 }

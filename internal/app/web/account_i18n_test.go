@@ -403,7 +403,7 @@ func TestServeAccountLoginStart_LangENMagicLink(t *testing.T) {
 		return nil
 	})
 	cfg := orderStartTestCfg()
-	cfg.WebSales.PublicBaseURL = "https://shop.example"
+	cfg.Brand.PublicBaseURL = "https://shop.example"
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
 	h := serveAccountLoginStart(cfg, &stubAccountWeb{}, rl)
 	body := `{"email":"u@test.com","website":"","lang":"en"}`
@@ -426,7 +426,7 @@ func TestServeAccountLoginStart_UnknownLangFallbackRU(t *testing.T) {
 		return nil
 	})
 	cfg := orderStartTestCfg()
-	cfg.WebSales.PublicBaseURL = "https://shop.example"
+	cfg.Brand.PublicBaseURL = "https://shop.example"
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
 	h := serveAccountLoginStart(cfg, &stubAccountWeb{}, rl)
 	body := `{"email":"u@test.com","website":"","lang":"fr"}`

@@ -11,7 +11,7 @@ import (
 func orderStartTestCfg() *config.Config {
 	cfg := &config.Config{}
 	cfg.WebSales.OrderTokenSecret = "order-token-secret-order-token-sec"
-	cfg.WebSales.PublicBaseURL = "https://shop.example"
+	cfg.Brand.PublicBaseURL = "https://shop.example"
 	cfg.Email.Enabled = true
 	cfg.Email.SMTPHost = "smtp.test"
 	cfg.Email.SMTPPort = 587

@@ -8,50 +8,64 @@ import (
 	"testing"
 )
 
-func TestEffectiveBrand_NilSafe(t *testing.T) {
+// 11.3 — nil Config: zero-value BrandConfig, no panic, no VFF.
+func TestEffectiveBrand_NilZeroValue(t *testing.T) {
 	var cfg *Config
 	b := cfg.EffectiveBrand()
-	if b.ID != "vff" || b.Name != "VPN for Friends" {
-		t.Fatalf("%#v", b)
+	if b.ID != "" || b.Name != "" || len(b.AllowedHosts) != 0 {
+		t.Fatalf("nil brand must be zero-value, got %#v", b)
 	}
+	// 11.4 — getters do not synthesize defaults.
 	if cfg.ServiceCategory() != "" || cfg.PublicBaseURL() != "" || cfg.PaymentProfile() != "" {
 		t.Fatal("nil accessors must return empty strings")
 	}
-	if cfg.WebUserLoginPrefix() != "web_" || cfg.WebUserSource() != "vpn-for-friends.com" {
-		t.Fatalf("nil web identity defaults: %q %q", cfg.WebUserLoginPrefix(), cfg.WebUserSource())
+	if cfg.WebUserLoginPrefix() != "" || cfg.WebUserSource() != "" {
+		t.Fatalf("nil web identity must be empty, got %q %q", cfg.WebUserLoginPrefix(), cfg.WebUserSource())
 	}
 }
 
-func TestEffectiveBrand_LegacySynthesizeFromFields(t *testing.T) {
+// 11.2 — legacy fields must not synthesize a VFF brand.
+func TestEffectiveBrand_LegacyFieldsDoNotSynthesize(t *testing.T) {
 	cfg := &Config{}
-	cfg.Services.Category = " vpn-mz-main "
-	cfg.WebSales.PublicBaseURL = " https://connect.vpn-for-friends.com/ "
-	cfg.Payments.Profile = " telegram_bot "
+	cfg.Services.Category = "vpn-mz-fc"
+	cfg.WebSales.PublicBaseURL = "https://connect-fc.vpn-for-friends.com"
+	cfg.Payments.Profile = "telegram_friends_connect_bot"
 	b := cfg.EffectiveBrand()
-	if b.ID != "vff" || b.Name != "VPN for Friends" {
-		t.Fatalf("id/name: %#v", b)
+	if b.ID == "vff" {
+		t.Fatalf("legacy fields must not become VFF, got id=%q", b.ID)
 	}
-	if b.ServiceCategory != "vpn-mz-main" {
-		t.Fatalf("category: %q", b.ServiceCategory)
+	if b.ID != "" {
+		t.Fatalf("empty brand must stay empty, got id=%q", b.ID)
 	}
-	if b.PublicBaseURL != "https://connect.vpn-for-friends.com" {
-		t.Fatalf("public: %q", b.PublicBaseURL)
+	if len(b.AllowedHosts) != 0 {
+		t.Fatalf("empty brand must have no allowed_hosts, got %#v", b.AllowedHosts)
 	}
-	if b.PaymentProfile != "telegram_bot" {
-		t.Fatalf("profile: %q", b.PaymentProfile)
-	}
-	if b.WebUserLoginPrefix != "web_" || b.WebUserSource != "vpn-for-friends.com" {
-		t.Fatalf("web identity: %#v", b)
-	}
-	if len(b.AllowedHosts) != 1 || b.AllowedHosts[0] != "connect.vpn-for-friends.com" {
-		t.Fatalf("hosts: %#v", b.AllowedHosts)
-	}
-	if b.LandingURL != "https://vpn-for-friends.com" {
-		t.Fatalf("landing: %q", b.LandingURL)
+	if b.ServiceCategory != "" || b.PublicBaseURL != "" || b.PaymentProfile != "" {
+		t.Fatalf("legacy fields must not populate brand: %#v", b)
 	}
 }
 
-func TestEffectiveBrand_ExplicitOverridesLegacy(t *testing.T) {
+// 11.4 — getters return only explicit brand values (empty Config).
+func TestGetters_NoDefaults(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.ServiceCategory(); got != "" {
+		t.Fatalf("ServiceCategory=%q", got)
+	}
+	if got := cfg.PublicBaseURL(); got != "" {
+		t.Fatalf("PublicBaseURL=%q", got)
+	}
+	if got := cfg.PaymentProfile(); got != "" {
+		t.Fatalf("PaymentProfile=%q", got)
+	}
+	if got := cfg.WebUserLoginPrefix(); got != "" {
+		t.Fatalf("WebUserLoginPrefix=%q", got)
+	}
+	if got := cfg.WebUserSource(); got != "" {
+		t.Fatalf("WebUserSource=%q", got)
+	}
+}
+
+func TestEffectiveBrand_ExplicitOnly(t *testing.T) {
 	cfg := &Config{}
 	cfg.Services.Category = "legacy-category"
 	cfg.WebSales.PublicBaseURL = "https://legacy.example"
@@ -78,44 +92,47 @@ func TestEffectiveBrand_ExplicitOverridesLegacy(t *testing.T) {
 	}
 }
 
-func TestNormalize_LegacyJSONWithoutBrand(t *testing.T) {
+// 11.1 — empty brand fails.
+func TestNormalize_EmptyBrandFails(t *testing.T) {
+	cfg := &Config{}
+	err := cfg.Normalize()
+	if err == nil || !strings.Contains(err.Error(), "brand.id is required") {
+		t.Fatalf("want 'brand.id is required', got %v", err)
+	}
+}
+
+// 11.2 — legacy JSON without brand.id is invalid (no VFF synthesis).
+func TestNormalize_LegacyJSONWithoutBrandFails(t *testing.T) {
 	raw := `{
 		"telegram": {"token": "tok"},
-		"services": {"category": "vpn-mz-main"},
-		"web_sales": {"public_base_url": "https://connect.vpn-for-friends.com"},
-		"payments": {"profile": "telegram_bot"}
+		"services": {"category": "vpn-mz-fc"},
+		"web_sales": {"public_base_url": "https://connect-fc.vpn-for-friends.com"},
+		"payments": {"profile": "telegram_friends_connect_bot"}
 	}`
 	cfg := &Config{}
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatal(err)
+	err := cfg.Normalize()
+	if err == nil || !strings.Contains(err.Error(), "brand.id is required") {
+		t.Fatalf("legacy config must be invalid, got %v", err)
 	}
-	if cfg.Brand.ID != "vff" {
-		t.Fatalf("brand after normalize: %#v", cfg.Brand)
+	if cfg.EffectiveBrand().ID == "vff" {
+		t.Fatal("legacy config must not synthesize VFF")
 	}
-	if cfg.Brand.ServiceCategory != "vpn-mz-main" {
-		t.Fatalf("category: %q", cfg.Brand.ServiceCategory)
+	if len(cfg.EffectiveBrand().AllowedHosts) != 0 {
+		t.Fatalf("legacy config must not have allowed_hosts: %#v", cfg.EffectiveBrand().AllowedHosts)
 	}
 }
 
-func TestNormalize_PartialExplicitNotFilledFromLegacy(t *testing.T) {
-	cfg := &Config{}
+func TestNormalize_ExplicitDoesNotPickLegacyFields(t *testing.T) {
+	cfg := validExplicitBrandCfg()
 	cfg.Services.Category = "legacy-category"
 	cfg.WebSales.PublicBaseURL = "https://legacy.example"
 	cfg.Payments.Profile = "legacy_profile"
-	cfg.Brand = BrandConfig{
-		ID:                 "vff",
-		Name:               "VPN for Friends",
-		AllowedHosts:       []string{"connect.vpn-for-friends.com"},
-		PublicBaseURL:      "https://connect.vpn-for-friends.com",
-		LandingURL:         "https://vpn-for-friends.com",
-		ServiceCategory:    "brand-category",
-		WebUserLoginPrefix: "web_",
-		WebUserSource:      "vpn-for-friends.com",
-		PaymentProfile:     "brand_profile",
-	}
+	cfg.Brand.ServiceCategory = "brand-category"
+	cfg.Brand.PublicBaseURL = "https://connect.vpn-for-friends.com"
+	cfg.Brand.PaymentProfile = "brand_profile"
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +144,56 @@ func TestNormalize_PartialExplicitNotFilledFromLegacy(t *testing.T) {
 	}
 	if cfg.Brand.PaymentProfile != "brand_profile" {
 		t.Fatalf("must not pick legacy profile: %q", cfg.Brand.PaymentProfile)
+	}
+}
+
+// 11.5 — explicit VFF passes.
+func TestNormalize_ExplicitVFFPasses(t *testing.T) {
+	cfg := validExplicitBrandCfg()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("explicit VFF must pass: %v", err)
+	}
+	if cfg.Brand.ID != "vff" {
+		t.Fatalf("brand.id=%q", cfg.Brand.ID)
+	}
+}
+
+// 11.6 — explicit FC passes.
+func TestNormalize_ExplicitFCPasses(t *testing.T) {
+	cfg := validExplicitFCBrandCfg()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("explicit FC must pass: %v", err)
+	}
+	if cfg.Brand.ID != "fc" {
+		t.Fatalf("brand.id=%q", cfg.Brand.ID)
+	}
+}
+
+// 11.7 — each required field missing fails.
+func TestNormalize_MissingEachRequiredField(t *testing.T) {
+	cases := map[string]func(c *Config){
+		"id":                    func(c *Config) { c.Brand.ID = "" },
+		"name":                  func(c *Config) { c.Brand.Name = "" },
+		"allowed_hosts":         func(c *Config) { c.Brand.AllowedHosts = nil },
+		"public_base_url":       func(c *Config) { c.Brand.PublicBaseURL = "" },
+		"landing_url":           func(c *Config) { c.Brand.LandingURL = "" },
+		"service_category":      func(c *Config) { c.Brand.ServiceCategory = "" },
+		"web_user_login_prefix": func(c *Config) { c.Brand.WebUserLoginPrefix = "" },
+		"web_user_source":       func(c *Config) { c.Brand.WebUserSource = "" },
+		"payment_profile":       func(c *Config) { c.Brand.PaymentProfile = "" },
+	}
+	for field, mutate := range cases {
+		t.Run(field, func(t *testing.T) {
+			cfg := validExplicitBrandCfg()
+			mutate(cfg)
+			err := cfg.Normalize()
+			if err == nil {
+				t.Fatalf("missing brand.%s must fail", field)
+			}
+			if !strings.Contains(err.Error(), "brand."+field) {
+				t.Fatalf("error should mention brand.%s, got %v", field, err)
+			}
+		})
 	}
 }
 
@@ -246,54 +313,65 @@ func TestNormalize_ExplicitRejectsEmptyHostElement(t *testing.T) {
 	}
 }
 
-func TestNormalize_LegacyVFFHostUnchanged(t *testing.T) {
-	cfg := &Config{}
-	cfg.Services.Category = "vpn-mz-main"
-	if err := cfg.Normalize(); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Brand.AllowedHosts) != 1 || cfg.Brand.AllowedHosts[0] != "connect.vpn-for-friends.com" {
-		t.Fatalf("legacy VFF hosts: %#v", cfg.Brand.AllowedHosts)
-	}
-}
-
-func TestLoadFromFile_AndVPNBOT_CONFIG(t *testing.T) {
+// 12 — file loading: legacy fails, explicit VFF/FC succeed.
+func TestLoadFromFile_LegacyFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "cfg.json")
+	path := filepath.Join(dir, "legacy.json")
 	body := `{
 		"telegram": {"token": "test-token"},
-		"services": {"category": "vpn-mz-main"},
-		"web_sales": {"public_base_url": "https://connect.vpn-for-friends.com"},
-		"payments": {"profile": "telegram_bot"}
+		"services": {"category": "vpn-mz-fc"},
+		"web_sales": {"public_base_url": "https://connect-fc.vpn-for-friends.com"},
+		"payments": {"profile": "telegram_friends_connect_bot"}
 	}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	_, err := LoadFromFile(path)
+	if err == nil || !strings.Contains(err.Error(), "brand.id is required") {
+		t.Fatalf("legacy file must fail with brand.id error, got %v", err)
+	}
+}
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
+func TestLoadFromFile_ExplicitVFFAndFC(t *testing.T) {
+	dir := t.TempDir()
+
+	vffPath := filepath.Join(dir, "vff.json")
+	if err := os.WriteFile(vffPath, []byte(explicitBrandJSON("vff", "VPN for Friends", "connect.vpn-for-friends.com", "https://connect.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-main", "telegram_bot")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Brand.ID != "vff" || cfg.ServiceCategory() != "vpn-mz-main" {
-		t.Fatalf("%#v", cfg.Brand)
+	vff, err := LoadFromFile(vffPath)
+	if err != nil {
+		t.Fatalf("explicit VFF must load: %v", err)
+	}
+	if vff.Brand.ID != "vff" || vff.ServiceCategory() != "vpn-mz-main" {
+		t.Fatalf("vff: %#v", vff.Brand)
 	}
 
-	t.Setenv(envConfigPath, path)
+	fcPath := filepath.Join(dir, "fc.json")
+	if err := os.WriteFile(fcPath, []byte(explicitBrandJSON("fc", "Friends Connect", "connect-fc.vpn-for-friends.com", "https://connect-fc.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-fc", "telegram_friends_connect_bot")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fc, err := LoadFromFile(fcPath)
+	if err != nil {
+		t.Fatalf("explicit FC must load: %v", err)
+	}
+	if fc.Brand.ID != "fc" || fc.ServiceCategory() != "vpn-mz-fc" {
+		t.Fatalf("fc: %#v", fc.Brand)
+	}
+
+	// VPNBOT_CONFIG must load explicit config without any legacy fallback.
+	t.Setenv(envConfigPath, fcPath)
 	loaded, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Brand.ID != "vff" {
+	if loaded.Brand.ID != "fc" {
 		t.Fatalf("%#v", loaded.Brand)
 	}
 
 	t.Setenv(envConfigPath, filepath.Join(dir, "missing.json"))
-	_, err = loadConfig()
-	if err == nil {
+	if _, err := loadConfig(); err == nil {
 		t.Fatal("missing VPNBOT_CONFIG path must error without fallback")
-	}
-	if !strings.Contains(err.Error(), "missing.json") {
-		t.Fatalf("error should mention path: %v", err)
 	}
 }
 
@@ -303,6 +381,22 @@ func TestLoadFromFile_WithoutEnvKeepsSearchOrder(t *testing.T) {
 	if p := strings.TrimSpace(os.Getenv(envConfigPath)); p != "" {
 		t.Fatal("env must be empty for this test")
 	}
+}
+
+func explicitBrandJSON(id, name, host, publicBaseURL, landingURL, category, profile string) string {
+	brand := BrandConfig{
+		ID:                 id,
+		Name:               name,
+		AllowedHosts:       []string{host},
+		PublicBaseURL:      publicBaseURL,
+		LandingURL:         landingURL,
+		ServiceCategory:    category,
+		WebUserLoginPrefix: "web_",
+		WebUserSource:      "vpn-for-friends.com",
+		PaymentProfile:     profile,
+	}
+	b, _ := json.Marshal(brand)
+	return `{"telegram":{"token":"test-token"},"brand":` + string(b) + `}`
 }
 
 func validExplicitBrandCfg() *Config {
@@ -318,6 +412,23 @@ func validExplicitBrandCfg() *Config {
 		WebUserLoginPrefix: "web_",
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     "telegram_bot",
+	}
+	return cfg
+}
+
+func validExplicitFCBrandCfg() *Config {
+	cfg := &Config{}
+	cfg.Telegram.Token = "tok"
+	cfg.Brand = BrandConfig{
+		ID:                 "fc",
+		Name:               "Friends Connect",
+		AllowedHosts:       []string{"connect-fc.vpn-for-friends.com"},
+		PublicBaseURL:      "https://connect-fc.vpn-for-friends.com",
+		LandingURL:         "https://vpn-for-friends.com",
+		ServiceCategory:    "vpn-mz-fc",
+		WebUserLoginPrefix: "web_",
+		WebUserSource:      "vpn-for-friends.com",
+		PaymentProfile:     "telegram_friends_connect_bot",
 	}
 	return cfg
 }

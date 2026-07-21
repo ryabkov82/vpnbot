@@ -15,7 +15,7 @@ import (
 func ownedTestCfg(category string) *config.Config {
 	cfg := &config.Config{}
 	cfg.API.Timeout = 5
-	cfg.Services.Category = category
+	cfg.Brand.ServiceCategory = category
 	return cfg
 }
 

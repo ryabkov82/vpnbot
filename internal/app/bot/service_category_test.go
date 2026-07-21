@@ -9,7 +9,7 @@ import (
 
 func cfgWithServiceCategory(category string) *config.Config {
 	cfg := &config.Config{}
-	cfg.Services.Category = category
+	cfg.Brand.ServiceCategory = category
 	return cfg
 }
 

@@ -280,7 +280,7 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 		return nil
 	})
 	cfg := orderStartTestCfg()
-	cfg.WebSales.PublicBaseURL = "https://shop.example"
+	cfg.Brand.PublicBaseURL = "https://shop.example"
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
 	em := `known@test.com`
 	wantNorm, nerr := webuser.NormalizeEmail(em)

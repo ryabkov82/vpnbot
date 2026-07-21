@@ -15,7 +15,7 @@ import (
 func categoryTestCfg(category string) *config.Config {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	cfg.Services.Category = category
+	cfg.Brand.ServiceCategory = category
 	return cfg
 }
 
@@ -283,7 +283,7 @@ func TestServeAccountServiceDelete_OwnershipStillEnforcedWithCategory(t *testing
 
 func TestServeAdminWebOrderTest_AllowedCategoryProcessed(t *testing.T) {
 	cfg := testAdminWebOrderCfg("secret")
-	cfg.Services.Category = "vpn-mz-main"
+	cfg.Brand.ServiceCategory = "vpn-mz-main"
 	app := &stubAdminWebOrderApp{
 		svc:   &models.Service{ServiceID: 3, Name: "1 месяц", AllowToOrder: 1, Cost: 100, Category: "vpn-mz-main"},
 		user:  &models.User{ID: 77, Login: "web_x"},
@@ -306,7 +306,7 @@ func TestServeAdminWebOrderTest_AllowedCategoryProcessed(t *testing.T) {
 
 func TestServeAdminWebOrderTest_OtherCategoryNotFoundNoSideEffects(t *testing.T) {
 	cfg := testAdminWebOrderCfg("secret")
-	cfg.Services.Category = "vpn-mz-main"
+	cfg.Brand.ServiceCategory = "vpn-mz-main"
 	app := &stubAdminWebOrderApp{
 		svc:   &models.Service{ServiceID: 9, Name: "Foreign", AllowToOrder: 1, Cost: 500, Category: "vpn-mz-other"},
 		user:  &models.User{ID: 77, Login: "web_x"},

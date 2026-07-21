@@ -9,21 +9,13 @@ import (
 	"testing"
 )
 
-func TestExplicitVFFParityWithLegacy(t *testing.T) {
-	legacy := &Config{}
-	legacy.Telegram.Token = "test-token"
-	legacy.Services.Category = "vpn-mz-test"
-	legacy.WebSales.PublicBaseURL = "https://connect.vpn-for-friends.com"
-	legacy.Payments.Profile = "telegram_bot"
-	if err := legacy.Normalize(); err != nil {
-		t.Fatal(err)
-	}
-
+func TestExplicitVFFBrandGetters(t *testing.T) {
 	explicit := &Config{}
 	explicit.Telegram.Token = "test-token"
-	explicit.Services.Category = "vpn-mz-test" // legacy fields retained, unused when brand.id set
-	explicit.WebSales.PublicBaseURL = "https://connect.vpn-for-friends.com"
-	explicit.Payments.Profile = "telegram_bot"
+	// legacy fields retained in JSON but must never be read for the brand.
+	explicit.Services.Category = "legacy-category"
+	explicit.WebSales.PublicBaseURL = "https://legacy.example"
+	explicit.Payments.Profile = "legacy_profile"
 	explicit.Brand = BrandConfig{
 		ID:                 "vff",
 		Name:               "VPN for Friends",
@@ -39,20 +31,20 @@ func TestExplicitVFFParityWithLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if explicit.ServiceCategory() != legacy.ServiceCategory() {
-		t.Fatalf("ServiceCategory: explicit=%q legacy=%q", explicit.ServiceCategory(), legacy.ServiceCategory())
+	if explicit.ServiceCategory() != "vpn-mz-test" {
+		t.Fatalf("ServiceCategory=%q", explicit.ServiceCategory())
 	}
-	if explicit.PublicBaseURL() != legacy.PublicBaseURL() {
-		t.Fatalf("PublicBaseURL: explicit=%q legacy=%q", explicit.PublicBaseURL(), legacy.PublicBaseURL())
+	if explicit.PublicBaseURL() != "https://connect.vpn-for-friends.com" {
+		t.Fatalf("PublicBaseURL=%q", explicit.PublicBaseURL())
 	}
-	if explicit.PaymentProfile() != legacy.PaymentProfile() {
-		t.Fatalf("PaymentProfile: explicit=%q legacy=%q", explicit.PaymentProfile(), legacy.PaymentProfile())
+	if explicit.PaymentProfile() != "telegram_bot" {
+		t.Fatalf("PaymentProfile=%q", explicit.PaymentProfile())
 	}
-	if explicit.WebUserLoginPrefix() != legacy.WebUserLoginPrefix() {
-		t.Fatalf("WebUserLoginPrefix mismatch")
+	if explicit.WebUserLoginPrefix() != "web_" {
+		t.Fatalf("WebUserLoginPrefix=%q", explicit.WebUserLoginPrefix())
 	}
-	if explicit.WebUserSource() != legacy.WebUserSource() {
-		t.Fatalf("WebUserSource mismatch")
+	if explicit.WebUserSource() != "vpn-for-friends.com" {
+		t.Fatalf("WebUserSource=%q", explicit.WebUserSource())
 	}
 
 	b := explicit.EffectiveBrand()

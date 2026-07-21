@@ -14,7 +14,7 @@ import (
 
 func newCategoryTestClient(srv *httptest.Server, category string) *APIClient {
 	cfg := &config.Config{}
-	cfg.Services.Category = category
+	cfg.Brand.ServiceCategory = category
 	return &APIClient{
 		ServerURL:  srv.URL,
 		HTTPClient: srv.Client(),

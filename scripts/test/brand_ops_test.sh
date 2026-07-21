@@ -46,8 +46,11 @@ case "\$cmd" in
       fi
       printf 'active\n' >"${WORK}/state_active"
     elif [[ -f "${REMOTE_BINARY}" ]]; then
-      if [[ ! -f "${WORK}/no_startup_markers" ]]; then
-        printf 'active brand: id=vff name="synth"\n' >>"${WORK}/journal/log"
+      if [[ -f "${WORK}/legacy_config_no_brand" ]]; then
+        # New binary on a legacy config fails config validation before any markers.
+        printf 'configuration invalid: brand.id is required\n' >>"${WORK}/journal/log"
+      elif [[ ! -f "${WORK}/no_startup_markers" ]]; then
+        printf 'active brand: id=%s name="X"\n' "${EXPECTED_BRAND_ID}" >>"${WORK}/journal/log"
         printf 'telegram bot configured\n' >>"${WORK}/journal/log"
       fi
       printf 'active\n' >"${WORK}/state_active"
@@ -370,6 +373,83 @@ test_new_binary_requires_startup_markers() {
   teardown
 }
 
+# 15.1 new binary on a legacy config (no brand) → config validation failure → rollback,
+# old binary restored, no CRITICAL, and the process is NOT started as VFF.
+test_new_binary_on_legacy_config_rolls_back() {
+  setup_profile fc
+  printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
+  printf 'new-fc-binary\n' >"${REMOTE_BINARY}.new"
+  # Active config is legacy (no brand.id): new binary fails config validation on start.
+  printf '%s\n' '{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"}}' >"${REMOTE_LEGACY_CONFIG}"
+  : >"${WORK}/legacy_config_no_brand"
+  : >"${WORK}/journal/log"
+  local out rc=0
+  out="$(brand_deploy_binary 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail legacy_cfg_rollback "deploy should fail"; teardown; return; fi
+  if ! grep -Fq 'startup log check failed' <<<"${out}"; then
+    fail legacy_cfg_rollback "missing validation failure reason: ${out}"; teardown; return
+  fi
+  if ! grep -Fq 'previous binary restored' <<<"${out}"; then
+    fail legacy_cfg_rollback "missing restored: ${out}"; teardown; return
+  fi
+  if grep -Fq 'CRITICAL' <<<"${out}"; then
+    fail legacy_cfg_rollback "unexpected CRITICAL: ${out}"; teardown; return
+  fi
+  if ! grep -Fxq 'old-fc-binary' "${REMOTE_BINARY}"; then
+    fail legacy_cfg_rollback "old binary not restored: $(cat "${REMOTE_BINARY}")"; teardown; return
+  fi
+  if grep -Fq 'active brand: id=vff' "${WORK}/journal/log"; then
+    fail legacy_cfg_rollback "must not start as VFF"; teardown; return
+  fi
+  if ! grep -Fq 'configuration invalid: brand.id is required' "${WORK}/journal/log"; then
+    fail legacy_cfg_rollback "missing config-invalid log"; teardown; return
+  fi
+  pass new_binary_on_legacy_config_rolls_back
+  teardown
+}
+
+# 15.2 explicit FC config active → new binary starts: active, sleep, active, explicit markers.
+test_explicit_fc_binary_startup() {
+  setup_profile fc
+  printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
+  printf 'new-fc-binary\n' >"${REMOTE_BINARY}.new"
+  : >"${WORK}/journal/log"
+  local out rc=0
+  out="$(brand_deploy_binary 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail explicit_fc "deploy should succeed: ${out}"; teardown; return; fi
+  if ! grep -Fxq 'new-fc-binary' "${REMOTE_BINARY}"; then
+    fail explicit_fc "binary not replaced"; teardown; return
+  fi
+  if ! grep -Fq 'active brand: id=fc' "${WORK}/journal/log"; then
+    fail explicit_fc "missing explicit fc startup marker"; teardown; return
+  fi
+  if ! grep -Fq 'telegram bot configured' "${WORK}/journal/log"; then
+    fail explicit_fc "missing telegram marker"; teardown; return
+  fi
+  if grep -Fq 'id=vff' "${WORK}/journal/log"; then fail explicit_fc "unexpected vff"; teardown; return; fi
+  pass explicit_fc_binary_startup
+  teardown
+}
+
+# 15.3 explicit VFF config active → new binary starts with explicit brand.id=vff markers.
+test_explicit_vff_binary_startup() {
+  setup_profile vff
+  printf 'old-vff-binary\n' >"${REMOTE_BINARY}"
+  printf 'new-vff-binary\n' >"${REMOTE_BINARY}.new"
+  : >"${WORK}/journal/log"
+  local out rc=0
+  out="$(brand_deploy_binary 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail explicit_vff "deploy should succeed: ${out}"; teardown; return; fi
+  if ! grep -Fq 'active brand: id=vff' "${WORK}/journal/log"; then
+    fail explicit_vff "missing explicit vff startup marker"; teardown; return
+  fi
+  if ! grep -Fq 'telegram bot configured' "${WORK}/journal/log"; then
+    fail explicit_vff "missing telegram marker"; teardown; return
+  fi
+  pass explicit_vff_binary_startup
+  teardown
+}
+
 # 7d. make -n deploy-fc delegates to the generic engine with BRAND=fc (no production).
 # The Makefile no longer emits hardcoded profile values; those are loaded at runtime
 # from deploy/brands/fc.json. Detailed host parity is asserted in brand_profiles_test.sh.
@@ -653,6 +733,51 @@ EOF
   rm -rf "${dir}"
 }
 
+# 13 + 14. Legacy source fails runtime configcheck; rendered explicit config passes.
+# Also asserts configcheck never prints secrets.
+test_renderer_to_configcheck() {
+  if ! command -v go >/dev/null 2>&1; then pass renderer_to_configcheck_skipped_no_go; return; fi
+  local dir cc rc
+  dir="$(mktemp -d)"
+
+  cat >"${dir}/fc-src.json" <<'EOF'
+{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect-fc.vpn-for-friends.com"},"payments":{"profile":"telegram_friends_connect_bot"}}
+EOF
+  # Legacy source itself is invalid for runtime (no brand.id).
+  rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/fc-src.json" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail cc_legacy_fc "legacy source must fail configcheck"; rm -rf "${dir}"; return; fi
+  if ! grep -Fq 'brand.id is required' <<<"${cc}"; then fail cc_legacy_fc "wrong error: ${cc}"; rm -rf "${dir}"; return; fi
+  if grep -Fq 'SECRET-TELEGRAM-TOKEN' <<<"${cc}" || grep -Fq 'SECRET-API-PASS' <<<"${cc}"; then
+    fail cc_legacy_fc "configcheck leaked secret"; rm -rf "${dir}"; return
+  fi
+
+  # Render → explicit → runtime configcheck passes, no secret leak.
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" fc --source "${dir}/fc-src.json" --output "${dir}/fc.json" >/dev/null; then
+    fail cc_render_fc "render failed"; rm -rf "${dir}"; return
+  fi
+  rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/fc.json" 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail cc_fc "configcheck failed: ${cc}"; rm -rf "${dir}"; return; fi
+  if ! grep -Fq 'brand.id=fc' <<<"${cc}"; then fail cc_fc "missing brand.id=fc: ${cc}"; rm -rf "${dir}"; return; fi
+  if grep -Fq 'SECRET-TELEGRAM-TOKEN' <<<"${cc}" || grep -Fq 'SECRET-API-PASS' <<<"${cc}"; then
+    fail cc_fc "configcheck leaked secret"; rm -rf "${dir}"; return
+  fi
+
+  cat >"${dir}/vff-src.json" <<'EOF'
+{"telegram":{"token":"t"},"services":{"category":"vpn-mz-test"},"web_sales":{"public_base_url":"https://connect.vpn-for-friends.com"},"payments":{"profile":"telegram_bot"}}
+EOF
+  rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/vff-src.json" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail cc_legacy_vff "legacy source must fail configcheck"; rm -rf "${dir}"; return; fi
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" vff --source "${dir}/vff-src.json" --output "${dir}/vff.json" >/dev/null; then
+    fail cc_render_vff "render failed"; rm -rf "${dir}"; return
+  fi
+  rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/vff.json" 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail cc_vff "configcheck failed: ${cc}"; rm -rf "${dir}"; return; fi
+  if ! grep -Fq 'brand.id=vff' <<<"${cc}"; then fail cc_vff "missing brand.id=vff: ${cc}"; rm -rf "${dir}"; return; fi
+
+  pass renderer_to_configcheck
+  rm -rf "${dir}"
+}
+
 # Orchestrator cleanup: trap removes local temp after forced failure.
 test_orchestrator_local_temp_cleanup() {
   local dir
@@ -712,8 +837,12 @@ test_binary_rollback_second_active_fails
 test_binary_marker_rollback
 test_old_binary_rollback_without_startup_markers
 test_new_binary_requires_startup_markers
+test_new_binary_on_legacy_config_rolls_back
+test_explicit_fc_binary_startup
+test_explicit_vff_binary_startup
 test_make_n_deploy_fc_host
 test_renderer
+test_renderer_to_configcheck
 test_renderer_source_eq_output
 test_renderer_keeps_output_on_error
 test_renderer_temp_in_outdir_and_mode

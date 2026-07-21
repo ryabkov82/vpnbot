@@ -91,4 +91,4 @@ if ! bash "${ROOT}/scripts/smoke-brand.sh" "${EXPECTED_BRAND_ID}"; then
   exit 1
 fi
 
-echo "deploy-${BRAND_LABEL}: OK (explicit config not activated; legacy ${REMOTE_LEGACY_CONFIG})"
+echo "deploy-${BRAND_LABEL}: OK (binary deployed; explicit brand config must be active — coordinated rollout handled separately)"

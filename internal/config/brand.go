@@ -20,78 +20,45 @@ type BrandConfig struct {
 	PaymentProfile     string   `json:"payment_profile"`
 }
 
-const (
-	defaultBrandID                 = "vff"
-	defaultBrandName               = "VPN for Friends"
-	defaultBrandHost               = "connect.vpn-for-friends.com"
-	defaultBrandLandingURL         = "https://vpn-for-friends.com"
-	defaultBrandWebUserLoginPrefix = "web_"
-	defaultBrandWebUserSource      = "vpn-for-friends.com"
-)
-
 var brandIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // EffectiveBrand возвращает активный бренд процесса.
 // Nil-safe: (*Config)(nil) и частично заполненные тестовые конфиги не паникуют.
 //
-// Если Brand.ID пуст — синтезируется VFF из legacy-полей и defaults.
-// Если Brand.ID заполнен — brand.* является единственным источником истины
-// (legacy Services.Category / WebSales.PublicBaseURL / Payments.Profile не подмешиваются).
+// Runtime требует явного brand: пустой Brand НЕ превращается в VFF, а возвращается
+// как есть (нормализованным). Корректность обеспечивается обязательным вызовом
+// Normalize() при загрузке конфигурации, который отклоняет отсутствие brand.id.
+// Legacy Services.Category / WebSales.PublicBaseURL / Payments.Profile здесь не читаются.
 func (c *Config) EffectiveBrand() BrandConfig {
 	if c == nil {
-		return synthesizeVFFBrand("", "", "")
-	}
-	if strings.TrimSpace(c.Brand.ID) == "" {
-		return synthesizeVFFBrand(c.WebSales.PublicBaseURL, c.Services.Category, c.Payments.Profile)
+		return BrandConfig{}
 	}
 	return normalizeBrandFields(c.Brand)
 }
 
-// ServiceCategory — эффективная категория услуг активного бренда (nil-safe).
+// ServiceCategory — категория услуг активного бренда (nil-safe, только explicit brand).
 func (c *Config) ServiceCategory() string {
 	return strings.TrimSpace(c.EffectiveBrand().ServiceCategory)
 }
 
-// PublicBaseURL — эффективный публичный base URL активного бренда (nil-safe).
+// PublicBaseURL — публичный base URL активного бренда (nil-safe, только explicit brand).
 func (c *Config) PublicBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(c.EffectiveBrand().PublicBaseURL), "/")
 }
 
-// PaymentProfile — эффективный платёжный профиль активного бренда (nil-safe).
+// PaymentProfile — платёжный профиль активного бренда (nil-safe, только explicit brand).
 func (c *Config) PaymentProfile() string {
 	return strings.TrimSpace(c.EffectiveBrand().PaymentProfile)
 }
 
-// WebUserLoginPrefix — префикс web-login активного бренда (nil-safe).
+// WebUserLoginPrefix — префикс web-login активного бренда (nil-safe, только explicit brand).
 func (c *Config) WebUserLoginPrefix() string {
-	p := strings.TrimSpace(c.EffectiveBrand().WebUserLoginPrefix)
-	if p == "" {
-		return defaultBrandWebUserLoginPrefix
-	}
-	return p
+	return strings.TrimSpace(c.EffectiveBrand().WebUserLoginPrefix)
 }
 
-// WebUserSource — settings.web.source активного бренда (nil-safe).
+// WebUserSource — settings.web.source активного бренда (nil-safe, только explicit brand).
 func (c *Config) WebUserSource() string {
-	s := strings.TrimSpace(c.EffectiveBrand().WebUserSource)
-	if s == "" {
-		return defaultBrandWebUserSource
-	}
-	return s
-}
-
-func synthesizeVFFBrand(publicBaseURL, serviceCategory, paymentProfile string) BrandConfig {
-	return normalizeBrandFields(BrandConfig{
-		ID:                 defaultBrandID,
-		Name:               defaultBrandName,
-		AllowedHosts:       []string{defaultBrandHost},
-		PublicBaseURL:      strings.TrimSpace(publicBaseURL),
-		LandingURL:         defaultBrandLandingURL,
-		ServiceCategory:    strings.TrimSpace(serviceCategory),
-		WebUserLoginPrefix: defaultBrandWebUserLoginPrefix,
-		WebUserSource:      defaultBrandWebUserSource,
-		PaymentProfile:     strings.TrimSpace(paymentProfile),
-	})
+	return strings.TrimSpace(c.EffectiveBrand().WebUserSource)
 }
 
 func normalizeBrandFields(b BrandConfig) BrandConfig {
@@ -190,16 +157,17 @@ func validHostnameLabel(label string) bool {
 	return true
 }
 
-// Normalize строит эффективный бренд и валидирует конфигурацию после чтения JSON.
-// Для legacy (Brand.ID пуст) синтезирует VFF без новых production-breaking требований.
-// Для явного brand — строгая валидация brand.* без подмешивания legacy-полей.
+// Normalize нормализует и строго валидирует явный brand после чтения JSON.
+// Runtime требует полностью заданной секции brand: отсутствие brand.id —
+// ошибка конфигурации (legacy-поля services/web_sales/payments не подмешиваются).
+// Legacy-конфиг без brand поддерживается только как вход для renderer-миграции,
+// но невалиден для запуска процесса.
 func (c *Config) Normalize() error {
 	if c == nil {
 		return fmt.Errorf("config is nil")
 	}
 	if strings.TrimSpace(c.Brand.ID) == "" {
-		c.Brand = synthesizeVFFBrand(c.WebSales.PublicBaseURL, c.Services.Category, c.Payments.Profile)
-		return nil
+		return fmt.Errorf("brand.id is required")
 	}
 	if err := validateExplicitBrandRawHosts(c.Brand.AllowedHosts); err != nil {
 		return err

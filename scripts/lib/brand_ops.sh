@@ -180,13 +180,15 @@ brand_require_active_brand_log() {
   return 0
 }
 
-# Legacy binary deploy: any active brand line + telegram configured (id may still be synthesized vff).
-brand_require_legacy_startup_log() {
+# Binary deploy startup check: runtime requires an explicit brand, so the new binary
+# must log the exact active brand id (no implicit VFF) plus the telegram marker.
+# A legacy config without brand fails config validation and never emits these lines.
+brand_require_startup_log() {
   local since="${1:?}"
-  local log
+  local log needle="active brand: id=${EXPECTED_BRAND_ID}"
   log="$(journalctl -u "${SERVICE_NAME}" --since "${since}" --no-pager 2>/dev/null || true)"
-  if ! grep -Fq 'active brand:' <<<"${log}"; then
-    brand_err "deploy-${BRAND_LABEL}: startup log missing 'active brand:' since ${since}"
+  if ! grep -Fq "${needle}" <<<"${log}"; then
+    brand_err "deploy-${BRAND_LABEL}: startup log missing '${needle}' since ${since}"
     return 1
   fi
   if ! grep -Fq 'telegram bot configured' <<<"${log}"; then
@@ -418,7 +420,10 @@ brand_fail_binary_deploy() {
   return 1
 }
 
-# Install uploaded REMOTE_BINARY.new, restart, verify legacy startup logs. No drop-in.
+# Install uploaded REMOTE_BINARY.new, restart, verify explicit-brand startup logs.
+# The new binary requires an explicit brand in the active config; if the active config
+# is still legacy (no brand), startup fails validation and the binary is rolled back.
+# Coordinated binary+config+drop-in rollout is handled by a separate deployment task.
 brand_deploy_binary() {
   brand_refresh_derived || return 1
   brand_require_vars REMOTE_BINARY || return 1
@@ -466,11 +471,11 @@ brand_deploy_binary() {
     brand_fail_binary_deploy "unit inactive after stabilization"
     return 1
   fi
-  if ! brand_require_legacy_startup_log "${start_time}"; then
+  if ! brand_require_startup_log "${start_time}"; then
     brand_fail_binary_deploy "startup log check failed"
     return 1
   fi
 
-  brand_log "deploy-${BRAND_LABEL}: binary OK (legacy config ${REMOTE_LEGACY_CONFIG}; no drop-in)"
+  brand_log "deploy-${BRAND_LABEL}: binary OK (explicit brand startup verified)"
   return 0
 }

@@ -51,7 +51,7 @@ func TestDeleteUserServiceByUserID_ProxyToAPIOK(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.API.BaseURL = srv.URL
 	cfg.API.Timeout = 5
-	cfg.Services.Category = "vpn-mz-main"
+	cfg.Brand.ServiceCategory = "vpn-mz-main"
 	cli := api.NewAPIClient(cfg)
 	s := NewService(cli, cfg.EffectiveBrand())
 
@@ -79,7 +79,7 @@ func TestDeleteUserServiceByUserID_OtherUserNoDelete(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.API.BaseURL = srv.URL
 	cfg.API.Timeout = 5
-	cfg.Services.Category = "vpn-mz-main"
+	cfg.Brand.ServiceCategory = "vpn-mz-main"
 	s := NewService(api.NewAPIClient(cfg), cfg.EffectiveBrand())
 
 	err := s.DeleteUserServiceByUserID(42, "337")

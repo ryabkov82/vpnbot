@@ -29,7 +29,7 @@ func TestAccountCommandReply_MessageAndInlineURLButton(t *testing.T) {
 	base := "https://cabinet.example.com"
 	secret := strings.Repeat("a", 40)
 	cfg := &config.Config{}
-	cfg.WebSales.PublicBaseURL = base
+	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)
 	reply := s.accountCommandReply(chatID, shmUID)
@@ -65,7 +65,7 @@ func TestTelegramWebCabinetURL_UsesPublicBaseURL(t *testing.T) {
 	base := "https://connect.vpn-for-friends.com/"
 	secret := strings.Repeat("b", 40)
 	cfg := &config.Config{}
-	cfg.WebSales.PublicBaseURL = base
+	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)
 	got := s.telegramWebCabinetURL(99112233, 3)
@@ -79,7 +79,7 @@ func TestWebCabinetMenuButton_ReusesURLHelper(t *testing.T) {
 	base := "https://site.test"
 	secret := strings.Repeat("c", 40)
 	cfg := &config.Config{}
-	cfg.WebSales.PublicBaseURL = base
+	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)
 	m := &telebot.ReplyMarkup{}

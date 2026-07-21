@@ -103,7 +103,9 @@ type Config struct {
 	RemnawaveAPIURL   string `json:"remnawave_api_url"`
 	RemnawaveAPIToken string `json:"remnawave_api_token"`
 
-	// Brand — один активный бренд процесса. Если id пуст в JSON — синтезируется VFF из legacy-полей.
+	// Brand — один активный бренд процесса. Секция обязательна: runtime требует
+	// явного brand (см. Config.Normalize). Legacy-конфиг без brand невалиден для
+	// запуска и поддерживается только как вход для renderer-миграции.
 	Brand BrandConfig `json:"brand"`
 }
 
@@ -145,7 +147,8 @@ func loadConfig() (*Config, error) {
 	return LoadFromFile(configFile)
 }
 
-// LoadFromFile читает JSON-конфиг из указанного пути, нормализует бренд и валидирует.
+// LoadFromFile читает JSON-конфиг из указанного пути, затем обязательно вызывает
+// Normalize() (строгая валидация явного brand) до любых внешних side effects.
 func LoadFromFile(path string) (*Config, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
