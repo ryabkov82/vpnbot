@@ -41,6 +41,8 @@ func (s *stubAdminAccountApp) GetUserServicesByUserID(userID int) ([]models.User
 func testAdminAccountCfg(token string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Admin.Token = token
+	cfg.Brand.WebUserLoginPrefix = "web_"
+	cfg.Brand.WebUserSource = "vpn-for-friends.com"
 	return cfg
 }
 

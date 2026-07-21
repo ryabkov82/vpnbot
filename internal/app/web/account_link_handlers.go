@@ -191,9 +191,13 @@ func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.Handler
 			http.Redirect(w, r, "/account/link"+linkErrQuery("already_linked"), http.StatusFound)
 			return
 		case errors.Is(err, appService.ErrWebEmailUsedByOtherAccount):
-			wlConflict := webuser.WebLoginFromEmailWithPrefix(strings.TrimSpace(claims.Email), cfg.WebUserLoginPrefix())
-			slog.Warn("link confirm: email already linked to another user",
-				"shm_user_id", claims.ShmUserID, "web_login", wlConflict)
+			if wlConflict, werr := webuser.WebLoginFromEmailWithPrefix(strings.TrimSpace(claims.Email), cfg.WebUserLoginPrefix()); werr != nil {
+				slog.Warn("link confirm: email already linked to another user",
+					"shm_user_id", claims.ShmUserID)
+			} else {
+				slog.Warn("link confirm: email already linked to another user",
+					"shm_user_id", claims.ShmUserID, "web_login", wlConflict)
+			}
 			linkTok, tokErr := CreateAccountTelegramLinkToken(secret, claims.ShmUserID, claims.TelegramChatID, cfg)
 			if tokErr != nil {
 				slog.Error("link confirm", "stage", "recreate_link_token", "shm_user_id", claims.ShmUserID, "err", tokErr)

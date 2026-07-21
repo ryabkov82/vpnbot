@@ -78,7 +78,12 @@ func serveAdminAccountTest(cfg *config.Config, app adminAccountTestApp) http.Han
 			return
 		}
 
-		login := webuser.WebLoginFromEmailWithPrefix(emailNorm, cfg.WebUserLoginPrefix())
+		login, err := webuser.WebLoginFromEmailWithPrefix(emailNorm, cfg.WebUserLoginPrefix())
+		if err != nil {
+			slog.Error("admin account test: web login prefix", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
 		user, err := app.GetUserByLogin(login)
 		if err != nil {
 			slog.Error("admin account test: GetUserByLogin", "err", err)

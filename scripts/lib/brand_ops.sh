@@ -169,9 +169,12 @@ brand_emergency_rollback() {
   return 1
 }
 
+# Exact brand marker: the startup log is "active brand: id=<id> name=...", so require the
+# trailing ' name=' boundary. This rejects prefix collisions (fc vs fc2, vff vs vff-test).
+# Fixed-string match avoids assembling a regex from brand.id.
 brand_require_active_brand_log() {
   local since="${1:?}"
-  local needle="active brand: id=${EXPECTED_BRAND_ID}"
+  local needle="active brand: id=${EXPECTED_BRAND_ID} name="
   if ! journalctl -u "${SERVICE_NAME}" --since "${since}" --no-pager 2>/dev/null |
     grep -Fq "${needle}"; then
     brand_err "activate-${BRAND_LABEL}-config: startup log missing '${needle}' since ${since}"
@@ -183,9 +186,10 @@ brand_require_active_brand_log() {
 # Binary deploy startup check: runtime requires an explicit brand, so the new binary
 # must log the exact active brand id (no implicit VFF) plus the telegram marker.
 # A legacy config without brand fails config validation and never emits these lines.
+# The ' name=' boundary rejects prefix collisions (e.g. fc vs fc2, vff vs vff-test).
 brand_require_startup_log() {
   local since="${1:?}"
-  local log needle="active brand: id=${EXPECTED_BRAND_ID}"
+  local log needle="active brand: id=${EXPECTED_BRAND_ID} name="
   log="$(journalctl -u "${SERVICE_NAME}" --since "${since}" --no-pager 2>/dev/null || true)"
   if ! grep -Fq "${needle}" <<<"${log}"; then
     brand_err "deploy-${BRAND_LABEL}: startup log missing '${needle}' since ${since}"

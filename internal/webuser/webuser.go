@@ -11,6 +11,10 @@ import (
 // ErrInvalidEmail возвращается из NormalizeEmail при неверном адресе.
 var ErrInvalidEmail = errors.New("invalid email")
 
+// ErrWebLoginPrefixRequired — пустой prefix в parameterized helper недопустим.
+var ErrWebLoginPrefixRequired = errors.New("web login prefix is required")
+
+// defaultWebLoginPrefix — только для явной VFF-compatibility функции WebLoginFromEmail.
 const defaultWebLoginPrefix = "web_"
 
 // NormalizeEmail: trim, lower-case для адресной части, проверка через net/mail.ParseAddress.
@@ -30,20 +34,25 @@ func NormalizeEmail(email string) (string, error) {
 }
 
 // WebLoginFromEmailWithPrefix строит стабильный login: <prefix> + первые 16 hex SHA256(normalized).
-// normalized = strings.ToLower(strings.TrimSpace(email)). Пустой prefix трактуется как "web_".
-func WebLoginFromEmailWithPrefix(email, prefix string) string {
+// normalized = strings.ToLower(strings.TrimSpace(email)).
+// Пустой prefix после TrimSpace — ошибка (без fallback на "web_").
+func WebLoginFromEmailWithPrefix(email, prefix string) (string, error) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
-		prefix = defaultWebLoginPrefix
+		return "", ErrWebLoginPrefixRequired
 	}
 	norm := strings.ToLower(strings.TrimSpace(email))
 	sum := sha256.Sum256([]byte(norm))
 	h := hex.EncodeToString(sum[:])
-	return prefix + h[:16]
+	return prefix + h[:16], nil
 }
 
-// WebLoginFromEmail строит стабильный login: web_ + первые 16 hex-символов SHA256(normalized).
-// Сохранена для совместимости; эквивалентна WebLoginFromEmailWithPrefix(email, "web_").
+// WebLoginFromEmail — явная VFF-compatibility функция: всегда использует prefix "web_".
+// Не является fallback для parameterized API.
 func WebLoginFromEmail(email string) string {
-	return WebLoginFromEmailWithPrefix(email, defaultWebLoginPrefix)
+	login, err := WebLoginFromEmailWithPrefix(email, defaultWebLoginPrefix)
+	if err != nil {
+		panic("explicit default prefix must be valid")
+	}
+	return login
 }

@@ -158,7 +158,10 @@ func TestFindOrCreateWebUser_NotFoundAfterRegister(t *testing.T) {
 
 func TestFindOrCreateWebUser_ExplicitOtherPrefix(t *testing.T) {
 	em := "fc@example.com"
-	fcLogin := webuser.WebLoginFromEmailWithPrefix(em, "web_fc_")
+	fcLogin, err := webuser.WebLoginFromEmailWithPrefix(em, "web_fc_")
+	if err != nil {
+		t.Fatal(err)
+	}
 	vffLogin := webuser.WebLoginFromEmail(em)
 	if fcLogin == vffLogin {
 		t.Fatal("fc and vff logins must differ")

@@ -56,12 +56,15 @@ type stubAccountWeb struct {
 	findOrCreateCalls   int
 	findOrCreateCreated bool
 
-	findUserByWebEmailRet *models.User
-	findUserByWebEmailErr error
+	findUserByWebEmailRet   *models.User
+	findUserByWebEmailErr   error
+	findUserByWebEmailCalls int
 
 	linkWebEmailCalls int
 	linkWebEmailRet   *models.User
 	linkWebEmailErr   error
+
+	getUserByLoginCalls int
 
 	getUserByIDCalls int
 	getUserByIDArg   int
@@ -83,6 +86,7 @@ func (s *stubAccountWeb) GetUserByID(userID int) (*models.User, error) {
 }
 
 func (s *stubAccountWeb) FindUserByWebEmail(email string) (*models.User, error) {
+	s.findUserByWebEmailCalls++
 	if s.findUserByWebEmailErr != nil {
 		return nil, s.findUserByWebEmailErr
 	}
@@ -113,6 +117,7 @@ func (s *stubAccountWeb) GetUserPaysByUserID(userID int) ([]models.UserPay, erro
 }
 
 func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
+	s.getUserByLoginCalls++
 	if s.userByLoginErr != nil {
 		return nil, s.userByLoginErr
 	}
@@ -226,6 +231,33 @@ func TestServeAccountLoginStart_Honeypot(t *testing.T) {
 	var out accountLoginStartOKJSON
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil || out.Status != "email_sent" {
 		t.Fatalf("%#v err=%v", out, err)
+	}
+}
+
+func TestServeAccountLoginStart_EmptyWebLoginPrefix_InternalErrorNoSideEffects(t *testing.T) {
+	var smtpN int
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		smtpN++
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	cfg.Brand.WebUserLoginPrefix = ""
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+	st := &stubAccountWeb{}
+	h := serveAccountLoginStart(cfg, st, rl)
+	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"a@b.c","website":""}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "internal_error")
+	if smtpN != 0 {
+		t.Fatalf("smtp must not run, got %d", smtpN)
+	}
+	if st.findUserByWebEmailCalls != 0 || st.getUserByLoginCalls != 0 || st.findOrCreateCalls != 0 {
+		t.Fatalf("no lookup/create side effects: findEmail=%d getLogin=%d findOrCreate=%d",
+			st.findUserByWebEmailCalls, st.getUserByLoginCalls, st.findOrCreateCalls)
 	}
 }
 

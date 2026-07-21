@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
@@ -80,7 +79,7 @@ func TestLinkWebEmailConflictOtherUserUsesPrimaryWebLogin(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	acl := &api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}
-	svc := NewService(acl, config.BrandConfig{})
+	svc := NewService(acl, testServiceBrand())
 	_, ferr := svc.LinkWebEmailForTelegramUser(42, 9001, em, "telegram_link")
 	if ferr != ErrWebEmailUsedByOtherAccount {
 		t.Fatalf("want conflict got %v", ferr)
@@ -188,7 +187,7 @@ func TestLinkWebEmailSuccess_PostsLogin2AndKeepsTelegramBlock(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	acl := &api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}
-	svc := NewService(acl, config.BrandConfig{})
+	svc := NewService(acl, testServiceBrand())
 	got, ferr := svc.LinkWebEmailForTelegramUser(42, 4242, em, "telegram_link")
 	if ferr != nil {
 		t.Fatal(ferr)
@@ -253,7 +252,7 @@ func TestLinkWebEmail_ErrLogin2NotPersisted(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, config.BrandConfig{})
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, testServiceBrand())
 	_, ferr := svc.LinkWebEmailForTelegramUser(30, 7070, em, "telegram_link_google")
 	if !errors.Is(ferr, ErrWebLogin2NotPersisted) {
 		t.Fatalf("want ErrWebLogin2NotPersisted got %v", ferr)
@@ -319,7 +318,7 @@ func TestLinkWebEmailIdempotentSameStoredEmail_NoPost(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, config.BrandConfig{})
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, testServiceBrand())
 	u, ferr := svc.LinkWebEmailForTelegramUser(51, 9191, em, "telegram_link_google")
 	if ferr != nil || u == nil || u.ID != 51 {
 		t.Fatalf("%#v err=%v", u, ferr)

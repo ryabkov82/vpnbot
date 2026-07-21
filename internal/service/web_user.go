@@ -3,11 +3,16 @@ package service
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
+
+// ErrWebUserSourceRequired — пустой web source недопустим при регистрации web-user.
+var ErrWebUserSourceRequired = errors.New("web user source is required")
 
 type webUserRegistrar interface {
 	GetUserByLogin(login string) (*models.User, error)
@@ -16,7 +21,10 @@ type webUserRegistrar interface {
 }
 
 func findUserByWebLoginKeys(reg webUserRegistrar, normalizedEmail, loginPrefix string) (*models.User, error) {
-	webLogin := webuser.WebLoginFromEmailWithPrefix(normalizedEmail, loginPrefix)
+	webLogin, err := webuser.WebLoginFromEmailWithPrefix(normalizedEmail, loginPrefix)
+	if err != nil {
+		return nil, err
+	}
 	u, err := reg.GetUserByLogin(webLogin)
 	if err != nil || u != nil {
 		return u, err
@@ -29,6 +37,12 @@ func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource str
 	if err != nil {
 		return nil, false, err
 	}
+	if strings.TrimSpace(loginPrefix) == "" {
+		return nil, false, webuser.ErrWebLoginPrefixRequired
+	}
+	if strings.TrimSpace(webSource) == "" {
+		return nil, false, ErrWebUserSourceRequired
+	}
 
 	uKnown, err := findUserByWebLoginKeys(reg, normalizedEmail, loginPrefix)
 	if err != nil {
@@ -38,7 +52,10 @@ func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource str
 		return uKnown, false, nil
 	}
 
-	login := webuser.WebLoginFromEmailWithPrefix(normalizedEmail, loginPrefix)
+	login, err := webuser.WebLoginFromEmailWithPrefix(normalizedEmail, loginPrefix)
+	if err != nil {
+		return nil, false, err
+	}
 
 	password, err := randomWebUserPassword()
 	if err != nil {

@@ -432,9 +432,13 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 				http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"already_linked"}}.Encode(), http.StatusFound)
 				return
 			case errors.Is(linkErr, appService.ErrWebEmailUsedByOtherAccount):
-				wlRecheck := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
-				slog.Warn("google oauth link: email already linked to another user",
-					"link_user_id", linkClaims.ShmUserID, "web_login", wlRecheck)
+				if wlRecheck, werr := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix()); werr != nil {
+					slog.Warn("google oauth link: email already linked to another user",
+						"link_user_id", linkClaims.ShmUserID)
+				} else {
+					slog.Warn("google oauth link: email already linked to another user",
+						"link_user_id", linkClaims.ShmUserID, "web_login", wlRecheck)
+				}
 				respondLinkEmailAlreadyLinked(w, r, linkCookie)
 				return
 			case errors.Is(linkErr, appService.ErrTelegramChatMismatch):

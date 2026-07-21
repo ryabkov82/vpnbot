@@ -110,6 +110,13 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 
+		login, err := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
+		if err != nil {
+			slog.Error("account login start: web login prefix", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+
 		linkByEmail, err := app.FindUserByWebEmail(normEmail)
 		if err != nil {
 			slog.Error("account login start: FindUserByWebEmail", "err", err)
@@ -117,7 +124,6 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			return
 		}
 
-		login := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
 		var shmUser *models.User
 		if linkByEmail != nil {
 			shmUser = linkByEmail
@@ -223,7 +229,12 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return
 		}
-		wantLogin := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
+		wantLogin, werr := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
+		if werr != nil {
+			slog.Error("account session start: web login prefix", "err", werr)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
 		if strings.TrimSpace(signup.Login) != wantLogin {
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return

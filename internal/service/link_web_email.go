@@ -40,6 +40,11 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 		source = "telegram_link"
 	}
 
+	webLogin, err := webuser.WebLoginFromEmailWithPrefix(normEmail, s.webLoginPrefix())
+	if err != nil {
+		return nil, err
+	}
+
 	normKey := strings.ToLower(normEmail)
 
 	uVerify, err := s.GetUserByID(userID)
@@ -52,8 +57,6 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 	if uVerify.Settings.Telegram.ChatID != telegramChatID {
 		return nil, ErrTelegramChatMismatch
 	}
-
-	webLogin := webuser.WebLoginFromEmailWithPrefix(normEmail, s.webLoginPrefix())
 
 	byLogin, err := s.apiClient.GetUserByLogin(webLogin)
 	if err != nil {

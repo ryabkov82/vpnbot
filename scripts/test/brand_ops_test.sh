@@ -420,8 +420,8 @@ test_explicit_fc_binary_startup() {
   if ! grep -Fxq 'new-fc-binary' "${REMOTE_BINARY}"; then
     fail explicit_fc "binary not replaced"; teardown; return
   fi
-  if ! grep -Fq 'active brand: id=fc' "${WORK}/journal/log"; then
-    fail explicit_fc "missing explicit fc startup marker"; teardown; return
+  if ! grep -Fq 'active brand: id=fc name=' "${WORK}/journal/log"; then
+    fail explicit_fc "missing exact fc startup marker"; teardown; return
   fi
   if ! grep -Fq 'telegram bot configured' "${WORK}/journal/log"; then
     fail explicit_fc "missing telegram marker"; teardown; return
@@ -440,13 +440,103 @@ test_explicit_vff_binary_startup() {
   local out rc=0
   out="$(brand_deploy_binary 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail explicit_vff "deploy should succeed: ${out}"; teardown; return; fi
-  if ! grep -Fq 'active brand: id=vff' "${WORK}/journal/log"; then
-    fail explicit_vff "missing explicit vff startup marker"; teardown; return
+  if ! grep -Fq 'active brand: id=vff name=' "${WORK}/journal/log"; then
+    fail explicit_vff "missing exact vff startup marker"; teardown; return
   fi
   if ! grep -Fq 'telegram bot configured' "${WORK}/journal/log"; then
     fail explicit_vff "missing telegram marker"; teardown; return
   fi
   pass explicit_vff_binary_startup
+  teardown
+}
+
+# 4. Startup marker boundary: exact brand.id with trailing ' name='.
+# Covers brand_require_startup_log (binary) and brand_require_active_brand_log (activation).
+write_startup_journal() {
+  local brand_id="$1"
+  local brand_name="${2:-X}"
+  : >"${WORK}/journal/log"
+  printf 'active brand: id=%s name="%s"\n' "${brand_id}" "${brand_name}" >>"${WORK}/journal/log"
+  printf 'telegram bot configured\n' >>"${WORK}/journal/log"
+}
+
+# 4.1 exact FC marker → success for both require helpers.
+test_startup_marker_exact_fc() {
+  setup_profile fc
+  write_startup_journal fc "Friends Connect"
+  local rc=0
+  brand_require_startup_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail marker_exact_fc "startup_log should accept id=fc"; teardown; return; fi
+  rc=0
+  brand_require_active_brand_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail marker_exact_fc "active_brand_log should accept id=fc"; teardown; return; fi
+  pass startup_marker_exact_fc
+  teardown
+}
+
+# 4.2 FC prefix collision (fc2) → failure.
+test_startup_marker_fc_prefix_collision() {
+  setup_profile fc
+  write_startup_journal fc2 "Another Brand"
+  local out rc=0
+  out="$(brand_require_startup_log "1970-01-01 00:00:00" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_fc2 "startup_log must reject id=fc2"; teardown; return; fi
+  if ! grep -Fq "startup log missing 'active brand: id=fc name='" <<<"${out}"; then
+    fail marker_fc2 "missing exact signature error: ${out}"; teardown; return
+  fi
+  # 4.6 activation path also rejects fc2.
+  rc=0
+  out="$(brand_require_active_brand_log "1970-01-01 00:00:00" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_fc2_act "active_brand_log must reject id=fc2"; teardown; return; fi
+  if ! grep -Fq "startup log missing 'active brand: id=fc name='" <<<"${out}"; then
+    fail marker_fc2_act "missing exact signature error: ${out}"; teardown; return
+  fi
+  pass startup_marker_fc_prefix_collision
+  teardown
+}
+
+# 4.3 FC hyphen suffix (fc-test) → failure.
+test_startup_marker_fc_hyphen_suffix() {
+  setup_profile fc
+  write_startup_journal fc-test "Test"
+  local rc=0
+  brand_require_startup_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_fc_hyphen "startup_log must reject id=fc-test"; teardown; return; fi
+  rc=0
+  brand_require_active_brand_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_fc_hyphen_act "active_brand_log must reject id=fc-test"; teardown; return; fi
+  pass startup_marker_fc_hyphen_suffix
+  teardown
+}
+
+# 4.4 VFF prefix collision (vff-test) → failure.
+test_startup_marker_vff_prefix_collision() {
+  setup_profile vff
+  write_startup_journal vff-test "Test"
+  local rc=0
+  brand_require_startup_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_vff_test "startup_log must reject id=vff-test"; teardown; return; fi
+  rc=0
+  brand_require_active_brand_log "1970-01-01 00:00:00" >/dev/null 2>&1 || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_vff_test_act "active_brand_log must reject id=vff-test"; teardown; return; fi
+  pass startup_marker_vff_prefix_collision
+  teardown
+}
+
+# 4.5 other correct brand (logged=fc, expected=vff) → failure.
+test_startup_marker_wrong_brand() {
+  setup_profile vff
+  write_startup_journal fc "Friends Connect"
+  local out rc=0
+  out="$(brand_require_startup_log "1970-01-01 00:00:00" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_wrong "startup_log must reject id=fc when expected=vff"; teardown; return; fi
+  if ! grep -Fq "startup log missing 'active brand: id=vff name='" <<<"${out}"; then
+    fail marker_wrong "missing exact signature error: ${out}"; teardown; return
+  fi
+  rc=0
+  out="$(brand_require_active_brand_log "1970-01-01 00:00:00" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail marker_wrong_act "active_brand_log must reject id=fc when expected=vff"; teardown; return; fi
+  pass startup_marker_wrong_brand
   teardown
 }
 
@@ -840,6 +930,11 @@ test_new_binary_requires_startup_markers
 test_new_binary_on_legacy_config_rolls_back
 test_explicit_fc_binary_startup
 test_explicit_vff_binary_startup
+test_startup_marker_exact_fc
+test_startup_marker_fc_prefix_collision
+test_startup_marker_fc_hyphen_suffix
+test_startup_marker_vff_prefix_collision
+test_startup_marker_wrong_brand
 test_make_n_deploy_fc_host
 test_renderer
 test_renderer_to_configcheck

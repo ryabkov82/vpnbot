@@ -30,8 +30,8 @@ type Service struct {
 }
 
 // NewService создаёт use-case слой с активным брендом процесса (web-login prefix и source).
-// В runtime brand приходит уже валидированным (Config.Normalize); пустой brand допустим
-// только в unit-тестах, где service-слой применяет свои дефолты login prefix/source.
+// runtime передаёт BrandConfig уже после Config.Normalize; service layer не синтезирует
+// brand defaults — пустые поля остаются пустыми.
 func NewService(apiClient *api.APIClient, brand config.BrandConfig) *Service {
 	return &Service{
 		apiClient:          apiClient,
@@ -41,6 +41,7 @@ func NewService(apiClient *api.APIClient, brand config.BrandConfig) *Service {
 	}
 }
 
+// effectiveServiceBrand только нормализует поля (trim и т.п.); defaults не добавляет.
 func effectiveServiceBrand(brand config.BrandConfig) config.BrandConfig {
 	cfg := &config.Config{Brand: brand}
 	return cfg.EffectiveBrand()
@@ -48,24 +49,16 @@ func effectiveServiceBrand(brand config.BrandConfig) config.BrandConfig {
 
 func (s *Service) webLoginPrefix() string {
 	if s == nil {
-		return "web_"
+		return ""
 	}
-	p := strings.TrimSpace(s.brand.WebUserLoginPrefix)
-	if p == "" {
-		return "web_"
-	}
-	return p
+	return strings.TrimSpace(s.brand.WebUserLoginPrefix)
 }
 
 func (s *Service) webUserSource() string {
 	if s == nil {
-		return "vpn-for-friends.com"
+		return ""
 	}
-	src := strings.TrimSpace(s.brand.WebUserSource)
-	if src == "" {
-		return "vpn-for-friends.com"
-	}
-	return src
+	return strings.TrimSpace(s.brand.WebUserSource)
 }
 
 // --- внутренние хелперы для кэша (private) ---

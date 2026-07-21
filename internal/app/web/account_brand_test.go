@@ -80,7 +80,10 @@ func TestSignupToken_UsesEffectiveWebLoginPrefix(t *testing.T) {
 	cfg.Brand.ID = "fc"
 	cfg.Brand.WebUserLoginPrefix = "web_fc_"
 	em := "x@y.zz"
-	want := webuser.WebLoginFromEmailWithPrefix(em, cfg.WebUserLoginPrefix())
+	want, err := webuser.WebLoginFromEmailWithPrefix(em, cfg.WebUserLoginPrefix())
+	if err != nil {
+		t.Fatal(err)
+	}
 	legacy := webuser.WebLoginFromEmail(em)
 	if want == legacy {
 		t.Fatal("prefix must change login")

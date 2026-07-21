@@ -51,6 +51,8 @@ func testAdminWebOrderCfg(token string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Admin.Token = token
 	cfg.API.BaseURL = "https://pay.example"
+	cfg.Brand.WebUserLoginPrefix = "web_"
+	cfg.Brand.WebUserSource = "vpn-for-friends.com"
 	return cfg
 }
 
