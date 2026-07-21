@@ -370,22 +370,21 @@ test_new_binary_requires_startup_markers() {
   teardown
 }
 
-# 7d. make -n deploy-fc uses fr-mrs-1 and FC paths (no production)
+# 7d. make -n deploy-fc delegates to the generic engine with BRAND=fc (no production).
+# The Makefile no longer emits hardcoded profile values; those are loaded at runtime
+# from deploy/brands/fc.json. Detailed host parity is asserted in brand_profiles_test.sh.
 test_make_n_deploy_fc_host() {
   local out
   out="$(make -n -C "${ROOT}" deploy-fc 2>&1)" || {
     fail make_n_deploy_fc "make -n failed: ${out}"; return
   }
-  if ! grep -Fq 'SERVER_HOST=fr-mrs-1' <<<"${out}"; then
-    fail make_n_deploy_fc "missing SERVER_HOST=fr-mrs-1: ${out}"; return
+  if ! grep -Fq 'deploy-brand-binary.sh' <<<"${out}"; then
+    fail make_n_deploy_fc "missing generic script: ${out}"; return
   fi
-  if ! grep -Fq 'SERVICE_NAME=bot-friends-connect.service' <<<"${out}"; then
-    fail make_n_deploy_fc "missing SERVICE_NAME"; return
+  if ! grep -Fq 'fc' <<<"${out}"; then
+    fail make_n_deploy_fc "missing brand id fc: ${out}"; return
   fi
-  if ! grep -Fq 'REMOTE_DIR=/opt/bot-friends-connect' <<<"${out}"; then
-    fail make_n_deploy_fc "missing REMOTE_DIR"; return
-  fi
-  if grep -Fq 'SERVER_HOST=fra-01' <<<"${out}"; then
+  if grep -Fq 'fra-01' <<<"${out}"; then
     fail make_n_deploy_fc "unexpected fra-01"; return
   fi
   pass make_n_deploy_fc_host
@@ -408,15 +407,8 @@ test_renderer() {
 }
 EOF
 
-  if ! bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${out}" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --web-login-prefix web_ --web-user-source vpn-for-friends.com \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot >/dev/null; then
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${out}" >/dev/null; then
     fail renderer_fc "render failed"; rm -rf "${dir}"; return
   fi
 
@@ -445,14 +437,8 @@ PY
   "payments": {"profile": "telegram_bot"}
 }
 EOF
-  if bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${dir}/bad.json" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot >/dev/null 2>&1; then
+  if bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${dir}/bad.json" >/dev/null 2>&1; then
     fail renderer_reject_vff "should reject"; rm -rf "${dir}"; return
   fi
   pass renderer_fc_and_reject
@@ -466,7 +452,8 @@ EOF
   "payments": {"profile": "telegram_bot"}
 }
 EOF
-  if ! bash "${ROOT}/scripts/render-vff-config.sh" "${src}" "${dir}/vff.json" >/dev/null; then
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" vff \
+    --source "${src}" --output "${dir}/vff.json" >/dev/null; then
     fail renderer_vff "render failed"; rm -rf "${dir}"; return
   fi
   python3 - <<PY
@@ -589,14 +576,8 @@ test_renderer_source_eq_output() {
 EOF
   local before rc=0
   before="$(cat "${src}")"
-  bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${dir}/../$(basename "${dir}")/same.json" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot >/dev/null 2>&1 || rc=$?
+  bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${dir}/../$(basename "${dir}")/same.json" >/dev/null 2>&1 || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail render_same "should fail"; rm -rf "${dir}"; return; fi
   if [[ "$(cat "${src}")" != "${before}" ]]; then fail render_same "source changed"; rm -rf "${dir}"; return; fi
   if compgen -G "${dir}/.config-brand.*" >/dev/null; then fail render_same "temp left"; rm -rf "${dir}"; return; fi
@@ -613,14 +594,8 @@ test_renderer_keeps_output_on_error() {
   printf '%s\n' '{"telegram":{"token":"t"}}' >"${src}"
   local before rc=0
   before="$(cat "${out}")"
-  bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${out}" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot >/dev/null 2>&1 || rc=$?
+  bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${out}" >/dev/null 2>&1 || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail render_keep "should fail"; rm -rf "${dir}"; return; fi
   if [[ "$(cat "${out}")" != "${before}" ]]; then fail render_keep "output changed"; rm -rf "${dir}"; return; fi
   if compgen -G "${dir}/.config-brand.*" >/dev/null; then fail render_keep "temp left"; rm -rf "${dir}"; return; fi
@@ -643,14 +618,8 @@ echo "MKTEMP_TEMPLATE=\$1" >>"${dir}/mktemp.log"
 exec /usr/bin/mktemp "\$@"
 EOF
   chmod 0700 "${dir}/mktemp"
-  PATH="${dir}:${PATH}" bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${out}" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot >/dev/null
+  PATH="${dir}:${PATH}" bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${out}" >/dev/null
   seen="$(cat "${dir}/mktemp.log")"
   if ! grep -Fq "${dir}/.config-brand." <<<"${seen}"; then
     fail render_temp "template=${seen}"; rm -rf "${dir}"; return
@@ -675,14 +644,8 @@ test_no_secrets_stdout() {
   "payments": {"profile": "telegram_friends_connect_bot"}
 }
 EOF
-  log="$(bash "${ROOT}/scripts/render-brand-config.sh" \
-    --source "${src}" --output "${out}" \
-    --brand-id fc --brand-name "Friends Connect" \
-    --allowed-host connect-fc.vpn-for-friends.com \
-    --landing-url https://friends-connect.club \
-    --expect-public-base-url https://connect-fc.vpn-for-friends.com \
-    --expect-service-category vpn-mz-fc \
-    --expect-payment-profile telegram_friends_connect_bot 2>&1)"
+  log="$(bash "${ROOT}/scripts/render-brand-config.sh" fc \
+    --source "${src}" --output "${out}" 2>&1)"
   if grep -Fq 'SECRET-TELEGRAM-TOKEN-VALUE' <<<"${log}"; then
     fail no_secrets "${log}"; rm -rf "${dir}"; return
   fi
@@ -728,20 +691,11 @@ exit 0
 EOF
   chmod 0700 "${dir}/go"
 
-  # Force failure after LOCAL_TMP exists: invalid SERVER_HOST after build by breaking second ssh.
-  # Wrap deploy script env.
+  # Force failure after LOCAL_TMP exists by breaking the install ssh (mock ssh only
+  # answers the remote-mktemp call). The brand profile is loaded from fc.json.
   local rc=0
   PATH="${dir}:${PATH}" \
-    SERVER_USER=root SERVER_HOST=invalid-host-for-test \
-    SERVICE_NAME=bot-friends-connect.service \
-    REMOTE_DIR=/opt/bot-friends-connect \
-    REMOTE_BINARY=/opt/bot-friends-connect/bot \
-    REMOTE_LEGACY_CONFIG=/opt/bot-friends-connect/config.json \
-    REMOTE_EXPLICIT_CONFIG=/opt/bot-friends-connect/config-fc.json \
-    DROPIN_FILE=/etc/systemd/system/bot-friends-connect.service.d/10-vpnbot-config.conf \
-    EXPECTED_BRAND_ID=fc BRAND_LABEL=FC \
-    SMOKE_BASE_URL=https://connect-fc.vpn-for-friends.com \
-    bash "${ROOT}/scripts/deploy-brand-binary.sh" >/dev/null 2>&1 || rc=$?
+    bash "${ROOT}/scripts/deploy-brand-binary.sh" fc >/dev/null 2>&1 || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail orch_cleanup "should fail"; rm -rf "${dir}"; return; fi
   # Local mktemp dirs from the script live under /tmp; ensure our injected remote-tmp cleaned by trap when REMOTE_TMP set.
   # At minimum: script exited non-zero and did not leave a bot.new under REMOTE paths in this sandbox.

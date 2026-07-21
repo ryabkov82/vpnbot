@@ -1,99 +1,28 @@
 APP_NAME := bot
 
-# --- Brand profiles ---
-VFF_SERVER_HOST := fr-mrs-1
-VFF_SERVICE_NAME := bot.service
-VFF_REMOTE_DIR := /opt/bot
-VFF_REMOTE_BINARY := $(VFF_REMOTE_DIR)/$(APP_NAME)
-VFF_REMOTE_CONFIG_LEGACY := $(VFF_REMOTE_DIR)/config.json
-VFF_REMOTE_CONFIG_EXPLICIT := $(VFF_REMOTE_DIR)/config-vff.json
-VFF_DROPIN_FILE := /etc/systemd/system/$(VFF_SERVICE_NAME).d/10-vpnbot-config.conf
-VFF_BRAND_ID := vff
-VFF_PUBLIC_BASE_URL := https://connect.vpn-for-friends.com
-VFF_EXPECT_CATEGORY := vpn-mz-test
-VFF_EXPECT_PAYMENT_PROFILE := telegram_bot
-
-FC_SERVER_HOST := fr-mrs-1
-FC_SERVICE_NAME := bot-friends-connect.service
-FC_REMOTE_DIR := /opt/bot-friends-connect
-FC_REMOTE_BINARY := $(FC_REMOTE_DIR)/$(APP_NAME)
-FC_REMOTE_CONFIG_LEGACY := $(FC_REMOTE_DIR)/config.json
-FC_REMOTE_CONFIG_EXPLICIT := $(FC_REMOTE_DIR)/config-fc.json
-FC_DROPIN_FILE := /etc/systemd/system/$(FC_SERVICE_NAME).d/10-vpnbot-config.conf
-FC_BRAND_ID := fc
-FC_PUBLIC_BASE_URL := https://connect-fc.vpn-for-friends.com
-FC_EXPECT_CATEGORY := vpn-mz-fc
-FC_EXPECT_PAYMENT_PROFILE := telegram_friends_connect_bot
-
-# Legacy Makefile defaults = VFF (existing deploy/status/logs targets).
-SERVER_USER := root
-SERVER_HOST := $(VFF_SERVER_HOST)
-SERVICE_NAME := $(VFF_SERVICE_NAME)
-REMOTE_DIR := $(VFF_REMOTE_DIR)
-REMOTE_BIN := $(VFF_REMOTE_BINARY)
-REMOTE_CONFIG_LEGACY := $(VFF_REMOTE_CONFIG_LEGACY)
-REMOTE_CONFIG_VFF := $(VFF_REMOTE_CONFIG_EXPLICIT)
-REMOTE_EXPLICIT_CONFIG := $(VFF_REMOTE_CONFIG_EXPLICIT)
-
 LOCAL_BIN := ./dist/$(APP_NAME)-linux-amd64
 LOCAL_CONFIGCHECK := ./dist/configcheck-linux-amd64
 
-define EXPORT_VFF
-SERVER_USER=$(SERVER_USER) \
-SERVER_HOST=$(VFF_SERVER_HOST) \
-SERVICE_NAME=$(VFF_SERVICE_NAME) \
-REMOTE_DIR=$(VFF_REMOTE_DIR) \
-REMOTE_BINARY=$(VFF_REMOTE_BINARY) \
-REMOTE_LEGACY_CONFIG=$(VFF_REMOTE_CONFIG_LEGACY) \
-REMOTE_EXPLICIT_CONFIG=$(VFF_REMOTE_CONFIG_EXPLICIT) \
-REMOTE_CONFIG_VFF=$(VFF_REMOTE_CONFIG_EXPLICIT) \
-REMOTE_CONFIG_LEGACY=$(VFF_REMOTE_CONFIG_LEGACY) \
-DROPIN_FILE=$(VFF_DROPIN_FILE) \
-EXPECTED_BRAND_ID=$(VFF_BRAND_ID) \
-BRAND_LABEL=VFF \
-SMOKE_BASE_URL=$(VFF_PUBLIC_BASE_URL) \
-EXPECT_PUBLIC_BASE_URL=$(VFF_PUBLIC_BASE_URL) \
-EXPECT_SERVICE_CATEGORY=$(VFF_EXPECT_CATEGORY) \
-EXPECT_PAYMENT_PROFILE=$(VFF_EXPECT_PAYMENT_PROFILE) \
-BRAND_NAME="VPN for Friends" \
-ALLOWED_HOST=connect.vpn-for-friends.com \
-LANDING_URL=https://vpn-for-friends.com \
-WEB_LOGIN_PREFIX=web_ \
-WEB_USER_SOURCE=vpn-for-friends.com
-endef
+# The Makefile is brand-agnostic: it knows no hosts, paths, categories, URLs or
+# payment profiles. Every operational target loads a declarative profile from
+# deploy/brands/<BRAND>.json via scripts/lib/brand_profile.sh.
 
-define EXPORT_FC
-SERVER_USER=$(SERVER_USER) \
-SERVER_HOST=$(FC_SERVER_HOST) \
-SERVICE_NAME=$(FC_SERVICE_NAME) \
-REMOTE_DIR=$(FC_REMOTE_DIR) \
-REMOTE_BINARY=$(FC_REMOTE_BINARY) \
-REMOTE_LEGACY_CONFIG=$(FC_REMOTE_CONFIG_LEGACY) \
-REMOTE_EXPLICIT_CONFIG=$(FC_REMOTE_CONFIG_EXPLICIT) \
-DROPIN_FILE=$(FC_DROPIN_FILE) \
-EXPECTED_BRAND_ID=$(FC_BRAND_ID) \
-BRAND_LABEL=FC \
-SMOKE_BASE_URL=$(FC_PUBLIC_BASE_URL) \
-EXPECT_PUBLIC_BASE_URL=$(FC_PUBLIC_BASE_URL) \
-EXPECT_SERVICE_CATEGORY=$(FC_EXPECT_CATEGORY) \
-EXPECT_PAYMENT_PROFILE=$(FC_EXPECT_PAYMENT_PROFILE) \
-BRAND_NAME="Friends Connect" \
-ALLOWED_HOST=connect-fc.vpn-for-friends.com \
-LANDING_URL=https://friends-connect.club \
-WEB_LOGIN_PREFIX=web_ \
-WEB_USER_SOURCE=vpn-for-friends.com
-endef
-
-.PHONY: test build upload install smoke deploy status logs rollback \
-	config-check build-configcheck \
+.PHONY: test build build-configcheck config-check \
+	brand-profile brand-deploy brand-config-render brand-config-deploy \
+	brand-config-activate brand-config-rollback brand-smoke brand-status \
+	brand-logs brand-rollback \
+	deploy status logs rollback smoke \
 	vff-config-render deploy-vff-config activate-vff-config rollback-vff-config smoke-vff \
 	deploy-fc fc-config-render deploy-fc-config activate-fc-config rollback-fc-config \
 	smoke-fc status-fc logs-fc
+
+# --- Build / test utilities (brand-agnostic) ---
 
 test:
 	go test ./...
 	bash scripts/test/vff_ops_test.sh
 	bash scripts/test/brand_ops_test.sh
+	bash scripts/test/brand_profiles_test.sh
 
 build:
 	mkdir -p dist
@@ -103,107 +32,95 @@ build-configcheck:
 	mkdir -p dist
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(LOCAL_CONFIGCHECK) ./cmd/configcheck
 
-upload: build
-	scp $(LOCAL_BIN) $(SERVER_USER)@$(SERVER_HOST):$(REMOTE_BIN).new
-
-install: upload
-	ssh $(SERVER_USER)@$(SERVER_HOST) 'set -e; \
-		cd $(REMOTE_DIR); \
-		if [ -f $(REMOTE_BIN) ]; then cp $(REMOTE_BIN) $(REMOTE_BIN).bak.$$(date +%Y%m%d-%H%M%S); fi; \
-		mv $(REMOTE_BIN).new $(REMOTE_BIN); \
-		chmod +x $(REMOTE_BIN); \
-		systemctl restart $(SERVICE_NAME); \
-		systemctl --no-pager --full status $(SERVICE_NAME) | head -40'
-
-smoke:
-	curl -fsS https://connect.vpn-for-friends.com/premium-connect >/dev/null
-	curl -fsS https://connect.vpn-for-friends.com/buy >/dev/null
-	curl -fsS https://connect.vpn-for-friends.com/api/public/services >/dev/null
-
-deploy: test install smoke
-	@echo "Deploy OK"
-
-status:
-	ssh $(SERVER_USER)@$(SERVER_HOST) 'systemctl --no-pager --full status $(SERVICE_NAME)'
-
-logs:
-	ssh $(SERVER_USER)@$(SERVER_HOST) 'journalctl -u $(SERVICE_NAME) -n 100 --no-pager'
-
-rollback:
-	ssh $(SERVER_USER)@$(SERVER_HOST) 'set -e; \
-		cd $(REMOTE_DIR); \
-		LAST=$$(ls -1t $(APP_NAME).bak.* 2>/dev/null | head -1); \
-		if [ -z "$$LAST" ]; then echo "No backup found"; exit 1; fi; \
-		echo "Rollback to $$LAST"; \
-		cp "$$LAST" "$(APP_NAME)"; \
-		chmod +x "$(APP_NAME)"; \
-		systemctl restart $(SERVICE_NAME); \
-		systemctl --no-pager --full status $(SERVICE_NAME) | head -40'
-
-# --- Explicit brand config ---
-
 config-check:
 	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required (e.g. make config-check CONFIG=/path/to/config.json)" >&2; exit 1; fi
 	go run ./cmd/configcheck -config "$(CONFIG)"
 
+# --- Generic brand targets (BRAND=<id> required) ---
+
+brand-profile:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-profile BRAND=fc)" >&2; exit 1; fi
+	@bash scripts/brand-profile.sh "$(BRAND)"
+
+brand-deploy:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-deploy BRAND=fc)" >&2; exit 1; fi
+	bash scripts/deploy-brand-binary.sh "$(BRAND)"
+
+brand-config-render:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-render BRAND=fc SOURCE=... OUTPUT=...)" >&2; exit 1; fi
+	@if [ -z "$(SOURCE)" ] || [ -z "$(OUTPUT)" ]; then echo "SOURCE and OUTPUT are required" >&2; exit 1; fi
+	bash scripts/render-brand-config.sh "$(BRAND)" --source "$(SOURCE)" --output "$(OUTPUT)"
+	@$(MAKE) config-check CONFIG="$(OUTPUT)"
+
+brand-config-deploy:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-deploy BRAND=fc CONFIG=...)" >&2; exit 1; fi
+	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required" >&2; exit 1; fi
+	bash scripts/deploy-brand-config.sh "$(BRAND)" "$(CONFIG)"
+
+brand-config-activate:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-activate BRAND=fc)" >&2; exit 1; fi
+	bash scripts/activate-brand-config.sh "$(BRAND)"
+
+brand-config-rollback:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-rollback BRAND=fc)" >&2; exit 1; fi
+	bash scripts/rollback-brand-config.sh "$(BRAND)"
+
+brand-smoke:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-smoke BRAND=fc)" >&2; exit 1; fi
+	bash scripts/smoke-brand.sh "$(BRAND)"
+
+brand-status:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-status BRAND=fc)" >&2; exit 1; fi
+	bash scripts/status-brand.sh "$(BRAND)"
+
+brand-logs:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-logs BRAND=fc)" >&2; exit 1; fi
+	bash scripts/logs-brand.sh "$(BRAND)"
+
+brand-rollback:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-rollback BRAND=fc)" >&2; exit 1; fi
+	bash scripts/rollback-brand-binary.sh "$(BRAND)"
+
+# --- Backward-compatible aliases (delegate only; no profile values here) ---
+
+# Legacy general targets historically meant VFF.
+deploy:
+	@$(MAKE) brand-deploy BRAND=vff
+status:
+	@$(MAKE) brand-status BRAND=vff
+logs:
+	@$(MAKE) brand-logs BRAND=vff
+rollback:
+	@$(MAKE) brand-rollback BRAND=vff
+smoke:
+	@$(MAKE) brand-smoke BRAND=vff
+
+# VFF config aliases.
 vff-config-render:
-	@if [ -z "$(SOURCE)" ] || [ -z "$(OUTPUT)" ]; then \
-		echo "SOURCE and OUTPUT are required" >&2; exit 1; \
-	fi
-	@$(EXPORT_VFF) bash scripts/render-vff-config.sh "$(SOURCE)" "$(OUTPUT)"
-	@$(MAKE) config-check CONFIG="$(OUTPUT)"
-
+	@$(MAKE) brand-config-render BRAND=vff SOURCE="$(SOURCE)" OUTPUT="$(OUTPUT)"
 deploy-vff-config:
-	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required" >&2; exit 1; fi
-	@$(EXPORT_VFF) bash scripts/deploy-vff-config.sh "$(CONFIG)"
-
+	@$(MAKE) brand-config-deploy BRAND=vff CONFIG="$(CONFIG)"
 activate-vff-config:
-	@$(EXPORT_VFF) bash scripts/activate-vff-config.sh
-
+	@$(MAKE) brand-config-activate BRAND=vff
 rollback-vff-config:
-	@$(EXPORT_VFF) bash scripts/rollback-vff-config.sh
-
+	@$(MAKE) brand-config-rollback BRAND=vff
 smoke-vff:
-	@$(EXPORT_VFF) bash scripts/smoke-vff.sh
+	@$(MAKE) brand-smoke BRAND=vff
 
-# --- Friends Connect ---
-
+# Friends Connect aliases.
 deploy-fc:
-	@$(EXPORT_FC) bash scripts/deploy-brand-binary.sh
-
+	@$(MAKE) brand-deploy BRAND=fc
 fc-config-render:
-	@if [ -z "$(SOURCE)" ] || [ -z "$(OUTPUT)" ]; then \
-		echo "SOURCE and OUTPUT are required" >&2; exit 1; \
-	fi
-	@$(EXPORT_FC) bash scripts/render-brand-config.sh \
-		--source "$(SOURCE)" \
-		--output "$(OUTPUT)" \
-		--brand-id "$(FC_BRAND_ID)" \
-		--brand-name "Friends Connect" \
-		--allowed-host connect-fc.vpn-for-friends.com \
-		--landing-url https://friends-connect.club \
-		--web-login-prefix web_ \
-		--web-user-source vpn-for-friends.com \
-		--expect-public-base-url "$(FC_PUBLIC_BASE_URL)" \
-		--expect-service-category "$(FC_EXPECT_CATEGORY)" \
-		--expect-payment-profile "$(FC_EXPECT_PAYMENT_PROFILE)"
-	@$(MAKE) config-check CONFIG="$(OUTPUT)"
-
+	@$(MAKE) brand-config-render BRAND=fc SOURCE="$(SOURCE)" OUTPUT="$(OUTPUT)"
 deploy-fc-config:
-	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required" >&2; exit 1; fi
-	@$(EXPORT_FC) bash scripts/deploy-brand-config.sh "$(CONFIG)"
-
+	@$(MAKE) brand-config-deploy BRAND=fc CONFIG="$(CONFIG)"
 activate-fc-config:
-	@$(EXPORT_FC) bash scripts/activate-brand-config.sh
-
+	@$(MAKE) brand-config-activate BRAND=fc
 rollback-fc-config:
-	@$(EXPORT_FC) bash scripts/rollback-brand-config.sh
-
+	@$(MAKE) brand-config-rollback BRAND=fc
 smoke-fc:
-	@$(EXPORT_FC) bash scripts/smoke-brand.sh
-
+	@$(MAKE) brand-smoke BRAND=fc
 status-fc:
-	ssh $(SERVER_USER)@$(FC_SERVER_HOST) 'systemctl --no-pager --full status $(FC_SERVICE_NAME)'
-
+	@$(MAKE) brand-status BRAND=fc
 logs-fc:
-	ssh $(SERVER_USER)@$(FC_SERVER_HOST) 'journalctl -u $(FC_SERVICE_NAME) -n 100 --no-pager'
+	@$(MAKE) brand-logs BRAND=fc

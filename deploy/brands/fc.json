@@ -1,0 +1,26 @@
+{
+  "id": "fc",
+  "label": "FC",
+  "name": "Friends Connect",
+  "server": {
+    "user": "root",
+    "host": "fr-mrs-1"
+  },
+  "runtime": {
+    "service": "bot-friends-connect.service",
+    "directory": "/opt/bot-friends-connect",
+    "binary": "/opt/bot-friends-connect/bot",
+    "legacy_config": "/opt/bot-friends-connect/config.json",
+    "explicit_config": "/opt/bot-friends-connect/config-fc.json",
+    "dropin": "/etc/systemd/system/bot-friends-connect.service.d/10-vpnbot-config.conf"
+  },
+  "brand": {
+    "allowed_host": "connect-fc.vpn-for-friends.com",
+    "public_base_url": "https://connect-fc.vpn-for-friends.com",
+    "landing_url": "https://friends-connect.club",
+    "service_category": "vpn-mz-fc",
+    "payment_profile": "telegram_friends_connect_bot",
+    "web_login_prefix": "web_",
+    "web_user_source": "vpn-for-friends.com"
+  }
+}

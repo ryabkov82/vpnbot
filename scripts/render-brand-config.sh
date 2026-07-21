@@ -1,67 +1,51 @@
 #!/usr/bin/env bash
-# Build explicit brand config from legacy JSON. Never prints JSON. No set -x.
+# Build explicit brand config from legacy JSON using a brand profile.
+# Never prints JSON. No set -x. No secrets.
+# Usage: bash scripts/render-brand-config.sh <brand-id> --source FILE --output FILE
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/brand_profile.sh
+source "${ROOT}/scripts/lib/brand_profile.sh"
+
+BRAND_ID_ARG=""
 SOURCE=""
 OUTPUT=""
-BRAND_ID=""
-BRAND_NAME=""
-ALLOWED_HOST=""
-LANDING_URL=""
-WEB_LOGIN_PREFIX="web_"
-WEB_USER_SOURCE="vpn-for-friends.com"
-EXPECT_PUBLIC_BASE_URL=""
-EXPECT_SERVICE_CATEGORY=""
-EXPECT_PAYMENT_PROFILE=""
 
 usage() {
   cat >&2 <<'EOF'
-usage: bash scripts/render-brand-config.sh \
-  --source FILE --output FILE \
-  --brand-id ID --brand-name NAME \
-  --allowed-host HOST --landing-url URL \
-  [--web-login-prefix web_] [--web-user-source vpn-for-friends.com] \
-  [--expect-public-base-url URL] \
-  [--expect-service-category CAT] \
-  [--expect-payment-profile PROFILE]
+usage: bash scripts/render-brand-config.sh <brand-id> --source FILE --output FILE
+       (brand-id may also be provided as --brand ID or via BRAND=ID)
 EOF
-}
-
-canonical_existing() {
-  # Absolute canonical path for an existing file or directory.
-  local p="$1"
-  if command -v realpath >/dev/null 2>&1; then
-    realpath -m "$p" 2>/dev/null || realpath "$p"
-  else
-    readlink -f "$p"
-  fi
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --brand) BRAND_ID_ARG="${2:-}"; shift 2 ;;
     --source) SOURCE="${2:-}"; shift 2 ;;
     --output) OUTPUT="${2:-}"; shift 2 ;;
-    --brand-id) BRAND_ID="${2:-}"; shift 2 ;;
-    --brand-name) BRAND_NAME="${2:-}"; shift 2 ;;
-    --allowed-host) ALLOWED_HOST="${2:-}"; shift 2 ;;
-    --landing-url) LANDING_URL="${2:-}"; shift 2 ;;
-    --web-login-prefix) WEB_LOGIN_PREFIX="${2:-}"; shift 2 ;;
-    --web-user-source) WEB_USER_SOURCE="${2:-}"; shift 2 ;;
-    --expect-public-base-url) EXPECT_PUBLIC_BASE_URL="${2:-}"; shift 2 ;;
-    --expect-service-category) EXPECT_SERVICE_CATEGORY="${2:-}"; shift 2 ;;
-    --expect-payment-profile) EXPECT_PAYMENT_PROFILE="${2:-}"; shift 2 ;;
     -h | --help) usage; exit 0 ;;
-    *) echo "render-brand-config: unknown arg: $1" >&2; usage; exit 1 ;;
+    -*) echo "render-brand-config: unknown arg: $1" >&2; usage; exit 1 ;;
+    *)
+      if [[ -z "${BRAND_ID_ARG}" ]]; then BRAND_ID_ARG="$1"; else
+        echo "render-brand-config: unexpected arg: $1" >&2; usage; exit 1
+      fi
+      shift
+      ;;
   esac
 done
 
-for req in SOURCE OUTPUT BRAND_ID BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX WEB_USER_SOURCE; do
-  if [[ -z "${!req}" ]]; then
-    echo "render-brand-config: missing required argument" >&2
-    usage
-    exit 1
-  fi
-done
+BRAND_ID_ARG="${BRAND_ID_ARG:-${BRAND:-}}"
+if [[ -z "${BRAND_ID_ARG}" || -z "${SOURCE}" || -z "${OUTPUT}" ]]; then
+  echo "render-brand-config: brand-id, --source and --output are required" >&2
+  usage
+  exit 1
+fi
+
+brand_profile_load "${BRAND_ID_ARG}" || exit 1
+
+# Values come exclusively from the loaded profile (never from the Makefile).
+BRAND_ID="${EXPECTED_BRAND_ID}"
 
 if [[ ! -f "${SOURCE}" ]]; then
   echo "render-brand-config: source not found: ${SOURCE}" >&2
@@ -72,6 +56,15 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "render-brand-config: jq is required" >&2
   exit 1
 fi
+
+canonical_existing() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -m "$p" 2>/dev/null || realpath "$p"
+  else
+    readlink -f "$p"
+  fi
+}
 
 source_abs="$(canonical_existing "${SOURCE}")"
 output_dir="$(dirname -- "${OUTPUT}")"

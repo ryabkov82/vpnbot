@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local orchestrator: build configcheck, upload, activate, smoke, cleanup.
-# Requires brand profile env (use brand_profile_export or Makefile exports).
+# Usage: bash scripts/activate-brand-config.sh <brand-id>   (or BRAND=<id>)
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,8 +8,17 @@ cd "${ROOT}"
 
 # shellcheck source=lib/brand_ops.sh
 source "${ROOT}/scripts/lib/brand_ops.sh"
+# shellcheck source=lib/brand_profile.sh
+source "${ROOT}/scripts/lib/brand_profile.sh"
 
-SERVER_USER="${SERVER_USER:-root}"
+BRAND_ID="${1:-${BRAND:-}}"
+if [[ "${BRAND_ID}" == "--brand" ]]; then BRAND_ID="${2:-}"; fi
+if [[ -z "${BRAND_ID}" ]]; then
+  brand_err "usage: bash $0 <brand-id>"
+  exit 1
+fi
+brand_profile_load "${BRAND_ID}" || exit 1
+
 brand_require_vars SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_EXPLICIT_CONFIG \
   DROPIN_FILE EXPECTED_BRAND_ID BRAND_LABEL SMOKE_BASE_URL REMOTE_LEGACY_CONFIG || exit 1
 brand_refresh_derived
@@ -68,13 +77,9 @@ ssh "${SERVER_USER}@${SERVER_HOST}" \
   "set -Eeuo pipefail; source $(printf %q "${REMOTE_TMP}/brand.env"); bash $(printf %q "${REMOTE_TMP}/activate-brand-config-remote.sh") $(printf %q "${REMOTE_TMP}/configcheck")"
 
 echo "activate-${BRAND_LABEL}-config: public smoke..."
-if ! SMOKE_BASE_URL="${SMOKE_BASE_URL}" BRAND_LABEL="${BRAND_LABEL}" bash "${ROOT}/scripts/smoke-brand.sh"; then
+if ! bash "${ROOT}/scripts/smoke-brand.sh" "${EXPECTED_BRAND_ID}"; then
   brand_err "activate-${BRAND_LABEL}-config: smoke failed; rolling back to legacy"
-  SERVER_USER="${SERVER_USER}" SERVER_HOST="${SERVER_HOST}" \
-    SERVICE_NAME="${SERVICE_NAME}" REMOTE_DIR="${REMOTE_DIR}" \
-    REMOTE_LEGACY_CONFIG="${REMOTE_LEGACY_CONFIG}" REMOTE_EXPLICIT_CONFIG="${REMOTE_EXPLICIT_CONFIG}" \
-    DROPIN_FILE="${DROPIN_FILE}" EXPECTED_BRAND_ID="${EXPECTED_BRAND_ID}" BRAND_LABEL="${BRAND_LABEL}" \
-    bash "${ROOT}/scripts/rollback-brand-config.sh"
+  bash "${ROOT}/scripts/rollback-brand-config.sh" "${EXPECTED_BRAND_ID}"
   exit 1
 fi
 

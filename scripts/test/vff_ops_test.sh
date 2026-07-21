@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Unit tests for scripts/lib/vff_ops.sh using PATH mocks.
+# VFF-flavored unit tests for scripts/lib/brand_ops.sh using PATH mocks.
+# (vff_ops.sh was removed; these exercise the shared brand engine with VFF env.)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=../lib/vff_ops.sh
-source "${ROOT}/scripts/lib/vff_ops.sh"
+# shellcheck source=../lib/brand_ops.sh
+source "${ROOT}/scripts/lib/brand_ops.sh"
 
 FAILS=0
 pass() { printf 'PASS %s\n' "$1"; }
@@ -177,7 +178,7 @@ teardown() {
 test_success() {
   setup_workspace
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail success "activate failed: ${out}"; teardown; return; fi
   if [[ ! -f "${DROPIN_FILE}" ]]; then fail success "drop-in missing"; teardown; return; fi
   if ! grep -Fq 'remote activation OK' <<<"${out}"; then fail success "missing OK: ${out}"; teardown; return; fi
@@ -191,7 +192,7 @@ test_success() {
 test_configcheck_fail() {
   setup_workspace
   local rc=0
-  vff_activate "${WORK}/configcheck_bad" >/dev/null 2>&1 || rc=$?
+  brand_activate "${WORK}/configcheck_bad" >/dev/null 2>&1 || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail configcheck_fail "should fail"; teardown; return; fi
   if [[ -f "${DROPIN_FILE}" ]]; then fail configcheck_fail "drop-in should not exist"; teardown; return; fi
   pass configcheck_fail
@@ -203,7 +204,7 @@ test_restart_fail_rollback() {
   setup_workspace
   : >"${WORK}/restart_fail_once"
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail restart_fail "should fail"; teardown; return; fi
   if [[ -f "${DROPIN_FILE}" ]]; then fail restart_fail "drop-in should be removed"; teardown; return; fi
   if ! grep -Fq 'rolling back to legacy' <<<"${out}"; then fail restart_fail "no rollback msg: ${out}"; teardown; return; fi
@@ -217,7 +218,7 @@ test_not_active() {
   setup_workspace
   : >"${WORK}/force_inactive_with_dropin"
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail not_active "should fail"; teardown; return; fi
   if [[ -f "${DROPIN_FILE}" ]]; then fail not_active "drop-in not rolled back"; teardown; return; fi
   pass not_active
@@ -229,7 +230,7 @@ test_missing_brand_log() {
   setup_workspace
   : >"${WORK}/suppress_brand_log"
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail missing_brand_log "should fail"; teardown; return; fi
   if [[ -f "${DROPIN_FILE}" ]]; then fail missing_brand_log "drop-in not rolled back"; teardown; return; fi
   pass missing_brand_log
@@ -246,7 +247,7 @@ exit 7
 EOF
   chmod 0700 "${smoke_mock}/curl"
   local out rc=0
-  out="$(PATH="${smoke_mock}:${PATH}" bash "${ROOT}/scripts/smoke-vff.sh" 2>&1)" || rc=$?
+  out="$(PATH="${smoke_mock}:${PATH}" bash "${ROOT}/scripts/smoke-brand.sh" vff 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail smoke_transport "should fail"; rm -rf "${smoke_mock}"; return; fi
   if ! grep -Fq 'transport error' <<<"${out}"; then fail smoke_transport "msg: ${out}"; rm -rf "${smoke_mock}"; return; fi
   pass smoke_transport
@@ -259,7 +260,7 @@ test_rollback_ok() {
   printf '%s\n' "${DROPIN_BODY}" >"${DROPIN_FILE}"
   printf '%s\n' "X ${EXPECTED_ENV}" >"${WORK}/state_env"
   local out rc=0
-  out="$(vff_rollback_to_legacy 2>&1)" || rc=$?
+  out="$(brand_rollback_to_legacy 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail rollback_ok "${out}"; teardown; return; fi
   if [[ -f "${DROPIN_FILE}" ]]; then fail rollback_ok "drop-in remains"; teardown; return; fi
   if ! grep -Fq 'legacy active' <<<"${out}"; then fail rollback_ok "${out}"; teardown; return; fi
@@ -274,7 +275,7 @@ test_rollback_critical() {
   : >"${WORK}/restart_always_fail"
   # Ensure rollback restart path cannot clear the fail flag.
   local out rc=0
-  out="$(vff_emergency_rollback "forced" 2>&1)" || rc=$?
+  out="$(brand_emergency_rollback "forced" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail rollback_critical "should fail"; teardown; return; fi
   if ! grep -Fq 'CRITICAL: VFF activation failed and automatic rollback failed' <<<"${out}"; then
     fail rollback_critical "missing CRITICAL: ${out}"; teardown; return
@@ -288,7 +289,7 @@ test_foreign_dropin() {
   setup_workspace
   printf '%s\n' '[Service]' 'Environment=VPNBOT_CONFIG=/other.json' >"${DROPIN_FILE}"
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail foreign_dropin "should refuse"; teardown; return; fi
   if ! grep -Fq 'refusing to overwrite' <<<"${out}"; then fail foreign_dropin "${out}"; teardown; return; fi
   if ! grep -Fq '/other.json' "${DROPIN_FILE}"; then fail foreign_dropin "foreign file changed"; teardown; return; fi
@@ -301,7 +302,7 @@ test_idempotent() {
   setup_workspace
   printf '%s\n' "${DROPIN_BODY}" >"${DROPIN_FILE}"
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail idempotent "${out}"; teardown; return; fi
   if ! grep -Fq 'already correct (idempotent)' <<<"${out}"; then fail idempotent "${out}"; teardown; return; fi
   if ! grep -Fq 'remote activation OK' <<<"${out}"; then fail idempotent "no OK: ${out}"; teardown; return; fi
@@ -324,7 +325,7 @@ test_temp_cleanup_pattern() {
 test_no_full_environment() {
   setup_workspace
   local out rc=0
-  out="$(vff_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
+  out="$(brand_activate "${WORK}/configcheck_ok" 2>&1)" || rc=$?
   if [[ "${rc}" -ne 0 ]]; then fail no_full_env "${out}"; teardown; return; fi
   if grep -Fq 'FOO=1' <<<"${out}"; then fail no_full_env "FOO leaked: ${out}"; teardown; return; fi
   if grep -Fq 'BAR=2' <<<"${out}"; then fail no_full_env "BAR leaked: ${out}"; teardown; return; fi

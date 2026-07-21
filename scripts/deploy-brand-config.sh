@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Upload + install an explicit brand config file (no restart, no activation).
+# Usage: bash scripts/deploy-brand-config.sh <brand-id> <config.json>
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -6,14 +8,18 @@ cd "${ROOT}"
 
 # shellcheck source=lib/brand_ops.sh
 source "${ROOT}/scripts/lib/brand_ops.sh"
+# shellcheck source=lib/brand_profile.sh
+source "${ROOT}/scripts/lib/brand_profile.sh"
 
-CONFIG="${1:-}"
-if [[ -z "${CONFIG}" ]]; then
-  brand_err "usage: bash $0 /secure/path/config-explicit.json"
+BRAND_ID="${1:-${BRAND:-}}"
+if [[ "${BRAND_ID}" == "--brand" ]]; then BRAND_ID="${2:-}"; shift; fi
+CONFIG="${2:-${CONFIG:-}}"
+if [[ -z "${BRAND_ID}" || -z "${CONFIG}" ]]; then
+  brand_err "usage: bash $0 <brand-id> /secure/path/config-explicit.json"
   exit 1
 fi
+brand_profile_load "${BRAND_ID}" || exit 1
 
-SERVER_USER="${SERVER_USER:-root}"
 brand_require_vars SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_EXPLICIT_CONFIG \
   EXPECTED_BRAND_ID BRAND_LABEL REMOTE_LEGACY_CONFIG DROPIN_FILE || exit 1
 brand_refresh_derived
@@ -41,8 +47,6 @@ if [[ -z "${REMOTE_TMP}" || "${REMOTE_TMP}" != /* ]]; then
   exit 1
 fi
 
-ENV_FILE="${REMOTE_TMP}/brand.env"
-# Write env locally then scp — build in local tmp.
 LOCAL_TMP="$(mktemp -d)"
 chmod 0700 "${LOCAL_TMP}"
 {

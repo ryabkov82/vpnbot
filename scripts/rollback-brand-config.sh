@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Roll a brand unit back to legacy config (remove managed drop-in, restart).
+# Usage: bash scripts/rollback-brand-config.sh <brand-id>   (or BRAND=<id>)
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -6,8 +8,17 @@ cd "${ROOT}"
 
 # shellcheck source=lib/brand_ops.sh
 source "${ROOT}/scripts/lib/brand_ops.sh"
+# shellcheck source=lib/brand_profile.sh
+source "${ROOT}/scripts/lib/brand_profile.sh"
 
-SERVER_USER="${SERVER_USER:-root}"
+BRAND_ID="${1:-${BRAND:-}}"
+if [[ "${BRAND_ID}" == "--brand" ]]; then BRAND_ID="${2:-}"; fi
+if [[ -z "${BRAND_ID}" ]]; then
+  brand_err "usage: bash $0 <brand-id>"
+  exit 1
+fi
+brand_profile_load "${BRAND_ID}" || exit 1
+
 brand_require_vars SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_EXPLICIT_CONFIG \
   DROPIN_FILE EXPECTED_BRAND_ID BRAND_LABEL REMOTE_LEGACY_CONFIG || exit 1
 

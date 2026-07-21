@@ -1,0 +1,26 @@
+{
+  "id": "vff",
+  "label": "VFF",
+  "name": "VPN for Friends",
+  "server": {
+    "user": "root",
+    "host": "fr-mrs-1"
+  },
+  "runtime": {
+    "service": "bot.service",
+    "directory": "/opt/bot",
+    "binary": "/opt/bot/bot",
+    "legacy_config": "/opt/bot/config.json",
+    "explicit_config": "/opt/bot/config-vff.json",
+    "dropin": "/etc/systemd/system/bot.service.d/10-vpnbot-config.conf"
+  },
+  "brand": {
+    "allowed_host": "connect.vpn-for-friends.com",
+    "public_base_url": "https://connect.vpn-for-friends.com",
+    "landing_url": "https://vpn-for-friends.com",
+    "service_category": "vpn-mz-test",
+    "payment_profile": "telegram_bot",
+    "web_login_prefix": "web_",
+    "web_user_source": "vpn-for-friends.com"
+  }
+}
