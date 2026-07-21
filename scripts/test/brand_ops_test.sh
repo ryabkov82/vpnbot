@@ -31,6 +31,7 @@ case "\$cmd" in
       User) echo "root"; exit 0 ;;
       Group) echo ""; exit 0 ;;
       Environment) cat "${WORK}/state_env"; exit 0 ;;
+      LoadState) echo "loaded"; exit 0 ;;
       *) exit 99 ;;
     esac
     ;;
@@ -159,6 +160,13 @@ EOF
 
 teardown() { rm -rf "${WORK:-}"; }
 
+# Enable already-active explicit mode required by standalone brand_deploy_binary.
+enable_explicit_mode() {
+  printf '%s\n' "${DROPIN_BODY}" >"${DROPIN_FILE}"
+  printf '%s\n' '{"telegram":{"token":"t"},"brand":{"id":"x"}}' >"${REMOTE_EXPLICIT_CONFIG}"
+  printf 'FOO=1 %s BAR=2\n' "${EXPECTED_ENV}" >"${WORK}/state_env"
+}
+
 # 1. VFF and FC share fr-mrs-1 but differ on service/paths/brand/smoke/expectations
 test_profiles_same_host_differ_elsewhere() {
   brand_profile_export vff
@@ -213,6 +221,7 @@ test_missing_param() {
 # 3. successful binary deploy creates backup
 test_binary_deploy_backup() {
   setup_profile fc
+  enable_explicit_mode
   printf 'known-good-v1\n' >"${REMOTE_BINARY}"
   printf 'broken-v2\n' >"${REMOTE_BINARY}.new"
   # First install succeeds with broken-v2 content (name is just payload).
@@ -233,6 +242,7 @@ test_binary_deploy_backup() {
 # 4. restart fail → restore exact known-good-v1; temps gone; backup exists
 test_binary_restart_rollback_restores_content() {
   setup_profile fc
+  enable_explicit_mode
   printf 'known-good-v1\n' >"${REMOTE_BINARY}"
   printf 'broken-v2\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/restart_fail_once"
@@ -258,6 +268,7 @@ test_binary_restart_rollback_restores_content() {
 # 5. rollback also fails → CRITICAL
 test_binary_rollback_critical() {
   setup_profile fc
+  enable_explicit_mode
   printf 'known-good-v1\n' >"${REMOTE_BINARY}"
   printf 'broken-v2\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/restart_always_fail"
@@ -277,6 +288,7 @@ test_binary_rollback_critical() {
 # 6. second is-active after rollback sleep fails → CRITICAL
 test_binary_rollback_second_active_fails() {
   setup_profile fc
+  enable_explicit_mode
   printf 'known-good-v1\n' >"${REMOTE_BINARY}"
   printf 'broken-v2\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/restart_fail_once"
@@ -323,6 +335,7 @@ test_binary_marker_rollback() {
 # 7b. old previous binary without startup markers: rollback OK, deploy fails, no CRITICAL
 test_old_binary_rollback_without_startup_markers() {
   setup_profile fc
+  enable_explicit_mode
   printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
   printf 'broken-new-binary\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/restart_fail_once"
@@ -350,6 +363,7 @@ test_old_binary_rollback_without_startup_markers() {
 # 7c. new binary still requires startup markers; missing markers → rollback
 test_new_binary_requires_startup_markers() {
   setup_profile fc
+  enable_explicit_mode
   printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
   printf 'new-binary-no-markers\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/no_startup_markers"
@@ -373,36 +387,32 @@ test_new_binary_requires_startup_markers() {
   teardown
 }
 
-# 15.1 new binary on a legacy config (no brand) → config validation failure → rollback,
-# old binary restored, no CRITICAL, and the process is NOT started as VFF.
+# 15.1 new binary on legacy mode → preflight fails before mutation (use brand-rollout).
 test_new_binary_on_legacy_config_rolls_back() {
   setup_profile fc
+  # Legacy mode: no managed drop-in / expected env. Standalone deploy must refuse mutation.
   printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
   printf 'new-fc-binary\n' >"${REMOTE_BINARY}.new"
-  # Active config is legacy (no brand.id): new binary fails config validation on start.
   printf '%s\n' '{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"}}' >"${REMOTE_LEGACY_CONFIG}"
-  : >"${WORK}/legacy_config_no_brand"
   : >"${WORK}/journal/log"
-  local out rc=0
+  local out rc=0 before
+  before="$(cat "${REMOTE_BINARY}")"
   out="$(brand_deploy_binary 2>&1)" || rc=$?
-  if [[ "${rc}" -eq 0 ]]; then fail legacy_cfg_rollback "deploy should fail"; teardown; return; fi
-  if ! grep -Fq 'startup log check failed' <<<"${out}"; then
-    fail legacy_cfg_rollback "missing validation failure reason: ${out}"; teardown; return
+  if [[ "${rc}" -eq 0 ]]; then fail legacy_cfg_guard "deploy should fail"; teardown; return; fi
+  if ! grep -Fq 'explicit config is not active; use brand-rollout' <<<"${out}"; then
+    fail legacy_cfg_guard "missing preflight reason: ${out}"; teardown; return
   fi
-  if ! grep -Fq 'previous binary restored' <<<"${out}"; then
-    fail legacy_cfg_rollback "missing restored: ${out}"; teardown; return
+  if [[ "$(cat "${REMOTE_BINARY}")" != "${before}" ]]; then
+    fail legacy_cfg_guard "binary must be unchanged"; teardown; return
+  fi
+  if ls "${REMOTE_BINARY}".bak.* >/dev/null 2>&1; then
+    fail legacy_cfg_guard "backup must not be created"; teardown; return
   fi
   if grep -Fq 'CRITICAL' <<<"${out}"; then
-    fail legacy_cfg_rollback "unexpected CRITICAL: ${out}"; teardown; return
+    fail legacy_cfg_guard "unexpected CRITICAL: ${out}"; teardown; return
   fi
-  if ! grep -Fxq 'old-fc-binary' "${REMOTE_BINARY}"; then
-    fail legacy_cfg_rollback "old binary not restored: $(cat "${REMOTE_BINARY}")"; teardown; return
-  fi
-  if grep -Fq 'active brand: id=vff' "${WORK}/journal/log"; then
-    fail legacy_cfg_rollback "must not start as VFF"; teardown; return
-  fi
-  if ! grep -Fq 'configuration invalid: brand.id is required' "${WORK}/journal/log"; then
-    fail legacy_cfg_rollback "missing config-invalid log"; teardown; return
+  if grep -Fq 'previous binary restored' <<<"${out}"; then
+    fail legacy_cfg_guard "rollback must not run"; teardown; return
   fi
   pass new_binary_on_legacy_config_rolls_back
   teardown
@@ -411,6 +421,7 @@ test_new_binary_on_legacy_config_rolls_back() {
 # 15.2 explicit FC config active → new binary starts: active, sleep, active, explicit markers.
 test_explicit_fc_binary_startup() {
   setup_profile fc
+  enable_explicit_mode
   printf 'old-fc-binary\n' >"${REMOTE_BINARY}"
   printf 'new-fc-binary\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/journal/log"
@@ -434,6 +445,7 @@ test_explicit_fc_binary_startup() {
 # 15.3 explicit VFF config active → new binary starts with explicit brand.id=vff markers.
 test_explicit_vff_binary_startup() {
   setup_profile vff
+  enable_explicit_mode
   printf 'old-vff-binary\n' >"${REMOTE_BINARY}"
   printf 'new-vff-binary\n' >"${REMOTE_BINARY}.new"
   : >"${WORK}/journal/log"

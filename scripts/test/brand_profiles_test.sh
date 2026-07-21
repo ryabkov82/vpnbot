@@ -225,6 +225,17 @@ test_negative_matrix() {
   neg_file allowed_host_scheme demo '.brand.allowed_host = "https://demo.example.com"'
   neg_file allowed_host_port demo '.brand.allowed_host = "demo.example.com:8090"'
   neg_file invalid_url demo '.brand.public_base_url = "ftp://demo.example.com"'
+  neg_file https_without_host demo '.brand.public_base_url = "https://"'
+  neg_file url_userinfo demo '.brand.public_base_url = "https://user@demo.example.com"'
+  neg_file url_whitespace demo '.brand.public_base_url = "https://demo.example.com/path with space"'
+  neg_file url_fragment demo '.brand.landing_url = "https://demo.example.com/#x"'
+  neg_file url_port_zero demo '.brand.public_base_url = "https://demo.example.com:0"'
+  neg_file url_port_too_high demo '.brand.public_base_url = "https://demo.example.com:65536"'
+  neg_file malformed_hostname_url demo '.brand.public_base_url = "https://bad_host"'
+  neg_file server_user_leading_dash demo '.server.user = "-root"'
+  neg_file server_user_at demo '.server.user = "root@host"'
+  neg_file service_leading_dash demo '.runtime.service = "-bot.service"'
+  neg_file service_whitespace demo '.runtime.service = "bot friends.service"'
   neg_file token_key demo '.brand.token = "x"'
   neg_file password_key demo '.server.password = "x"'
   neg_file malformed_json demo 'RAW:{ this is not json'
@@ -267,6 +278,23 @@ test_make_dryrun_matrix() {
   out="$(mkn activate-vff-config)" || { fail "mkn:activate-vff-config" "make -n failed"; return; }
   grep -Fq "activate-brand-config.sh" <<<"${out}" || { fail "mkn:activate-vff-config" "no generic script"; return; }
   grep -Fq "vff" <<<"${out}" || { fail "mkn:activate-vff-config" "no vff"; return; }
+
+  out="$(mkn brand-rollout BRAND=fc CONFIG=/secure/config-fc.json)" || { fail "mkn:brand-rollout:fc" "make -n failed"; return; }
+  grep -Fq "rollout-brand.sh" <<<"${out}" || { fail "mkn:brand-rollout:fc" "script missing"; return; }
+  grep -Fq "fc" <<<"${out}" || { fail "mkn:brand-rollout:fc" "brand missing"; return; }
+  grep -Fq "/secure/config-fc.json" <<<"${out}" || { fail "mkn:brand-rollout:fc" "CONFIG missing"; return; }
+
+  out="$(mkn brand-rollout BRAND=vff CONFIG=/secure/config-vff.json)" || { fail "mkn:brand-rollout:vff" "make -n failed"; return; }
+  grep -Fq "rollout-brand.sh" <<<"${out}" || { fail "mkn:brand-rollout:vff" "script missing"; return; }
+  grep -Fq "vff" <<<"${out}" || { fail "mkn:brand-rollout:vff" "brand missing"; return; }
+
+  out="$(mkn rollout-fc CONFIG=/secure/config-fc.json)" || { fail "mkn:rollout-fc" "make -n failed"; return; }
+  grep -Fq "rollout-brand.sh" <<<"${out}" || { fail "mkn:rollout-fc" "no generic script"; return; }
+  grep -Fq "fc" <<<"${out}" || { fail "mkn:rollout-fc" "no fc"; return; }
+
+  out="$(mkn rollout-vff CONFIG=/secure/config-vff.json)" || { fail "mkn:rollout-vff" "make -n failed"; return; }
+  grep -Fq "rollout-brand.sh" <<<"${out}" || { fail "mkn:rollout-vff" "no generic script"; return; }
+  grep -Fq "vff" <<<"${out}" || { fail "mkn:rollout-vff" "no vff"; return; }
 
   pass make_dryrun_matrix
 }

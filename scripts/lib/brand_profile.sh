@@ -40,11 +40,12 @@ if type != "object" then error("profile: must be a JSON object") else . end
 | (if $id != $expected then error("id (" + $id + ") must equal profile filename (" + $expected + ")") else $id end) as $id
 | s($p.label; "label")
 | s($p.name; "name")
-| s($p.server.user; "server.user")
+| (s($p.server.user; "server.user")
+   | if (test("^[a-z_][a-z0-9_-]*$")|not) then error("server.user: must match ^[a-z_][a-z0-9_-]*$") else . end)
 | (s($p.server.host; "server.host")
    | if (test("^[A-Za-z0-9][A-Za-z0-9._-]*$")|not) then error("server.host: invalid host/alias") else . end)
 | (s($p.runtime.service; "runtime.service")
-   | if (test("^[A-Za-z0-9@._-]+\\.service$")|not) then error("runtime.service: must be a safe systemd unit ending in .service") else . end) as $svc
+   | if (test("^[A-Za-z0-9][A-Za-z0-9_.@-]*\\.service$")|not) then error("runtime.service: must be a safe systemd unit ending in .service") else . end) as $svc
 | abspath($p.runtime.directory; "runtime.directory") as $dir
 | within(abspath($p.runtime.binary; "runtime.binary"); $dir; "runtime.binary")
 | within(abspath($p.runtime.legacy_config; "runtime.legacy_config"); $dir; "runtime.legacy_config") as $legacy
@@ -56,10 +57,8 @@ if type != "object" then error("profile: must be a JSON object") else . end
 | (s($p.brand.allowed_host; "brand.allowed_host")
    | if (test("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$")|not)
        then error("brand.allowed_host: must be a bare DNS hostname (no scheme/port/path)") else . end)
-| (s($p.brand.public_base_url; "brand.public_base_url")
-   | if (test("^https://")|not) then error("brand.public_base_url: must be an absolute https:// URL") else . end)
-| (s($p.brand.landing_url; "brand.landing_url")
-   | if (test("^https://")|not) then error("brand.landing_url: must be an absolute https:// URL") else . end)
+| s($p.brand.public_base_url; "brand.public_base_url")
+| s($p.brand.landing_url; "brand.landing_url")
 | s($p.brand.service_category; "brand.service_category")
 | s($p.brand.payment_profile; "brand.payment_profile")
 | s($p.brand.web_login_prefix; "brand.web_login_prefix")
@@ -69,6 +68,87 @@ if type != "object" then error("profile: must be a JSON object") else . end
    | if length > 0 then error("secret-like key(s) present: " + (join(","))) else . end)
 | $id
 '
+
+# brand_profile_validate_https_url <field> <url>
+# Strict absolute https URL: DNS host, optional port 1..65535, optional path.
+# Rejects userinfo, query, fragment, whitespace/control chars, non-https schemes.
+brand_profile_validate_https_url() {
+  local field="${1:?field required}" url="${2:?url required}"
+  local rest hostport host port
+
+  if [[ -z "${url}" ]]; then
+    echo "brand_profile: ${field}: must be a non-empty https URL" >&2
+    return 1
+  fi
+  # Reject whitespace and ASCII control characters.
+  if [[ "${url}" == *$'\n'* || "${url}" == *$'\r'* || "${url}" == *$'\t'* || "${url}" == *' '* ]]; then
+    echo "brand_profile: ${field}: must not contain whitespace" >&2
+    return 1
+  fi
+  if [[ "${url}" =~ [[:cntrl:]] ]]; then
+    echo "brand_profile: ${field}: must not contain control characters" >&2
+    return 1
+  fi
+  if [[ "${url}" != https://* ]]; then
+    echo "brand_profile: ${field}: must be an absolute https:// URL" >&2
+    return 1
+  fi
+  if [[ "${url}" == *'?'* ]]; then
+    echo "brand_profile: ${field}: query strings are not allowed" >&2
+    return 1
+  fi
+  if [[ "${url}" == *'#'* ]]; then
+    echo "brand_profile: ${field}: fragments are not allowed" >&2
+    return 1
+  fi
+
+  rest="${url#https://}"
+  if [[ -z "${rest}" ]]; then
+    echo "brand_profile: ${field}: missing host" >&2
+    return 1
+  fi
+  # userinfo is forbidden (anything before @).
+  if [[ "${rest}" == *@* ]]; then
+    echo "brand_profile: ${field}: userinfo is not allowed" >&2
+    return 1
+  fi
+
+  if [[ "${rest}" == */* ]]; then
+    hostport="${rest%%/*}"
+  else
+    hostport="${rest}"
+  fi
+  if [[ -z "${hostport}" ]]; then
+    echo "brand_profile: ${field}: missing host" >&2
+    return 1
+  fi
+
+  if [[ "${hostport}" == *:* ]]; then
+    host="${hostport%%:*}"
+    port="${hostport#*:}"
+    if [[ -z "${host}" || -z "${port}" ]]; then
+      echo "brand_profile: ${field}: invalid host:port" >&2
+      return 1
+    fi
+    if [[ ! "${port}" =~ ^[0-9]+$ ]]; then
+      echo "brand_profile: ${field}: port must be an integer" >&2
+      return 1
+    fi
+    if (( 10#${port} < 1 || 10#${port} > 65535 )); then
+      echo "brand_profile: ${field}: port must be in 1..65535" >&2
+      return 1
+    fi
+  else
+    host="${hostport}"
+  fi
+
+  # DNS hostname (same contract as brand.allowed_host).
+  if [[ ! "${host}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]]; then
+    echo "brand_profile: ${field}: invalid DNS hostname" >&2
+    return 1
+  fi
+  return 0
+}
 
 # brand_profile_validate_file <id> <file>: strict validation of the JSON file.
 brand_profile_validate_file() {
@@ -189,6 +269,13 @@ brand_profile_load() {
   # Compatibility aliases for older VFF scripts/tests.
   export REMOTE_CONFIG_VFF="${REMOTE_EXPLICIT_CONFIG}"
   export REMOTE_CONFIG_LEGACY="${REMOTE_LEGACY_CONFIG}"
+
+  if ! brand_profile_validate_https_url "brand.public_base_url" "${EXPECT_PUBLIC_BASE_URL}"; then
+    return 1
+  fi
+  if ! brand_profile_validate_https_url "brand.landing_url" "${LANDING_URL}"; then
+    return 1
+  fi
 
   brand_profile_validate_loaded || return 1
   return 0

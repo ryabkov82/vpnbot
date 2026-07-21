@@ -8,13 +8,14 @@ LOCAL_CONFIGCHECK := ./dist/configcheck-linux-amd64
 # deploy/brands/<BRAND>.json via scripts/lib/brand_profile.sh.
 
 .PHONY: test build build-configcheck config-check \
-	brand-profile brand-deploy brand-config-render brand-config-deploy \
+	brand-profile brand-deploy brand-rollout brand-config-render brand-config-deploy \
 	brand-config-activate brand-config-rollback brand-smoke brand-status \
 	brand-logs brand-rollback \
 	deploy status logs rollback smoke \
 	vff-config-render deploy-vff-config activate-vff-config rollback-vff-config smoke-vff \
+	rollout-vff \
 	deploy-fc fc-config-render deploy-fc-config activate-fc-config rollback-fc-config \
-	smoke-fc status-fc logs-fc
+	smoke-fc status-fc logs-fc rollout-fc
 
 # --- Build / test utilities (brand-agnostic) ---
 
@@ -23,6 +24,7 @@ test:
 	bash scripts/test/vff_ops_test.sh
 	bash scripts/test/brand_ops_test.sh
 	bash scripts/test/brand_profiles_test.sh
+	@if [ -f scripts/test/brand_rollout_test.sh ]; then bash scripts/test/brand_rollout_test.sh; fi
 
 build:
 	mkdir -p dist
@@ -45,6 +47,11 @@ brand-profile:
 brand-deploy:
 	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-deploy BRAND=fc)" >&2; exit 1; fi
 	bash scripts/deploy-brand-binary.sh "$(BRAND)"
+
+brand-rollout:
+	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-rollout BRAND=fc CONFIG=...)" >&2; exit 1; fi
+	@if [ -z "$(CONFIG)" ]; then echo "CONFIG is required" >&2; exit 1; fi
+	bash scripts/rollout-brand.sh "$(BRAND)" "$(CONFIG)"
 
 brand-config-render:
 	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-config-render BRAND=fc SOURCE=... OUTPUT=...)" >&2; exit 1; fi
@@ -106,6 +113,8 @@ rollback-vff-config:
 	@$(MAKE) brand-config-rollback BRAND=vff
 smoke-vff:
 	@$(MAKE) brand-smoke BRAND=vff
+rollout-vff:
+	@$(MAKE) brand-rollout BRAND=vff CONFIG="$(CONFIG)"
 
 # Friends Connect aliases.
 deploy-fc:
@@ -124,3 +133,5 @@ status-fc:
 	@$(MAKE) brand-status BRAND=fc
 logs-fc:
 	@$(MAKE) brand-logs BRAND=fc
+rollout-fc:
+	@$(MAKE) brand-rollout BRAND=fc CONFIG="$(CONFIG)"

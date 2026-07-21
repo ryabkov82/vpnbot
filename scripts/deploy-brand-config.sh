@@ -31,11 +31,16 @@ if ! grep -Fxq "brand.id=${EXPECTED_BRAND_ID}" <<<"${summary}"; then
   exit 1
 fi
 
+LOCAL_TMP=""
 REMOTE_TMP=""
+
 cleanup() {
   local ec=$?
   if [[ -n "${REMOTE_TMP}" ]]; then
     ssh "${SERVER_USER}@${SERVER_HOST}" "rm -rf $(printf %q "${REMOTE_TMP}")" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${LOCAL_TMP}" ]]; then
+    rm -rf "${LOCAL_TMP}"
   fi
   return "${ec}"
 }
@@ -69,7 +74,6 @@ ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p $(printf %q "${REMOTE_TMP}/lib")"
 scp -q \
   "${ROOT}/scripts/lib/brand_ops.sh" \
   "${SERVER_USER}@${SERVER_HOST}:${REMOTE_TMP}/lib/"
-rm -rf "${LOCAL_TMP}"
 
 ssh "${SERVER_USER}@${SERVER_HOST}" \
   "set -Eeuo pipefail; source $(printf %q "${REMOTE_TMP}/brand.env"); bash $(printf %q "${REMOTE_TMP}/deploy-brand-config-remote.sh") $(printf %q "${REMOTE_EXPLICIT_CONFIG}.new")"
