@@ -207,10 +207,13 @@ brand_rollout_artifact_touched() {
   esac
 }
 
+# Write lock metadata. Optional $1 = preserved created_at (else generate UTC now).
 brand_rollout_lock_write_meta() {
   brand_require_vars ROLLOUT_LOCK_DIR TX_ID ROLLOUT_TX_DIR SERVICE_NAME || return 1
-  local created
-  created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || created="unknown"
+  local created="${1:-}"
+  if [[ -z "${created}" ]]; then
+    created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || created="unknown"
+  fi
   {
     printf '%s\n' "${TX_ID}" >"${ROLLOUT_LOCK_DIR}/tx_id" || return 1
     printf '%s\n' "${ROLLOUT_TX_DIR}" >"${ROLLOUT_LOCK_DIR}/tx_dir" || return 1
@@ -226,6 +229,28 @@ brand_rollout_lock_write_meta() {
   brand_checked_chmod 0600 "${ROLLOUT_LOCK_DIR}/remote_tmp" || return 1
   brand_checked_chmod 0600 "${ROLLOUT_LOCK_DIR}/service" || return 1
   brand_checked_chmod 0600 "${ROLLOUT_LOCK_DIR}/created_at" || return 1
+  return 0
+}
+
+brand_rollout_lock_restore_meta() {
+  local created="${1:-}"
+  brand_require_vars ROLLOUT_LOCK_DIR TX_ID ROLLOUT_TX_DIR SERVICE_NAME || return 1
+  mkdir -p "${ROLLOUT_LOCK_DIR}" || {
+    brand_err "CRITICAL: rollout-${BRAND_LABEL}: lock release failed and lock metadata recovery failed"
+    return 1
+  }
+  brand_checked_chmod 0700 "${ROLLOUT_LOCK_DIR}" || {
+    brand_err "CRITICAL: rollout-${BRAND_LABEL}: lock release failed and lock metadata recovery failed"
+    return 1
+  }
+  if ! brand_rollout_lock_write_meta "${created}"; then
+    brand_err "CRITICAL: rollout-${BRAND_LABEL}: lock release failed and lock metadata recovery failed"
+    return 1
+  fi
+  if ! brand_rollout_lock_owns; then
+    brand_err "CRITICAL: rollout-${BRAND_LABEL}: lock release failed and lock metadata recovery failed"
+    return 1
+  fi
   return 0
 }
 
@@ -272,16 +297,47 @@ brand_rollout_lock_release() {
     return 0
   fi
   brand_rollout_lock_owns || return 1
-  brand_checked_rm "${ROLLOUT_LOCK_DIR}/tx_id" || return 1
-  brand_checked_rm "${ROLLOUT_LOCK_DIR}/tx_dir" || return 1
-  brand_checked_rm "${ROLLOUT_LOCK_DIR}/remote_tmp" || return 1
-  brand_checked_rm "${ROLLOUT_LOCK_DIR}/service" || return 1
-  brand_checked_rm "${ROLLOUT_LOCK_DIR}/created_at" || return 1
-  rmdir "${ROLLOUT_LOCK_DIR}" || {
-    brand_err "rollout-${BRAND_LABEL}: rmdir lock failed: ${ROLLOUT_LOCK_DIR}"
+
+  # Snapshot ownership fields before any deletion so a failed release can restore.
+  local saved_tx_id saved_tx_dir saved_remote_tmp saved_service saved_created
+  local release_failed=0
+  saved_tx_id="${TX_ID}"
+  saved_tx_dir="${ROLLOUT_TX_DIR}"
+  saved_remote_tmp="${REMOTE_TMP:-}"
+  saved_service="${SERVICE_NAME}"
+  saved_created="$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/created_at" 2>/dev/null || true)"
+  if [[ -z "${saved_created}" ]]; then
+    saved_created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" || saved_created="unknown"
+  fi
+
+  # Best-effort remove all known metadata; record any failure, then restore if needed.
+  brand_checked_rm "${ROLLOUT_LOCK_DIR}/tx_id" || release_failed=1
+  brand_checked_rm "${ROLLOUT_LOCK_DIR}/tx_dir" || release_failed=1
+  brand_checked_rm "${ROLLOUT_LOCK_DIR}/remote_tmp" || release_failed=1
+  brand_checked_rm "${ROLLOUT_LOCK_DIR}/service" || release_failed=1
+  brand_checked_rm "${ROLLOUT_LOCK_DIR}/created_at" || release_failed=1
+
+  if [[ "${release_failed}" -eq 0 ]]; then
+    if ! rmdir "${ROLLOUT_LOCK_DIR}"; then
+      brand_err "rollout-${BRAND_LABEL}: rmdir lock failed: ${ROLLOUT_LOCK_DIR}"
+      release_failed=1
+    fi
+  fi
+
+  if [[ "${release_failed}" -eq 0 ]]; then
+    return 0
+  fi
+
+  # Restore a complete, ownable lock so recovery can retry.
+  TX_ID="${saved_tx_id}"
+  ROLLOUT_TX_DIR="${saved_tx_dir}"
+  REMOTE_TMP="${saved_remote_tmp}"
+  SERVICE_NAME="${saved_service}"
+  if ! brand_rollout_lock_restore_meta "${saved_created}"; then
     return 1
-  }
-  return 0
+  fi
+  brand_err "rollout-${BRAND_LABEL}: lock release failed; lock metadata restored"
+  return 1
 }
 
 brand_rollout_critical() {

@@ -1012,6 +1012,10 @@ EOF
   load_tx
   [[ "${TX_STATUS}" == "completed" ]] || { fail fin_lock "status=${TX_STATUS}"; teardown; return; }
   [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_lock "lock gone"; teardown; return; }
+  brand_rollout_lock_owns || { fail fin_lock "lock not ownable after failure"; teardown; return; }
+  for f in tx_id tx_dir remote_tmp service created_at; do
+    [[ -f "${ROLLOUT_LOCK_DIR}/${f}" ]] || { fail fin_lock "missing ${f}"; teardown; return; }
+  done
   pass finalize_lock_release_failure_preserves_backups
   teardown
 }
@@ -1040,7 +1044,115 @@ EOF
   [[ "${TX_STATUS}" == "critical" ]] || { fail sabort "status=${TX_STATUS}"; teardown; return; }
   grep -Fq 'brand-rollout-recover' <<<"${out}" || { fail sabort "no recover cmd"; teardown; return; }
   [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail sabort "lock gone"; teardown; return; }
+  brand_rollout_lock_owns || { fail sabort "lock not ownable"; teardown; return; }
+
+  # Clear rmdir failure and retry safe abort cleanup.
+  rm -f "${MOCK}/rmdir"
+  hash -r
+  local restarts bin_before
+  restarts="$(restart_count)"
+  bin_before="$(cat "${REMOTE_BINARY}")"
+  MUTATION_STARTED=0
+  brand_rollout_tx_write || true
+  rc=0
+  out="$(brand_rollout_safe_abort_cleanup 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail sabort "retry cleanup rc=${rc} ${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail sabort "lock remains after retry"; teardown; return; }
+  [[ ! -d "${ROLLOUT_TX_DIR}" ]] || { fail sabort "tx dir remains after retry"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin_before}" ]] || { fail sabort "binary changed"; teardown; return; }
+  [[ "$(restart_count)" == "${restarts}" ]] || { fail sabort "restart called"; teardown; return; }
   pass safe_abort_lock_release_failure_preserves_manifest
+  teardown
+}
+
+test_finalize_release_failure_then_retry() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_retry "run: ${out}"; teardown; return; }
+  cat >"${MOCK}/rmdir" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "${ROLLOUT_LOCK_DIR}" ]]; then
+  if [[ ! -f "${WORK}/rmdir_fail_once_done" ]]; then
+    : >"${WORK}/rmdir_fail_once_done"
+    exit 1
+  fi
+fi
+exec /usr/bin/rmdir "\$@"
+EOF
+  chmod 0700 "${MOCK}/rmdir"
+  hash -r
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq "${ROLLOUT_RC_CRITICAL}" ]] || { fail fin_retry "first rc=${rc} ${out}"; teardown; return; }
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_retry "lock gone"; teardown; return; }
+  for f in tx_id tx_dir remote_tmp service created_at; do
+    [[ -f "${ROLLOUT_LOCK_DIR}/${f}" ]] || { fail fin_retry "missing ${f}"; teardown; return; }
+  done
+  brand_rollout_lock_owns || { fail fin_retry "owns failed"; teardown; return; }
+  load_tx
+  [[ "${TX_STATUS}" == "completed" ]] || { fail fin_retry "status=${TX_STATUS}"; teardown; return; }
+  [[ -f "${ROLLOUT_TX_DIR}/tx.env" ]] || { fail fin_retry "tx.env"; teardown; return; }
+  local marker1 bin1
+  marker1="$(tr -d '\n' <"${ROLLOUT_MARKER}")"
+  bin1="$(cat "${REMOTE_BINARY}")"
+  rc=0
+  out="$(brand_rollout_finalize 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail fin_retry "retry: ${out}"; teardown; return; }
+  grep -Fq 'finalize idempotent OK' <<<"${out}" || { fail fin_retry "${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail fin_retry "lock retained"; teardown; return; }
+  [[ ! -f "${ROLLOUT_TX_DIR}/backups/config.bak" ]] || { fail fin_retry "config.bak remains"; teardown; return; }
+  [[ ! -f "${ROLLOUT_TX_DIR}/backups/dropin.bak" ]] || { fail fin_retry "dropin.bak remains"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_MARKER}")" == "${marker1}" ]] || { fail fin_retry "marker changed"; teardown; return; }
+  [[ "$(cat "${REMOTE_BINARY}")" == "${bin1}" ]] || { fail fin_retry "binary changed"; teardown; return; }
+  pass finalize_release_failure_then_retry
+  teardown
+}
+
+test_lock_release_partial_metadata_failure() {
+  setup_fc_workspace
+  enable_legacy_mode
+  printf 'legacy-binary\n' >"${REMOTE_BINARY}"
+  prepare_rollout_uploads 'new-bin'
+  local out rc=0
+  out="$(brand_rollout_run "${REMOTE_TMP}/bot" "${REMOTE_TMP}/config.json" "${REMOTE_TMP}/configcheck" 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail lock_partial "run: ${out}"; teardown; return; }
+  local expect_created
+  expect_created="$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/created_at")"
+  cat >"${MOCK}/rm" <<EOF
+#!/usr/bin/env bash
+path="\${@: -1}"
+if [[ "\$path" == "${ROLLOUT_LOCK_DIR}/remote_tmp" ]]; then
+  if [[ ! -f "${WORK}/rm_remote_tmp_fail_done" ]]; then
+    : >"${WORK}/rm_remote_tmp_fail_done"
+    exit 1
+  fi
+fi
+exec /bin/rm "\$@"
+EOF
+  chmod 0700 "${MOCK}/rm"
+  hash -r
+  rc=0
+  out="$(brand_rollout_lock_release 2>&1)" || rc=$?
+  [[ "${rc}" -ne 0 ]] || { fail lock_partial "should fail"; teardown; return; }
+  [[ -d "${ROLLOUT_LOCK_DIR}" ]] || { fail lock_partial "lock gone"; teardown; return; }
+  for f in tx_id tx_dir remote_tmp service created_at; do
+    [[ -f "${ROLLOUT_LOCK_DIR}/${f}" ]] || { fail lock_partial "missing ${f}"; teardown; return; }
+  done
+  [[ "$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/tx_id")" == "${TX_ID}" ]] || { fail lock_partial "tx_id"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/tx_dir")" == "${ROLLOUT_TX_DIR}" ]] || { fail lock_partial "tx_dir"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/service")" == "${SERVICE_NAME}" ]] || { fail lock_partial "service"; teardown; return; }
+  [[ "$(tr -d '\n' <"${ROLLOUT_LOCK_DIR}/created_at")" == "${expect_created}" ]] || { fail lock_partial "created_at"; teardown; return; }
+  brand_rollout_lock_owns || { fail lock_partial "owns"; teardown; return; }
+  # Second release with failure cleared should succeed.
+  rc=0
+  out="$(brand_rollout_lock_release 2>&1)" || rc=$?
+  [[ "${rc}" -eq 0 ]] || { fail lock_partial "retry: ${out}"; teardown; return; }
+  [[ ! -d "${ROLLOUT_LOCK_DIR}" ]] || { fail lock_partial "lock remains"; teardown; return; }
+  pass lock_release_partial_metadata_failure
   teardown
 }
 
@@ -1058,6 +1170,8 @@ test_rollback_forbidden_after_completed
 test_marker_intent_crash_window
 test_finalize_lock_release_failure_preserves_backups
 test_safe_abort_lock_release_failure_preserves_manifest
+test_finalize_release_failure_then_retry
+test_lock_release_partial_metadata_failure
 
 if [[ "${FAILS}" -ne 0 ]]; then
   echo "brand_rollout_test: ${FAILS} failed" >&2
