@@ -92,13 +92,21 @@ setup_workspace() {
   REMOTE_DIR="${WORK}/opt"
   REMOTE_CONFIG_VFF="${REMOTE_DIR}/config-vff.json"
   REMOTE_CONFIG_LEGACY="${REMOTE_DIR}/config.json"
-  EXPECTED_ENV="VPNBOT_CONFIG=${REMOTE_CONFIG_VFF}"
+  REMOTE_EXPLICIT_CONFIG="${REMOTE_CONFIG_VFF}"
+  REMOTE_LEGACY_CONFIG="${REMOTE_CONFIG_LEGACY}"
+  REMOTE_BINARY="${REMOTE_DIR}/bot"
+  EXPECTED_BRAND_ID="vff"
+  BRAND_LABEL="VFF"
+  EXPECTED_ENV="VPNBOT_CONFIG=${REMOTE_EXPLICIT_CONFIG}"
   DROPIN_BODY="$(printf '%s\n' '[Service]' "Environment=${EXPECTED_ENV}")"
   SERVICE_NAME="bot.service"
   VFF_DROPIN_ACTIVE=0
+  BRAND_DROPIN_ACTIVE=0
 
   printf '%s\n' '{}' >"${REMOTE_CONFIG_VFF}"
   printf '%s\n' '{}' >"${REMOTE_CONFIG_LEGACY}"
+  printf '#!/bin/true\n' >"${REMOTE_BINARY}"
+  chmod 0755 "${REMOTE_BINARY}"
   : >"${WORK}/journal/log"
   printf 'active\n' >"${WORK}/state_active"
   printf '%s\n' "FOO=1 ${EXPECTED_ENV} BAR=2" >"${WORK}/state_env"
@@ -127,11 +135,21 @@ EOF
 
   cat >"${MOCK}/runuser" <<'EOF'
 #!/usr/bin/env bash
-shift || true
-while [[ "${1:-}" == -* ]]; do shift; done
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -u) shift 2 || true ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
 exec "$@"
 EOF
   chmod 0700 "${MOCK}/runuser"
+  cat >"${MOCK}/chown" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod 0700 "${MOCK}/chown"
 
   cat >"${WORK}/configcheck_ok" <<'EOF'
 #!/usr/bin/env bash
