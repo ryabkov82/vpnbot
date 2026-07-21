@@ -115,9 +115,26 @@ brand_safe_journal_tail() {
     grep -E 'active brand:|telegram bot configured|configcheck|FATAL|panic|error|Error' || true
 }
 
+# Remove managed drop-in only when absent (idempotent) or content matches DROPIN_BODY.
+brand_remove_managed_dropin() {
+  brand_refresh_derived || return 1
+  if [[ ! -f "${DROPIN_FILE}" ]]; then
+    brand_log "rollback-${BRAND_LABEL}-config: drop-in absent (idempotent)"
+    return 0
+  fi
+  if brand_dropin_matches; then
+    rm -f "${DROPIN_FILE}"
+    return 0
+  fi
+  brand_err "rollback-${BRAND_LABEL}-config: refusing to remove drop-in with unexpected content: ${DROPIN_FILE}"
+  return 1
+}
+
 brand_rollback_to_legacy() {
   brand_refresh_derived || return 1
-  rm -f "${DROPIN_FILE}"
+  if ! brand_remove_managed_dropin; then
+    return 1
+  fi
   if ! systemctl daemon-reload; then
     brand_err "rollback: daemon-reload failed"
     return 1
@@ -304,34 +321,106 @@ brand_binary_owner_group() {
   printf '%s %s\n' "${user}" "${group}"
 }
 
-brand_rollback_binary() {
-  brand_require_vars SERVICE_NAME REMOTE_BINARY BRAND_LABEL || return 1
-  local bak="${1:-${BINARY_BACKUP}}"
-  if [[ -z "${bak}" || ! -f "${bak}" ]]; then
-    local marker="${REMOTE_DIR}/.vpnbot-last-binary-bak"
-    if [[ -f "${marker}" ]]; then
-      bak="$(cat "${marker}")"
-    fi
+brand_cleanup_binary_temps() {
+  if [[ -n "${REMOTE_BINARY:-}" ]]; then
+    rm -f "${REMOTE_BINARY}.new" "${REMOTE_BINARY}.rollback.new"
   fi
-  if [[ -z "${bak}" || ! -f "${bak}" ]]; then
-    brand_err "deploy-${BRAND_LABEL}: binary rollback failed: backup not found"
+}
+
+# Restore from an exact backup path (automatic rollback). No marker fallback.
+brand_rollback_binary() {
+  brand_require_vars SERVICE_NAME REMOTE_BINARY BRAND_LABEL REMOTE_DIR || return 1
+  local bak="${1:-}"
+  if [[ -z "${bak}" ]]; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback requires exact backup path"
     return 1
   fi
-  local user group
+  if [[ ! -f "${bak}" ]]; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback failed: backup not found: ${bak}"
+    return 1
+  fi
+
+  local user group tmp=""
   read -r user group <<<"$(brand_binary_owner_group)"
-  cp -a "${bak}" "${REMOTE_BINARY}"
+  tmp="${REMOTE_BINARY}.rollback.new"
+  rm -f "${tmp}"
+
+  cleanup_rollback_tmp() {
+    rm -f "${tmp}"
+  }
+  trap cleanup_rollback_tmp EXIT
+
+  cp -a "${bak}" "${tmp}"
+  chown "${user}:${group}" "${tmp}"
+  chmod 0755 "${tmp}"
+  mv "${tmp}" "${REMOTE_BINARY}"
+  tmp=""
+  trap - EXIT
   chown "${user}:${group}" "${REMOTE_BINARY}"
   chmod 0755 "${REMOTE_BINARY}"
+  brand_cleanup_binary_temps
+
+  local start_time
+  start_time="$(date '+%Y-%m-%d %H:%M:%S')"
+
   if ! systemctl restart "${SERVICE_NAME}"; then
     brand_err "deploy-${BRAND_LABEL}: binary rollback restart failed"
     return 1
   fi
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-    brand_err "deploy-${BRAND_LABEL}: binary rollback unit not active"
+    brand_err "deploy-${BRAND_LABEL}: binary rollback unit not active after restart"
+    return 1
+  fi
+  sleep 2
+  if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback unit not active after stabilization"
+    return 1
+  fi
+  if ! brand_require_legacy_startup_log "${start_time}"; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback startup log check failed"
     return 1
   fi
   brand_log "deploy-${BRAND_LABEL}: restored binary from ${bak}"
   return 0
+}
+
+# Manual / post-deploy rollback using ${REMOTE_DIR}/.vpnbot-last-binary-bak only.
+brand_rollback_binary_from_marker() {
+  brand_require_vars REMOTE_DIR BRAND_LABEL || return 1
+  local marker="${REMOTE_DIR}/.vpnbot-last-binary-bak"
+  if [[ ! -f "${marker}" ]]; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback marker missing: ${marker}"
+    return 1
+  fi
+  local bak
+  bak="$(tr -d '\n' <"${marker}")"
+  if [[ -z "${bak}" || ! -f "${bak}" ]]; then
+    brand_err "deploy-${BRAND_LABEL}: binary rollback marker points to missing backup"
+    return 1
+  fi
+  brand_rollback_binary "${bak}"
+}
+
+# On deploy failure: attempt exact-backup rollback; never suppress rollback status.
+brand_fail_binary_deploy() {
+  local reason="${1:-unknown failure}"
+  brand_err "deploy-${BRAND_LABEL}: ${reason}"
+  brand_cleanup_binary_temps
+
+  if [[ -z "${BINARY_BACKUP}" || ! -f "${BINARY_BACKUP}" ]]; then
+    brand_err "CRITICAL: ${BRAND_LABEL} binary deployment failed and automatic binary rollback failed"
+    brand_safe_journal_tail
+    return 1
+  fi
+
+  if brand_rollback_binary "${BINARY_BACKUP}"; then
+    brand_err "deploy-${BRAND_LABEL}: deployment failed; previous binary restored"
+    return 1
+  fi
+
+  brand_err "CRITICAL: ${BRAND_LABEL} binary deployment failed and automatic binary rollback failed"
+  brand_safe_journal_tail
+  return 1
 }
 
 # Install uploaded REMOTE_BINARY.new, restart, verify legacy startup logs. No drop-in.
@@ -348,14 +437,14 @@ brand_deploy_binary() {
   local user group
   read -r user group <<<"$(brand_binary_owner_group)"
 
+  BINARY_BACKUP=""
+  BINARY_REPLACED=0
   if [[ -f "${REMOTE_BINARY}" ]]; then
     BINARY_BACKUP="${REMOTE_BINARY}.bak.$(date +%Y%m%d-%H%M%S)"
     cp -a "${REMOTE_BINARY}" "${BINARY_BACKUP}"
     printf '%s\n' "${BINARY_BACKUP}" >"${REMOTE_DIR}/.vpnbot-last-binary-bak"
     chmod 0600 "${REMOTE_DIR}/.vpnbot-last-binary-bak"
     brand_log "deploy-${BRAND_LABEL}: backup ${BINARY_BACKUP}"
-  else
-    BINARY_BACKUP=""
   fi
 
   chown "${user}:${group}" "${new_path}"
@@ -364,29 +453,26 @@ brand_deploy_binary() {
   chown "${user}:${group}" "${REMOTE_BINARY}"
   chmod 0755 "${REMOTE_BINARY}"
   BINARY_REPLACED=1
+  brand_cleanup_binary_temps
 
   local start_time
   start_time="$(date '+%Y-%m-%d %H:%M:%S')"
 
   if ! systemctl restart "${SERVICE_NAME}"; then
-    brand_err "deploy-${BRAND_LABEL}: restart failed; rolling back binary"
-    brand_rollback_binary || true
+    brand_fail_binary_deploy "restart failed"
     return 1
   fi
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-    brand_err "deploy-${BRAND_LABEL}: unit not active; rolling back binary"
-    brand_rollback_binary || true
+    brand_fail_binary_deploy "unit not active after restart"
     return 1
   fi
   sleep 2
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-    brand_err "deploy-${BRAND_LABEL}: unit inactive after stabilization; rolling back binary"
-    brand_rollback_binary || true
+    brand_fail_binary_deploy "unit inactive after stabilization"
     return 1
   fi
   if ! brand_require_legacy_startup_log "${start_time}"; then
-    brand_err "deploy-${BRAND_LABEL}: startup log check failed; rolling back binary"
-    brand_rollback_binary || true
+    brand_fail_binary_deploy "startup log check failed"
     return 1
   fi
 

@@ -27,6 +27,16 @@ usage: bash scripts/render-brand-config.sh \
 EOF
 }
 
+canonical_existing() {
+  # Absolute canonical path for an existing file or directory.
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -m "$p" 2>/dev/null || realpath "$p"
+  else
+    readlink -f "$p"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source) SOURCE="${2:-}"; shift 2 ;;
@@ -47,7 +57,7 @@ done
 
 for req in SOURCE OUTPUT BRAND_ID BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX WEB_USER_SOURCE; do
   if [[ -z "${!req}" ]]; then
-    echo "render-brand-config: missing --$(echo "${req}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')" >&2
+    echo "render-brand-config: missing required argument" >&2
     usage
     exit 1
   fi
@@ -63,11 +73,27 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-tmp="$(mktemp)"
-cleanup() { rm -f "${tmp}"; }
+source_abs="$(canonical_existing "${SOURCE}")"
+output_dir="$(dirname -- "${OUTPUT}")"
+mkdir -p "${output_dir}"
+output_dir_abs="$(canonical_existing "${output_dir}")"
+output_base="$(basename -- "${OUTPUT}")"
+output_abs="${output_dir_abs}/${output_base}"
+
+if [[ "${source_abs}" == "${output_abs}" ]]; then
+  echo "render-brand-config: SOURCE and OUTPUT must not be the same path" >&2
+  exit 1
+fi
+
+tmp="$(mktemp "${output_dir_abs}/.config-brand.XXXXXX")"
+chmod 0600 "${tmp}"
+
+cleanup() {
+  rm -f "${tmp}"
+}
 trap cleanup EXIT
 
-# jq args via --arg; no secrets printed.
+# jq args via --arg; no secrets printed. On failure previous OUTPUT is untouched.
 if ! jq -e \
   --arg brand_id "${BRAND_ID}" \
   --arg brand_name "${BRAND_NAME}" \
@@ -124,9 +150,9 @@ if ! jq -e \
 fi
 
 chmod 0600 "${tmp}"
-mkdir -p "$(dirname "${OUTPUT}")"
-mv "${tmp}" "${OUTPUT}"
-chmod 0600 "${OUTPUT}"
+mv "${tmp}" "${output_abs}"
+tmp=""
 trap - EXIT
+chmod 0600 "${output_abs}"
 
-echo "render-brand-config: wrote ${OUTPUT} (brand.id=${BRAND_ID})"
+echo "render-brand-config: wrote ${output_abs} (brand.id=${BRAND_ID})"

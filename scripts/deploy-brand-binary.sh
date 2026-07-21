@@ -65,15 +65,19 @@ scp -q \
 echo "deploy-${BRAND_LABEL}: installing binary on ${SERVER_HOST}..."
 if ! ssh "${SERVER_USER}@${SERVER_HOST}" \
   "set -Eeuo pipefail; source $(printf %q "${REMOTE_TMP}/brand.env"); bash $(printf %q "${REMOTE_TMP}/deploy-brand-binary-remote.sh")"; then
-  brand_err "deploy-${BRAND_LABEL}: remote binary install failed"
+  brand_err "deploy-${BRAND_LABEL}: remote binary install failed (remote script already attempted binary rollback if needed)"
   exit 1
 fi
 
 echo "deploy-${BRAND_LABEL}: public smoke..."
 if ! SMOKE_BASE_URL="${SMOKE_BASE_URL}" BRAND_LABEL="${BRAND_LABEL}" bash "${ROOT}/scripts/smoke-brand.sh"; then
-  brand_err "deploy-${BRAND_LABEL}: smoke failed; rolling back binary"
-  ssh "${SERVER_USER}@${SERVER_HOST}" \
-    "set -Eeuo pipefail; source $(printf %q "${REMOTE_TMP}/brand.env"); bash $(printf %q "${REMOTE_TMP}/rollback-brand-binary-remote.sh")" || true
+  brand_err "deploy-${BRAND_LABEL}: smoke failed"
+  if ssh "${SERVER_USER}@${SERVER_HOST}" \
+    "set -Eeuo pipefail; source $(printf %q "${REMOTE_TMP}/brand.env"); bash $(printf %q "${REMOTE_TMP}/rollback-brand-binary-remote.sh")"; then
+    brand_err "deploy-${BRAND_LABEL}: deployment failed; previous binary restored"
+  else
+    brand_err "CRITICAL: ${BRAND_LABEL} binary deployment failed and automatic binary rollback failed"
+  fi
   exit 1
 fi
 
