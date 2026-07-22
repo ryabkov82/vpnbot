@@ -14,6 +14,8 @@ var SendMail = smtp.SendMail
 
 var ErrNotConfigured = errors.New("email not configured")
 
+const legacyBrandDisplayName = "VPN for Friends"
+
 // IsConfigured — включённый SMTP с минимально необходимыми полями (magic-link вход в кабинет и др.).
 func IsConfigured(cfg *config.Config) bool {
 	if cfg == nil || !cfg.Email.Enabled {
@@ -37,14 +39,37 @@ func smtpPort(cfg *config.Config) int {
 	return p
 }
 
-func formatFrom(cfg *config.Config) string {
-	name := strings.TrimSpace(cfg.Email.FromName)
-	if name == "" {
-		name = "VPN for Friends"
+// brandDisplayName — пользовательское название бренда для писем.
+// Пустой/nil config → legacy "VPN for Friends". Удаляет CR/LF перед заголовками.
+func brandDisplayName(cfg *config.Config) string {
+	name := ""
+	if cfg != nil {
+		name = strings.TrimSpace(cfg.EffectiveBrand().Name)
 	}
-	from := strings.TrimSpace(cfg.Email.FromEmail)
+	if name == "" {
+		name = legacyBrandDisplayName
+	}
+	name = strings.ReplaceAll(name, "\r", "")
+	name = strings.ReplaceAll(name, "\n", "")
+	return name
+}
+
+func formatFrom(cfg *config.Config) string {
+	name := ""
+	if cfg != nil {
+		name = strings.TrimSpace(cfg.Email.FromName)
+	}
+	if name == "" {
+		name = brandDisplayName(cfg)
+	}
+	from := ""
+	if cfg != nil {
+		from = strings.TrimSpace(cfg.Email.FromEmail)
+	}
 	if strings.ContainsAny(name, "\r\n\"") {
 		name = strings.ReplaceAll(name, "\"", "'")
+		name = strings.ReplaceAll(name, "\r", "")
+		name = strings.ReplaceAll(name, "\n", "")
 	}
 	return fmt.Sprintf("%q <%s>", name, from)
 }
@@ -80,21 +105,23 @@ func buildRFC822(fromHeader, to, subject, body string) string {
 
 // SendAccountLoginEmail — magic-link вход в личный кабинет.
 func SendAccountLoginEmail(cfg *config.Config, to, loginURL string) error {
-	subject := "VPN for Friends — вход в личный кабинет"
-	body := fmt.Sprintf(`VPN for Friends
+	brand := brandDisplayName(cfg)
+	subject := brand + " — вход в личный кабинет"
+	body := fmt.Sprintf(`%s
 
 Для входа в личный кабинет откройте ссылку:
 %s
 
 Если вы не запрашивали вход, просто проигнорируйте это письмо.
-`, strings.TrimSpace(loginURL))
+`, brand, strings.TrimSpace(loginURL))
 	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
 }
 
 // SendAccountLinkConfirmEmail — письмо для завершения привязки Telegram → web после ввода email на /account/link.
 func SendAccountLinkConfirmEmail(cfg *config.Config, to, confirmURL string) error {
-	subject := "VPN for Friends — подтвердите привязку личного кабинета"
-	body := fmt.Sprintf(`VPN for Friends
+	brand := brandDisplayName(cfg)
+	subject := brand + " — подтвердите привязку личного кабинета"
+	body := fmt.Sprintf(`%s
 
 Подтвердите email, чтобы связать ваш web-личный кабинет с текущим аккаунтом в Telegram и видеть ваши услуги и баланс на сайте.
 
@@ -102,6 +129,6 @@ func SendAccountLinkConfirmEmail(cfg *config.Config, to, confirmURL string) erro
 %s
 
 Если вы не запрашивали привязку, проигнорируйте письмо.
-`, strings.TrimSpace(confirmURL))
+`, brand, strings.TrimSpace(confirmURL))
 	return sendPlain(cfg, strings.TrimSpace(to), subject, body)
 }
