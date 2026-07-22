@@ -80,7 +80,7 @@
 | `web_user_login_prefix` | `web_` | `web_` |
 | `web_user_source` | `vpn-for-friends.com` | `vpn-for-friends.com` |
 
-Одинаковые web prefix/source — известный незакрытый разрыв (см. §5 / M5).
+Одинаковые web prefix/source — переходный разрыв: логическая изоляция есть, физическое разведение prefix ещё впереди (см. §5 / M5).
 
 ---
 
@@ -151,54 +151,50 @@ Runtime без полной секции `brand` не допускается.
 
 ---
 
-## 5. Независимые web identities — ⬜ Не начато (следующий приоритет)
+## 5. Независимые web identities — 🟡 Частично
 
-Этап **не завершён**.
+Этап **частично реализован** (логическая изоляция). Физическое разведение login prefix ещё впереди.
 
-### Текущее состояние
+Аудит lifecycle: `docs/MULTIBRAND_WEB_IDENTITY_AUDIT.md` (исторический snapshot).
+
+### Реализовано
+
+- web membership validation (`internal/service/web_brand_user.go`);
+- `settings.brand_id` при новой web registration;
+- brand-bound account/link/signup tokens (`brand_id` в claims, fail-closed без dual-read);
+- повторная brand validation account handlers (`ValidateWebAccountUser` + `authenticateWebAccount`);
+- brand-aware Telegram ↔ web linking (canonical Telegram login + brand membership).
+
+Переходное состояние deploy profiles (без изменения на этом этапе):
 
 | Поле | VFF | FC |
 |------|-----|----|
 | `web_user_login_prefix` | `web_` | `web_` |
 | `web_user_source` | `vpn-for-friends.com` | `vpn-for-friends.com` |
 
-### Проблема
+При общем prefix одинаковый email по-прежнему занимает один SHM login. Второй runtime возвращает `ErrUserIdentityMismatch` и не выдаёт чужую сессию / не регистрирует нового user.
 
-- одинаковый email в VFF и FC формирует одинаковый SHM login;
-- `settings.brand_id` при создании web-user сейчас не записывается;
-- web identity пока не обеспечивает независимость брендов;
-- поиск по `login` и `login2` потенциально пересекает бренды.
+### Осталось
+
+- coordinated переход FC с `web_` на `web_fc_`;
+- ручная корректировка единственной известной FC web-привязки;
+- production verification;
+- e2e smoke VFF/FC;
+- подтверждение независимой регистрации одного email в двух брендах.
 
 ### Предварительное целевое направление (не утверждено)
-
-Без отдельного анализа не считается финальным решением:
 
 - VFF: `web_<hash(email)>`
 - FC: `web_fc_<hash(email)>`
 
-либо другой детерминированный brand-aware prefix.
+либо общий шаблон `web_<brand_id>_`.
 
-### Обязательные требования этапа
+### Критерии полного завершения M5
 
 - один email может независимо зарегистрироваться в VFF и FC;
-- новая web-регистрация пишет `settings.brand_id`;
-- поиск пользователя проверяет принадлежность бренду;
-- magic link ограничен активным брендом;
-- web session не переносится между брендами;
-- OAuth не связывает записи разных брендов автоматически;
-- Telegram ↔ web linking не захватывает identity другого бренда;
+- session/magic link/OAuth/linking не пересекают бренды;
 - услуги другого бренда недоступны;
-- существующие web-пользователи должны быть предварительно проаудированы;
-- миграция, если потребуется, должна быть allowlist-based, dry-run-first и отдельно удаляться после завершения.
-
-### Файлы для будущего аудита M5
-
-- `internal/service/web_user.go`
-- `internal/service/link_web_email.go`
-- `internal/webuser`
-- `internal/app/web/account_link_handlers.go`
-- `internal/app/web`
-- `internal/models/models.go`
+- существующие web-пользователи проаудированы; миграция при необходимости — allowlist-based, dry-run-first.
 
 ---
 
@@ -307,7 +303,7 @@ Runtime без полной секции `brand` не допускается.
 | M2 | ✅ | runtime/deployment profiles |
 | M3 | ✅ | service category isolation |
 | M4 | ✅ | Telegram identity isolation |
-| M5 | ⬜ | Web identity audit and isolation |
+| M5 | 🟡 | Web identity audit and isolation |
 | M6 | ⬜ | Payment end-to-end audit |
 | M7 | ⬜ | Brand-specific content cleanup |
 | M8 | ⬜ | Attribution and analytics |
@@ -315,8 +311,9 @@ Runtime без полной секции `brand` не допускается.
 
 ### M5 — Web identity audit and isolation
 
+- **Статус:** 🟡 частично — логическая изоляция (membership, brand_id, tokens, handler revalidation, linking) реализована; общий prefix `web_` у VFF/FC сохранён как переходное состояние.
 - **Цель:** независимые web identities VFF/FC (email/login/login2/session/OAuth/linking).
-- **Основные риски:** коллизии login по email; захват identity другого бренда через login2/magic link/OAuth; неявная миграция существующих web-пользователей без аудита.
+- **Основные риски:** коллизии login по email при общем prefix; незавершённый переход FC на `web_fc_`; необходимость production verification.
 - **Ожидаемый результат:** brand-aware web login + запись `settings.brand_id`; brand-scoped поиск и linking; allowlist-миграция при необходимости.
 - **Критерий завершения:** один email независимо существует в каждом бренде; session/magic link/OAuth/linking не пересекают бренды; услуги другого бренда недоступны.
 
@@ -369,14 +366,6 @@ Runtime без полной секции `brand` не допускается.
 
 ## 12. Следующий шаг
 
-**Следующий этап: M5 — аудит и разделение web identities VFF/FC.**
+**Продолжение M5:** coordinated переход FC prefix `web_` → `web_fc_` (после ручной корректировки известной FC web-привязки и production verification), затем e2e smoke и подтверждение независимой регистрации одного email в двух брендах.
 
-До изменения кода M5 требуется отдельный анализ:
-
-- текущего lifecycle web-user;
-- login / login2;
-- magic links;
-- sessions;
-- OAuth;
-- Telegram linking;
-- количества и классификации существующих web-пользователей.
+Параллельно / далее по приоритету: **M6 — Payment end-to-end audit**.
