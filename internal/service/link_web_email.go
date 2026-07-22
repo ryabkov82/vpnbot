@@ -24,7 +24,9 @@ func mergeSettingsJSONToMap(existing json.RawMessage) (map[string]interface{}, e
 	return m, nil
 }
 
-// LinkWebEmailForTelegramUser записывает settings.web.* на существующего Telegram-пользователя SHM, выставляет login2=web_<hash(email)> без затирания остальных settings.
+// LinkWebEmailForTelegramUser записывает settings.web.* на существующего Telegram-пользователя SHM,
+// выставляет login2=<prefix><hash(email)> без затирания остальных settings.
+// Проверяет canonical Telegram login и brand membership активного процесса.
 func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, email string, source string) (*models.User, error) {
 	normEmail, err := webuser.NormalizeEmail(email)
 	if err != nil {
@@ -38,6 +40,11 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 	}
 	if strings.TrimSpace(source) == "" {
 		source = "telegram_link"
+	}
+
+	brandID := s.activeBrandID()
+	if brandID == "" {
+		return nil, ErrActiveBrandIDRequired
 	}
 
 	webLogin, err := webuser.WebLoginFromEmailWithPrefix(normEmail, s.webLoginPrefix())
@@ -58,20 +65,30 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 		return nil, ErrTelegramChatMismatch
 	}
 
+	canonicalTG := telegramSHMLogin(brandID, telegramChatID)
+	if strings.TrimSpace(uVerify.Login) != canonicalTG {
+		logIdentityMismatch("telegram_login", uVerify.Login, strings.TrimSpace(uVerify.Settings.BrandID), telegramChatID, uVerify.Settings.Telegram.ChatID)
+		return nil, ErrUserIdentityMismatch
+	}
+	if !userBelongsToBrand(uVerify, brandID, canonicalTG) {
+		logIdentityMismatch("brand_id", uVerify.Login, strings.TrimSpace(uVerify.Settings.BrandID), telegramChatID, uVerify.Settings.Telegram.ChatID)
+		return nil, ErrUserIdentityMismatch
+	}
+
 	byLogin, err := s.apiClient.GetUserByLogin(webLogin)
 	if err != nil {
 		return nil, err
 	}
-	if byLogin != nil && byLogin.ID != userID {
-		return nil, ErrWebEmailUsedByOtherAccount
+	if err := webLoginConflictError(byLogin, userID, brandID, webLogin); err != nil {
+		return nil, err
 	}
 
 	byLogin2, err := s.apiClient.GetUserByLogin2(webLogin)
 	if err != nil {
 		return nil, err
 	}
-	if byLogin2 != nil && byLogin2.ID != userID {
-		return nil, ErrWebEmailUsedByOtherAccount
+	if err := webLoginConflictError(byLogin2, userID, brandID, webLogin); err != nil {
+		return nil, err
 	}
 
 	loginSHM, rawSettings, err := s.apiClient.FetchAdminUserRowRaw(userID)
@@ -112,6 +129,8 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 	webBlock["email"] = normEmail
 	webBlock["source"] = source
 	settingsObj["web"] = webBlock
+	// Постепенный backfill brand_id (в т.ч. legacy VFF).
+	settingsObj["brand_id"] = brandID
 
 	updated, err := s.apiClient.PostAdminUserUpdateSettings(userID, webLogin, settingsObj)
 	if err != nil {
@@ -129,6 +148,9 @@ func (s *Service) LinkWebEmailForTelegramUser(userID int, telegramChatID int64, 
 	if strings.TrimSpace(updated.Settings.Web.Email) == "" {
 		updated.Settings.Web.Email = normEmail
 		updated.Settings.Web.Source = source
+	}
+	if strings.TrimSpace(updated.Settings.BrandID) == "" {
+		updated.Settings.BrandID = brandID
 	}
 	return updated, nil
 }

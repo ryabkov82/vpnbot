@@ -12,8 +12,9 @@ import (
 // testServiceBrand — явный brand для service-тестов web identity.
 // Service layer больше не синтезирует defaults; тесты передают нужные поля явно.
 func testServiceBrand() config.BrandConfig {
+	// ID=vff: legacy empty brand_id допустим для web membership в сервисных тестах.
 	return config.BrandConfig{
-		ID:                 "test",
+		ID:                 "vff",
 		Name:               "Test Brand",
 		AllowedHosts:       []string{"test.example.com"},
 		PublicBaseURL:      "https://test.example.com",
@@ -78,7 +79,7 @@ func TestWebIdentity_VFFValuesOnlyWhenExplicit(t *testing.T) {
 // Empty BrandConfig: web-user operations fail before SHM side effects.
 func TestEmptyBrand_FindOrCreateWebUser_NoRegister(t *testing.T) {
 	reg := &testWebUserRegistrar{}
-	_, _, err := findOrCreateWebUser(reg, "u@example.com", "", "vpn-for-friends.com")
+	_, _, err := findOrCreateWebUser(reg, "u@example.com", "", "vpn-for-friends.com", "vff")
 	if !errors.Is(err, webuser.ErrWebLoginPrefixRequired) {
 		t.Fatalf("want ErrWebLoginPrefixRequired, got %v", err)
 	}
@@ -89,7 +90,7 @@ func TestEmptyBrand_FindOrCreateWebUser_NoRegister(t *testing.T) {
 
 func TestEmptyBrand_FindOrCreateWebUser_EmptySourceNoRegister(t *testing.T) {
 	reg := &testWebUserRegistrar{}
-	_, _, err := findOrCreateWebUser(reg, "u@example.com", "web_", "")
+	_, _, err := findOrCreateWebUser(reg, "u@example.com", "web_", "", "vff")
 	if !errors.Is(err, ErrWebUserSourceRequired) {
 		t.Fatalf("want ErrWebUserSourceRequired, got %v", err)
 	}
@@ -109,8 +110,8 @@ func TestEmptyBrand_FindUserByWebEmail_NoAPI(t *testing.T) {
 func TestEmptyBrand_LinkWebEmail_NoUpdate(t *testing.T) {
 	s := NewService(nil, config.BrandConfig{})
 	_, err := s.LinkWebEmailForTelegramUser(42, 9001, "u@example.com", "telegram_link")
-	if !errors.Is(err, webuser.ErrWebLoginPrefixRequired) {
-		t.Fatalf("want ErrWebLoginPrefixRequired, got %v", err)
+	if !errors.Is(err, ErrActiveBrandIDRequired) {
+		t.Fatalf("want ErrActiveBrandIDRequired, got %v", err)
 	}
 }
 
@@ -120,7 +121,7 @@ func TestExplicitBrand_FindOrCreateWebUser_StillWorks(t *testing.T) {
 		firstGet:       nil,
 		secondAndLater: &models.User{ID: 11, Login: login},
 	}
-	u, created, err := findOrCreateWebUser(reg, "new@example.com", "web_", "vpn-for-friends.com")
+	u, created, err := findOrCreateWebUser(reg, "new@example.com", "web_", "vpn-for-friends.com", "vff")
 	if err != nil || !created || u == nil || u.ID != 11 {
 		t.Fatalf("u=%v created=%v err=%v", u, created, err)
 	}

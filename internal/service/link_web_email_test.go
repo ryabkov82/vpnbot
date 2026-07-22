@@ -56,11 +56,14 @@ func TestLinkWebEmailConflictOtherUserUsesPrimaryWebLogin(t *testing.T) {
 			}
 			b, _ := json.Marshal(map[string][]models.User{
 				"data": {{
-					ID:       42,
-					Login:    "@tg",
-					Login2:   "",
-					Balance:  0,
-					Settings: models.UserSettings{Telegram: models.TelegramInfo{ChatID: 9001}},
+					ID:      42,
+					Login:   "@9001",
+					Login2:  "",
+					Balance: 0,
+					Settings: models.UserSettings{
+						BrandID:  "vff",
+						Telegram: models.TelegramInfo{ChatID: 9001},
+					},
 				}},
 			})
 			w.Header().Set("Content-Type", "application/json")
@@ -71,7 +74,8 @@ func TestLinkWebEmailConflictOtherUserUsesPrimaryWebLogin(t *testing.T) {
 			if want != wLogin {
 				t.Fatalf("login filter %q", want)
 			}
-			_, _ = w.Write([]byte(`{"data":[{"user_id":999,"login":"` + wLogin + `","balance":0}]}`))
+			// Same-brand other account occupies web login.
+			_, _ = w.Write([]byte(`{"data":[{"user_id":999,"login":"` + wLogin + `","balance":0,"settings":{"brand_id":"vff"}}]}`))
 		default:
 			t.Fatalf("unexpected filter %#v step %d", f, s)
 		}
@@ -98,11 +102,14 @@ func TestLinkWebEmailSuccess_PostsLogin2AndKeepsTelegramBlock(t *testing.T) {
 	wLogin := webuser.WebLoginFromEmail(normEM)
 
 	row := models.User{
-		ID:       42,
-		Login:    "@tg",
-		Login2:   "",
-		Balance:  0,
-		Settings: models.UserSettings{Telegram: models.TelegramInfo{ChatID: 4242}},
+		ID:      42,
+		Login:   "@4242",
+		Login2:  "",
+		Balance: 0,
+		Settings: models.UserSettings{
+			BrandID:  "vff",
+			Telegram: models.TelegramInfo{ChatID: 4242},
+		},
 	}
 	rowJSON, err := json.Marshal(map[string][]models.User{"data": {row}})
 	if err != nil {
@@ -143,6 +150,9 @@ func TestLinkWebEmailSuccess_PostsLogin2AndKeepsTelegramBlock(t *testing.T) {
 			if webBlk["source"] != "telegram_link" {
 				t.Fatalf("web source %+v", webBlk)
 			}
+			if stObj["brand_id"] != "vff" {
+				t.Fatalf("brand_id backfill %#v", stObj["brand_id"])
+			}
 			// Ответ POST может быть пустым — без лишнего GET должен сохраниться token-friendly user (login/login2/email).
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -167,10 +177,11 @@ func TestLinkWebEmailSuccess_PostsLogin2AndKeepsTelegramBlock(t *testing.T) {
 			}
 			rowVerify := models.User{
 				ID:      42,
-				Login:   "@tg",
+				Login:   "@4242",
 				Login2:  wLogin,
 				Balance: 0,
 				Settings: models.UserSettings{
+					BrandID:  "vff",
 					Telegram: models.TelegramInfo{ChatID: 4242},
 					Web:      models.WebInfo{Email: normEM, Source: "telegram_link"},
 				},
@@ -212,11 +223,14 @@ func TestLinkWebEmail_ErrLogin2NotPersisted(t *testing.T) {
 	wLogin := webuser.WebLoginFromEmail(normEM)
 
 	row := models.User{
-		ID:       30,
-		Login:    "@tg",
-		Login2:   "",
-		Balance:  0,
-		Settings: models.UserSettings{Telegram: models.TelegramInfo{ChatID: 7070}},
+		ID:      30,
+		Login:   "@7070",
+		Login2:  "",
+		Balance: 0,
+		Settings: models.UserSettings{
+			BrandID:  "vff",
+			Telegram: models.TelegramInfo{ChatID: 7070},
+		},
 	}
 	rowJSON, err := json.Marshal(map[string][]models.User{"data": {row}})
 	if err != nil {
@@ -272,9 +286,10 @@ func TestLinkWebEmailIdempotentSameStoredEmail_NoPost(t *testing.T) {
 
 	row := models.User{
 		ID:     51,
-		Login:  `@tg`,
+		Login:  `@9191`,
 		Login2: wLogin,
 		Settings: models.UserSettings{
+			BrandID:  "vff",
 			Telegram: models.TelegramInfo{ChatID: 9191},
 			Web:      models.WebInfo{Email: normEM, Source: "telegram_link"},
 		},
@@ -334,16 +349,123 @@ func TestLinkWebEmailIdempotentSameStoredEmail_NoPost(t *testing.T) {
 func TestGoogleCallbackFind_OrViaLogin2_Pattern(t *testing.T) {
 	// Общий вход web по email после Telegram→Web: FindOrCreateWebUser видит связку через login2, RegisterUser не вызывается.
 	em := `g@xz.io`
-	shm := &models.User{ID: 12, Login: `@55`, Login2: webuser.WebLoginFromEmail(em)}
+	shm := &models.User{
+		ID:       12,
+		Login:    `@55`,
+		Login2:   webuser.WebLoginFromEmail(em),
+		Settings: models.UserSettings{BrandID: "vff"},
+	}
 	reg := &testWebUserRegistrar{
 		firstGet:   nil,
 		login2User: shm,
 	}
-	got, _, err := findOrCreateWebUser(reg, em, testWebLoginPrefix, testWebUserSource)
+	got, _, err := findOrCreateWebUser(reg, em, testWebLoginPrefix, testWebUserSource, "vff")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != shm.ID || reg.login2Calls != 1 || reg.getCalls != 1 {
 		t.Fatalf("got %#v calls login=%d login2=%d", got, reg.getCalls, reg.login2Calls)
+	}
+}
+
+func TestLinkWebEmail_WrongTelegramLogin_Mismatch(t *testing.T) {
+	em := "x@y.zz"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/shm/v1/admin/user" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := json.Marshal(map[string][]models.User{
+			"data": {{
+				ID:    7,
+				Login: "@wrong",
+				Settings: models.UserSettings{
+					BrandID:  "vff",
+					Telegram: models.TelegramInfo{ChatID: 100},
+				},
+			}},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(srv.Close)
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, brandCfg("vff"))
+	_, err := svc.LinkWebEmailForTelegramUser(7, 100, em, "telegram_link")
+	if !errors.Is(err, ErrUserIdentityMismatch) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestLinkWebEmail_WrongBrandID_Mismatch(t *testing.T) {
+	em := "x@y.zz"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := json.Marshal(map[string][]models.User{
+			"data": {{
+				ID:    8,
+				Login: "@fc_200",
+				Settings: models.UserSettings{
+					BrandID:  "vff",
+					Telegram: models.TelegramInfo{ChatID: 200},
+				},
+			}},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(srv.Close)
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, brandCfg("fc"))
+	_, err := svc.LinkWebEmailForTelegramUser(8, 200, em, "telegram_link")
+	if !errors.Is(err, ErrUserIdentityMismatch) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestLinkWebEmail_OtherBrandWebLogin_Mismatch(t *testing.T) {
+	em := "taken@other.test"
+	normEM, _ := webuser.NormalizeEmail(em)
+	wLogin := webuser.WebLoginFromEmail(normEM)
+	var step atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f := decodeFilter(t, r.URL.Query().Get("filter"))
+		step.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case f["user_id"] != nil:
+			b, _ := json.Marshal(map[string][]models.User{"data": {{
+				ID:    42,
+				Login: "@9001",
+				Settings: models.UserSettings{
+					BrandID:  "vff",
+					Telegram: models.TelegramInfo{ChatID: 9001},
+				},
+			}}})
+			_, _ = w.Write(b)
+		case f["login"] != nil:
+			b, _ := json.Marshal(map[string][]models.User{"data": {{
+				ID:       999,
+				Login:    wLogin,
+				Settings: models.UserSettings{BrandID: "fc"},
+			}}})
+			_, _ = w.Write(b)
+		default:
+			t.Fatalf("unexpected %#v", f)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, brandCfg("vff"))
+	_, err := svc.LinkWebEmailForTelegramUser(42, 9001, em, "telegram_link")
+	if !errors.Is(err, ErrUserIdentityMismatch) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMergeSettingsJSONToMap_PreservesUnknown(t *testing.T) {
+	raw := json.RawMessage(`{"telegram":{"chat_id":1},"custom_keep":true,"web":{"email":"a@b.c"}}`)
+	m, err := mergeSettingsJSONToMap(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["custom_keep"] != true {
+		t.Fatalf("%#v", m)
 	}
 }

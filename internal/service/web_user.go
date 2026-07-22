@@ -20,19 +20,40 @@ type webUserRegistrar interface {
 	RegisterUser(user models.UserRegistrationRequest) error
 }
 
-func findUserByWebLoginKeys(reg webUserRegistrar, normalizedEmail, loginPrefix string) (*models.User, error) {
+func findUserByWebLoginKeys(reg webUserRegistrar, normalizedEmail, loginPrefix, brandID string) (*models.User, error) {
 	webLogin, err := webuser.WebLoginFromEmailWithPrefix(normalizedEmail, loginPrefix)
 	if err != nil {
 		return nil, err
 	}
-	u, err := reg.GetUserByLogin(webLogin)
-	if err != nil || u != nil {
-		return u, err
+	if strings.TrimSpace(brandID) == "" {
+		return nil, ErrActiveBrandIDRequired
 	}
-	return reg.GetUserByLogin2(webLogin)
+
+	u, err := reg.GetUserByLogin(webLogin)
+	if err != nil {
+		return nil, err
+	}
+	if u != nil {
+		if err := ensureWebUserMembership(u, brandID, webLogin); err != nil {
+			return nil, err
+		}
+		return u, nil
+	}
+
+	u, err = reg.GetUserByLogin2(webLogin)
+	if err != nil {
+		return nil, err
+	}
+	if u != nil {
+		if err := ensureWebUserMembership(u, brandID, webLogin); err != nil {
+			return nil, err
+		}
+		return u, nil
+	}
+	return nil, nil
 }
 
-func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource string) (*models.User, bool, error) {
+func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource, brandID string) (*models.User, bool, error) {
 	normalizedEmail, err := webuser.NormalizeEmail(email)
 	if err != nil {
 		return nil, false, err
@@ -43,8 +64,12 @@ func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource str
 	if strings.TrimSpace(webSource) == "" {
 		return nil, false, ErrWebUserSourceRequired
 	}
+	brandID = strings.TrimSpace(brandID)
+	if brandID == "" {
+		return nil, false, ErrActiveBrandIDRequired
+	}
 
-	uKnown, err := findUserByWebLoginKeys(reg, normalizedEmail, loginPrefix)
+	uKnown, err := findUserByWebLoginKeys(reg, normalizedEmail, loginPrefix, brandID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -67,6 +92,7 @@ func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource str
 		Password: password,
 		FullName: normalizedEmail,
 		Settings: models.UserSettings{
+			BrandID: brandID,
 			Web: models.WebInfo{
 				Email:  normalizedEmail,
 				Source: webSource,
@@ -96,17 +122,23 @@ func randomWebUserPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// FindOrCreateWebUser находит SHM-пользователя по login/login2 = <prefix><hash(email)>, иначе регистрирует web-only пользователя.
+// FindOrCreateWebUser находит SHM-пользователя по login/login2 = <prefix><hash(email)>
+// с проверкой brand membership; иначе регистрирует web-only пользователя с settings.brand_id.
 // Второй результат — RegisterUser действительно вызывался в этом запросе.
+//
+// При записи другого бренда на том же web login возвращает ErrUserIdentityMismatch
+// (не not found): новый user не создаётся.
 func (s *Service) FindOrCreateWebUser(email string) (*models.User, bool, error) {
-	return findOrCreateWebUser(s.apiClient, email, s.webLoginPrefix(), s.webUserSource())
+	return findOrCreateWebUser(s.apiClient, email, s.webLoginPrefix(), s.webUserSource(), s.activeBrandID())
 }
 
-// FindUserByWebEmail находит shm user только по связке login/login2 = <prefix><hash(email)> (без фильтров по nested settings.web — SHM на них даёт ISE).
+// FindUserByWebEmail находит shm user только по связке login/login2 = <prefix><hash(email)>
+// активного бренда (без фильтров по nested settings.web — SHM на них даёт ISE).
+// Чужой brand → ErrUserIdentityMismatch.
 func (s *Service) FindUserByWebEmail(email string) (*models.User, error) {
 	normEmail, err := webuser.NormalizeEmail(email)
 	if err != nil {
 		return nil, err
 	}
-	return findUserByWebLoginKeys(s.apiClient, normEmail, s.webLoginPrefix())
+	return findUserByWebLoginKeys(s.apiClient, normEmail, s.webLoginPrefix(), s.activeBrandID())
 }

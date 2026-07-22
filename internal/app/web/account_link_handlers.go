@@ -19,13 +19,37 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
-func isWebLinkedTelegramUser(user *models.User) bool {
-	if user == nil {
+// isWebLinkedTelegramUser — email уже привязан к Telegram-пользователю активного бренда:
+// settings.web.email + точный login2 == canonical web login + brand membership.
+func isWebLinkedTelegramUser(cfg *config.Config, user *models.User) bool {
+	if cfg == nil || user == nil {
 		return false
 	}
-	login2 := strings.TrimSpace(user.Login2)
 	webEmail := strings.TrimSpace(user.Settings.Web.Email)
-	return strings.HasPrefix(login2, "web_") && webEmail != ""
+	if webEmail == "" {
+		return false
+	}
+	normEmail, err := webuser.NormalizeEmail(webEmail)
+	if err != nil {
+		return false
+	}
+	prefix := cfg.WebUserLoginPrefix()
+	canonical, err := webuser.WebLoginFromEmailWithPrefix(normEmail, prefix)
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(user.Login2) != canonical {
+		return false
+	}
+	brandID := strings.TrimSpace(cfg.EffectiveBrand().ID)
+	stored := strings.TrimSpace(user.Settings.BrandID)
+	if brandID == "" {
+		return false
+	}
+	if brandID == "vff" {
+		return stored == "vff" || stored == ""
+	}
+	return stored == brandID
 }
 
 func standaloneLinkNoticePage(title string, paragraphs ...string) []byte {
@@ -101,7 +125,7 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 				body = accountLinkInvalidHTML
 				break
 			}
-			if isWebLinkedTelegramUser(shu) {
+			if isWebLinkedTelegramUser(cfg, shu) {
 				normEmail, nerr := webuser.NormalizeEmail(shu.Settings.Web.Email)
 				if nerr != nil || strings.TrimSpace(shu.Login) == "" {
 					qs := strconv.Quote(token)

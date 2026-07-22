@@ -17,6 +17,12 @@ import (
 
 func TestIsWebLinkedTelegramUser(t *testing.T) {
 	t.Parallel()
+	cfg := orderStartTestCfg()
+	cfg.Brand.ID = "vff"
+	canonical, err := webuser.WebLoginFromEmailWithPrefix("a@b.c", "web_")
+	if err != nil {
+		t.Fatal(err)
+	}
 	tab := []struct {
 		name string
 		u    *models.User
@@ -24,15 +30,18 @@ func TestIsWebLinkedTelegramUser(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"missing_login2", &models.User{Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, false},
-		{"wrong_prefix", &models.User{Login2: "other", Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, false},
-		{"missing_email", &models.User{Login2: "web_xx", Settings: models.UserSettings{}}, false},
-		{"ok", &models.User{Login2: "web_9f1b113a", Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, true},
+		{"wrong_login2", &models.User{Login2: "other", Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, false},
+		{"prefix_only_not_enough", &models.User{Login2: "web_deadbeefdeadbeef", Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, false},
+		{"missing_email", &models.User{Login2: canonical, Settings: models.UserSettings{}}, false},
+		{"ok_legacy_vff", &models.User{Login2: canonical, Settings: models.UserSettings{Web: models.WebInfo{Email: "a@b.c"}}}, true},
+		{"ok_brand_vff", &models.User{Login2: canonical, Settings: models.UserSettings{BrandID: "vff", Web: models.WebInfo{Email: "a@b.c"}}}, true},
+		{"fc_brand_rejected_on_vff", &models.User{Login2: canonical, Settings: models.UserSettings{BrandID: "fc", Web: models.WebInfo{Email: "a@b.c"}}}, false},
 	}
 	for _, tc := range tab {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := isWebLinkedTelegramUser(tc.u); got != tc.want {
+			if got := isWebLinkedTelegramUser(cfg, tc.u); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -43,9 +52,14 @@ func TestServeAccountLink_AlreadyLinked_RedirectSession(t *testing.T) {
 	const chatID int64 = 44229901
 	sec := strings.Repeat("z", 40)
 	cfg := orderStartTestCfg()
+	cfg.Brand.ID = "vff"
 	cfg.WebSales.OrderTokenSecret = sec
 
 	linkTok, err := CreateAccountTelegramLinkToken(sec, 27, chatID, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wLogin, err := webuser.WebLoginFromEmailWithPrefix("linked.person@example.com", "web_")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +67,9 @@ func TestServeAccountLink_AlreadyLinked_RedirectSession(t *testing.T) {
 	linkUser := models.User{
 		ID:     27,
 		Login:  "@telegram27",
-		Login2: "web_9f1b113a91c4b2f6",
+		Login2: wLogin,
 		Settings: models.UserSettings{
+			BrandID:  "vff",
 			Telegram: models.TelegramInfo{ChatID: chatID},
 			Web:      models.WebInfo{Email: "linked.person@Example.COM"},
 		},

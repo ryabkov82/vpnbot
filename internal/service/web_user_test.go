@@ -48,7 +48,7 @@ func TestFindOrCreateWebUser_FoundExistingPrimaryLogin(t *testing.T) {
 	existing := &models.User{ID: 7, Login: login}
 	reg := &testWebUserRegistrar{firstGet: existing, secondAndLater: existing}
 
-	u, created, err := findOrCreateWebUser(reg, "  Known@Example.COM ", testWebLoginPrefix, testWebUserSource)
+	u, created, err := findOrCreateWebUser(reg, "  Known@Example.COM ", testWebLoginPrefix, testWebUserSource, "vff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestFindOrCreateWebUser_FoundViaLogin2(t *testing.T) {
 		login2User: linked,
 	}
 
-	u, created, err := findOrCreateWebUser(reg, "linked@Example.COM", testWebLoginPrefix, testWebUserSource)
+	u, created, err := findOrCreateWebUser(reg, "linked@Example.COM", testWebLoginPrefix, testWebUserSource, "vff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 		secondAndLater: newUser,
 	}
 
-	u, registered, err := findOrCreateWebUser(reg, "new@example.com", testWebLoginPrefix, testWebUserSource)
+	u, registered, err := findOrCreateWebUser(reg, "new@example.com", testWebLoginPrefix, testWebUserSource, "vff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +133,9 @@ func TestFindOrCreateWebUser_CreatesAndReloads(t *testing.T) {
 	if reg.lastReg.Settings.Web.Email != "new@example.com" || reg.lastReg.Settings.Web.Source != testWebUserSource {
 		t.Fatalf("web settings: %#v", reg.lastReg.Settings.Web)
 	}
+	if reg.lastReg.Settings.BrandID != "vff" {
+		t.Fatalf("brand_id: %q", reg.lastReg.Settings.BrandID)
+	}
 }
 
 func TestFindOrCreateWebUser_RegisterError(t *testing.T) {
@@ -140,7 +143,7 @@ func TestFindOrCreateWebUser_RegisterError(t *testing.T) {
 		firstGet: nil,
 		regErr:   errors.New("api down"),
 	}
-	_, _, err := findOrCreateWebUser(reg, "x@y.zz", testWebLoginPrefix, testWebUserSource)
+	_, _, err := findOrCreateWebUser(reg, "x@y.zz", testWebLoginPrefix, testWebUserSource, "vff")
 	if err == nil {
 		t.Fatal("want error")
 	}
@@ -150,7 +153,7 @@ func TestFindOrCreateWebUser_NotFoundAfterRegister(t *testing.T) {
 	reg := &testWebUserRegistrar{
 		firstGet: nil,
 	}
-	_, _, err := findOrCreateWebUser(reg, "gone@example.com", testWebLoginPrefix, testWebUserSource)
+	_, _, err := findOrCreateWebUser(reg, "gone@example.com", testWebLoginPrefix, testWebUserSource, "vff")
 	if err == nil {
 		t.Fatal("want error when reload returns nil")
 	}
@@ -170,7 +173,7 @@ func TestFindOrCreateWebUser_ExplicitOtherPrefix(t *testing.T) {
 		firstGet:       nil,
 		secondAndLater: &models.User{ID: 55, Login: fcLogin},
 	}
-	u, created, err := findOrCreateWebUser(reg, em, "web_fc_", "friends-connect.club")
+	u, created, err := findOrCreateWebUser(reg, em, "web_fc_", "friends-connect.club", "fc")
 	if err != nil {
 		t.Fatal(err)
 	}

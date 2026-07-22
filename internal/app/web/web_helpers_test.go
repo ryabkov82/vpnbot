@@ -11,6 +11,7 @@ import (
 func orderStartTestCfg() *config.Config {
 	cfg := &config.Config{}
 	cfg.WebSales.OrderTokenSecret = "order-token-secret-order-token-sec"
+	cfg.Brand.ID = "vff"
 	cfg.Brand.PublicBaseURL = "https://shop.example"
 	cfg.Brand.WebUserLoginPrefix = "web_"
 	cfg.Brand.WebUserSource = "vpn-for-friends.com"
