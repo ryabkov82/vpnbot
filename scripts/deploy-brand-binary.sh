@@ -70,6 +70,7 @@ scp -q \
 ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p $(printf %q "${REMOTE_TMP}/lib")"
 scp -q \
   "${ROOT}/scripts/lib/brand_ops.sh" \
+  "${ROOT}/scripts/lib/brand_rollout.sh" \
   "${SERVER_USER}@${SERVER_HOST}:${REMOTE_TMP}/lib/"
 
 echo "deploy-${BRAND_LABEL}: installing binary on ${SERVER_HOST}..."

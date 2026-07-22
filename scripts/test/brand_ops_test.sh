@@ -572,6 +572,40 @@ test_make_n_deploy_fc_host() {
   pass make_n_deploy_fc_host
 }
 
+# Binary-deploy remote package must ship every library sourced by brand_ops.sh
+# (currently brand_ops.sh → brand_rollout.sh). Static check — no SSH/SCP.
+test_binary_deploy_ships_rollout_lib() {
+  local script="${ROOT}/scripts/deploy-brand-binary.sh"
+  if [[ ! -f "${script}" ]]; then
+    fail binary_deploy_libs "missing ${script}"
+    return
+  fi
+  if ! grep -Fq 'scripts/lib/brand_ops.sh' "${script}"; then
+    fail binary_deploy_libs "deploy must scp brand_ops.sh"
+    return
+  fi
+  if ! grep -Fq 'scripts/lib/brand_rollout.sh' "${script}"; then
+    fail binary_deploy_libs "deploy must scp brand_rollout.sh (brand_ops.sh sources it)"
+    return
+  fi
+  # Both libs must land under ${REMOTE_TMP}/lib/ (same scp destination as rollout-brand.sh).
+  if ! awk '
+    /scp[[:space:]]+-q/ { in_scp=1; has_ops=0; has_rollout=0; has_lib_dest=0 }
+    in_scp && /scripts\/lib\/brand_ops\.sh/ { has_ops=1 }
+    in_scp && /scripts\/lib\/brand_rollout\.sh/ { has_rollout=1 }
+    in_scp && /\$\{REMOTE_TMP\}\/lib\// { has_lib_dest=1 }
+    in_scp && /\$\{SERVER_USER\}@\$\{SERVER_HOST\}:\$\{REMOTE_TMP\}\/lib\// {
+      if (has_ops && has_rollout && has_lib_dest) { found=1; exit 0 }
+    }
+    in_scp && /^[^[:space:]\\]/ && !/scp/ { in_scp=0 }
+    END { exit(found ? 0 : 1) }
+  ' "${script}"; then
+    fail binary_deploy_libs "brand_ops.sh and brand_rollout.sh must be scp'd together to \${REMOTE_TMP}/lib/"
+    return
+  fi
+  pass binary_deploy_ships_rollout_lib
+}
+
 # 6–10. renderer FC/VFF
 test_renderer() {
   local dir src out
@@ -948,6 +982,7 @@ test_startup_marker_fc_hyphen_suffix
 test_startup_marker_vff_prefix_collision
 test_startup_marker_wrong_brand
 test_make_n_deploy_fc_host
+test_binary_deploy_ships_rollout_lib
 test_renderer
 test_renderer_to_configcheck
 test_renderer_source_eq_output
