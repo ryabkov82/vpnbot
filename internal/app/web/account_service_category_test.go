@@ -27,7 +27,7 @@ func stubWithCategory(category string) *stubAccountWeb {
 
 func TestServeAccountServiceOrder_AllowedCategoryOrdered(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 42, "web_a", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 42, "web_a", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, Name: "1 месяц", AllowToOrder: 1, Cost: 100, Category: "vpn-mz-main"},
@@ -48,7 +48,7 @@ func TestServeAccountServiceOrder_AllowedCategoryOrdered(t *testing.T) {
 
 func TestServeAccountServiceOrder_OtherCategoryNotFound(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 42, "web_a", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 42, "web_a", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			9: {ServiceID: 9, Name: "Foreign", AllowToOrder: 1, Cost: 500, Category: "vpn-mz-other"},
@@ -77,7 +77,7 @@ func TestServeAccountServiceOrder_OtherCategoryNotFound(t *testing.T) {
 
 func TestServeAccountServiceOrder_EmptyCategoryLegacyAllows(t *testing.T) {
 	cfg := categoryTestCfg("")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 42, "web_a", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 42, "web_a", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			9: {ServiceID: 9, AllowToOrder: 1, Cost: 100, Category: "vpn-mz-anything"},
@@ -100,7 +100,7 @@ func TestServeAccountServiceOrder_EmptyCategoryLegacyAllows(t *testing.T) {
 
 func TestServeAccountConnect_AllowedCategoryReturnsURL(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			336: {
@@ -129,7 +129,7 @@ func TestServeAccountConnect_AllowedCategoryReturnsURL(t *testing.T) {
 
 func TestServeAccountConnect_OtherCategoryForbiddenNoURL(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
@@ -159,7 +159,7 @@ func TestServeAccountConnect_OtherCategoryPremiumURLNotBuilt(t *testing.T) {
 	cfg.PremiumSquadName = "premium-squad"
 	cfg.PremiumConnectBaseURL = "https://premium.example/connect"
 	cfg.PremiumLinkSigningSecret = "premium-secret-premium-secret-xx"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
@@ -185,7 +185,7 @@ func TestServeAccountConnect_OtherCategoryPremiumURLNotBuilt(t *testing.T) {
 
 func TestServeAccountConnect_OwnershipStillEnforcedWithCategory(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			336: {
@@ -207,7 +207,7 @@ func TestServeAccountConnect_OwnershipStillEnforcedWithCategory(t *testing.T) {
 
 func TestServeAccountConnect_MissingServiceSameForbidden(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{} // single == nil → ErrUserServiceUnavailable
 	rec := httptest.NewRecorder()
 	serveAccountServiceConnect(cfg, st).ServeHTTP(rec,
@@ -222,7 +222,7 @@ func TestServeAccountConnect_MissingServiceSameForbidden(t *testing.T) {
 
 func TestServeAccountServiceDelete_AllowedCategoryDeleted(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			500: {UserID: 10, ServiceID: 500, Status: "NOT PAID", Category: "vpn-mz-main"},
@@ -241,7 +241,7 @@ func TestServeAccountServiceDelete_AllowedCategoryDeleted(t *testing.T) {
 
 func TestServeAccountServiceDelete_OtherCategoryForbiddenNoDelete(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		requireCategory: "vpn-mz-main",
 		single: map[int]*models.UserService{
@@ -262,7 +262,7 @@ func TestServeAccountServiceDelete_OtherCategoryForbiddenNoDelete(t *testing.T) 
 
 func TestServeAccountServiceDelete_OwnershipStillEnforcedWithCategory(t *testing.T) {
 	cfg := categoryTestCfg("vpn-mz-main")
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			500: {UserID: 999, ServiceID: 500, Status: "NOT PAID", Category: "vpn-mz-main"},

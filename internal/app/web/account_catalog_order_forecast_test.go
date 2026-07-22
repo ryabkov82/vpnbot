@@ -41,7 +41,7 @@ func TestAccountOrderPaymentFromSHMForecast(t *testing.T) {
 func TestServeAccountServiceOrder_ForecastZero_NoPaymentURL(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@paid.com", 881, "w881", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@paid.com", 881, "w881", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, Name: "1 мес", Cost: 200, Period: 1, AllowToOrder: 1},
@@ -70,7 +70,7 @@ func TestServeAccountServiceOrder_ForecastZero_NoPaymentURL(t *testing.T) {
 func TestServeAccountServiceOrder_ForecastBelowMinCharges50(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 771, "w771", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 771, "w771", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 399},
@@ -96,7 +96,7 @@ func TestServeAccountServiceOrder_ForecastBelowMinCharges50(t *testing.T) {
 func TestServeAccountServiceOrder_ForecastExceedsTopupMax(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "x@y.z", 600, "w600", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "x@y.z", 600, "w600", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 20000},
@@ -116,7 +116,7 @@ func TestServeAccountServiceOrder_ForecastExceedsTopupMax(t *testing.T) {
 func TestServeAccountServiceOrder_GetBalanceByUserFails(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 9, "w9", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 9, "w9", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 100},

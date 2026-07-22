@@ -45,7 +45,7 @@ func serveAccountBalanceTopupCrypto(cfg *config.Config, _ accountWebApp) http.Ha
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
 		}
-		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return

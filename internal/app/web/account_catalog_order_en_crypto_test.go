@@ -14,7 +14,7 @@ import (
 func TestServeAccountServiceOrder_EN_CryptoPaymentURLUsesRUBAmount(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://bill.fix.test"
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "en@buy.com", 3381, "web_en", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "en@buy.com", 3381, "web_en", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestServeAccountServiceOrder_EN_CryptoPaymentURLUsesRUBAmount(t *testing.T)
 func TestServeAccountServiceOrder_EN_CryptoPaymentURLFailed(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = ""
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "en@buy.com", 9, "web_en9", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "en@buy.com", 9, "web_en9", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestServeAccountServiceOrder_EN_CryptoPaymentURLFailed(t *testing.T) {
 func TestServeAccountServiceOrder_RU_NoCryptoPaymentURL(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://bill.fix.test"
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "ru@buy.com", 55, "web_ru", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "ru@buy.com", 55, "web_ru", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

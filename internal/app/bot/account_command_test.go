@@ -29,6 +29,7 @@ func TestAccountCommandReply_MessageAndInlineURLButton(t *testing.T) {
 	base := "https://cabinet.example.com"
 	secret := strings.Repeat("a", 40)
 	cfg := &config.Config{}
+	cfg.Brand.ID = "vff"
 	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)
@@ -65,6 +66,7 @@ func TestTelegramWebCabinetURL_UsesPublicBaseURL(t *testing.T) {
 	base := "https://connect.vpn-for-friends.com/"
 	secret := strings.Repeat("b", 40)
 	cfg := &config.Config{}
+	cfg.Brand.ID = "vff"
 	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)
@@ -79,6 +81,7 @@ func TestWebCabinetMenuButton_ReusesURLHelper(t *testing.T) {
 	base := "https://site.test"
 	secret := strings.Repeat("c", 40)
 	cfg := &config.Config{}
+	cfg.Brand.ID = "vff"
 	cfg.Brand.PublicBaseURL = base
 	cfg.WebSales.OrderTokenSecret = secret
 	s := NewService(nil, cfg)

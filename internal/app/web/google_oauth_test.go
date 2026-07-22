@@ -18,6 +18,9 @@ import (
 
 func testGoogleOAuthMinimalCfg(secret string, enabled bool, id, redirect, sec string) *config.Config {
 	c := &config.Config{}
+	c.Brand.ID = "vff"
+	c.Brand.WebUserLoginPrefix = "web_"
+	c.Brand.WebUserSource = "vpn-for-friends.com"
 	c.WebSales.OrderTokenSecret = secret
 	c.WebAccount.GoogleEnabled = enabled
 	c.WebAccount.GoogleClientID = id
@@ -203,7 +206,7 @@ func TestGETGoogleOAuthStart_ValidLinkTokenSetsCookie(t *testing.T) {
 		"my-client-id.apps.googleusercontent.com",
 		"https://connect.vpn-for-friends.com/api/account/google/callback",
 		"client-secret-val")
-	linkTok, err := CreateAccountTelegramLinkToken(sec, 701, 999999991, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(sec, "vff", 701, 999999991, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +313,7 @@ func TestGoogleOAuthCallback_HappyCreatesUserAndRedirects(t *testing.T) {
 	if tok == "" || strings.Contains(tok, "__test_access") {
 		t.Fatalf("unexpected token fragment in redirect")
 	}
-	claims, err := ParseAndVerifyAccountToken(secret, tok)
+	claims, err := ParseAndVerifyAccountToken(secret, "vff", tok)
 	if err != nil || claims.Email != normWant || claims.UserID != user.ID || claims.Login != user.Login {
 		t.Fatalf("token claims %+v err=%v", claims, err)
 	}
@@ -461,7 +464,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheckRedirects(t *
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
 		"https://connect.vpn-for-friends.com/api/account/google/callback",
 		"secret")
-	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 111222333, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(secret, "vff", shmLinkUser, 111222333, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +509,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_RedirectWith
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
 		"https://callback/x",
 		"secret")
-	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 998877, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(secret, "vff", shmLinkUser, 998877, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +550,7 @@ func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_RedirectWithToke
 	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
 
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "secret")
-	linkTok, err := CreateAccountTelegramLinkToken(secret, shmLinkUser, 445566, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(secret, "vff", shmLinkUser, 445566, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,7 +592,7 @@ func TestGoogleOAuthCallback_LinkFlow_LinkOK_RedirectSession_NoFindOrCreate(t *t
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid",
 		"https://cb.example/link", "oauth-secret")
 
-	linkTok, err := CreateAccountTelegramLinkToken(secret, shmUID, 8844220011, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(secret, "vff", shmUID, 8844220011, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,7 +632,7 @@ func TestGoogleOAuthCallback_LinkFlow_LinkOK_RedirectSession_NoFindOrCreate(t *t
 	if rawTok == "" {
 		t.Fatal("missing session token")
 	}
-	claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+	claims, err := ParseAndVerifyAccountToken(secret, "vff", rawTok)
 	if err != nil || claims.Email != normWant || claims.UserID != shmUID || claims.Login != "@telegram_login" {
 		t.Fatalf("claims=%+v err=%v", claims, err)
 	}

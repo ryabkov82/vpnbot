@@ -55,7 +55,7 @@ func TestServeAccountLink_AlreadyLinked_RedirectSession(t *testing.T) {
 	cfg.Brand.ID = "vff"
 	cfg.WebSales.OrderTokenSecret = sec
 
-	linkTok, err := CreateAccountTelegramLinkToken(sec, 27, chatID, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(sec, "vff", 27, chatID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestServeAccountLink_AlreadyLinked_RedirectSession(t *testing.T) {
 	if raw == "" {
 		t.Fatal("missing session token in redirect")
 	}
-	claims, err := ParseAndVerifyAccountToken(sec, raw)
+	claims, err := ParseAndVerifyAccountToken(sec, "vff", raw)
 	if err != nil || claims.UserID != 27 || claims.Login != "@telegram27" || claims.Email != "linked.person@example.com" {
 		t.Fatalf("claims=%+v err=%v", claims, err)
 	}
@@ -109,7 +109,7 @@ func TestServeAccountLink_NotYetLinked_ShowsStartPage(t *testing.T) {
 	sec := strings.Repeat("y", 40)
 	cfg := orderStartTestCfg()
 	cfg.WebSales.OrderTokenSecret = sec
-	linkTok, err := CreateAccountTelegramLinkToken(sec, 5, chatID, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(sec, "vff", 5, chatID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestServeAccountLink_Login2WithoutWebEmail_ShowsStartPage(t *testing.T) {
 	sec := strings.Repeat("x", 41)
 	cfg := orderStartTestCfg()
 	cfg.WebSales.OrderTokenSecret = sec
-	linkTok, err := CreateAccountTelegramLinkToken(sec, 88, chatID, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(sec, "vff", 88, chatID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestServeAccountLinkLoginStart_EmailHeldByOther_Returns409(t *testing.T) {
 	sec := strings.Repeat("k", 40)
 	cfg := orderStartTestCfg()
 	cfg.WebSales.OrderTokenSecret = sec
-	linkTok, err := CreateAccountTelegramLinkToken(sec, 41, chatID, cfg)
+	linkTok, err := CreateAccountTelegramLinkToken(sec, "vff", 41, chatID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestServeAccountLinkConfirm_EmailHeldByOther_RedirectsWithLinkToken(t *test
 	cfg := orderStartTestCfg()
 	cfg.WebSales.OrderTokenSecret = sec
 	normEmail := "conflict@example.com"
-	emailTok, err := CreateAccountLinkEmailToken(sec, shmUID, chatID, normEmail, cfg)
+	emailTok, err := CreateAccountLinkEmailToken(sec, "vff", shmUID, chatID, normEmail, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestServeAccountLinkConfirm_EmailHeldByOther_RedirectsWithLinkToken(t *test
 	if rawTok == "" {
 		t.Fatal("missing token in redirect")
 	}
-	claims, err := VerifyAccountTelegramLinkToken(sec, rawTok)
+	claims, err := VerifyAccountTelegramLinkToken(sec, "vff", rawTok)
 	if err != nil || claims.ShmUserID != shmUID || claims.TelegramChatID != chatID {
 		t.Fatalf("claims=%+v err=%v", claims, err)
 	}

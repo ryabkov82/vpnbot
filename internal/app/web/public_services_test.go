@@ -255,7 +255,7 @@ func TestServePublicServices_AndAccountCatalog_ServicesOrderAligned(t *testing.T
 		{ServiceID: 803, Name: "6 мес.", Descr: "d", Cost: 400, Period: 6, AllowToOrder: 1},
 	}
 
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "z@test.com", 1, "web_z", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "z@test.com", 1, "web_z", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

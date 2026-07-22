@@ -110,7 +110,7 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 		switch {
 		case strings.TrimSpace(token) != "":
 			secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-			claims, err := VerifyAccountTelegramLinkToken(secret, token)
+			claims, err := VerifyAccountTelegramLinkToken(secret, cfgBrandID(cfg), token)
 			if err != nil {
 				body = accountLinkInvalidHTML
 				break
@@ -132,7 +132,7 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 					body = bytes.ReplaceAll(accountLinkStartHTML, []byte("__GO_JS_STRING__"), []byte(qs))
 					break
 				}
-				rawTok, terr := CreateAccountToken(secret, normEmail, shu.ID, shu.Login, accountTokenTTL(cfg))
+				rawTok, terr := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, shu.ID, shu.Login, accountTokenTTL(cfg))
 				if terr != nil {
 					slog.Error("account link", "stage", "create_session_token", "user_id", shu.ID, "err", terr)
 					http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"token_failed"}}.Encode(), http.StatusFound)
@@ -201,7 +201,7 @@ func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.Handler
 
 		raw := strings.TrimSpace(r.URL.Query().Get("token"))
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := VerifyAccountLinkEmailToken(secret, raw)
+		claims, err := VerifyAccountLinkEmailToken(secret, cfgBrandID(cfg), raw)
 		if err != nil {
 			http.Redirect(w, r, "/account/link"+linkQueryForErr(err), http.StatusFound)
 			return
@@ -222,7 +222,7 @@ func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.Handler
 				slog.Warn("link confirm: email already linked to another user",
 					"shm_user_id", claims.ShmUserID, "web_login", wlConflict)
 			}
-			linkTok, tokErr := CreateAccountTelegramLinkToken(secret, claims.ShmUserID, claims.TelegramChatID, cfg)
+			linkTok, tokErr := CreateAccountTelegramLinkToken(secret, cfgBrandID(cfg), claims.ShmUserID, claims.TelegramChatID, cfg)
 			if tokErr != nil {
 				slog.Error("link confirm", "stage", "recreate_link_token", "shm_user_id", claims.ShmUserID, "err", tokErr)
 				http.Redirect(w, r, "/account/link"+linkErrQuery("link_failed"), http.StatusFound)
@@ -248,7 +248,7 @@ func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.Handler
 			return
 		}
 
-		acTok, err := CreateAccountToken(secret, normEmail, u.ID, u.Login, accountTokenTTL(cfg))
+		acTok, err := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, u.ID, u.Login, accountTokenTTL(cfg))
 		if err != nil {
 			slog.Error("link confirm", "stage", "create_session_token", "user_id", u.ID, "err", err)
 			http.Redirect(w, r, "/account/link"+linkErrQuery("token_failed"), http.StatusFound)
@@ -302,7 +302,7 @@ func serveAccountLinkLoginStart(cfg *config.Config, app accountWebApp, rl *leadR
 		}
 
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		linkClaims, err := VerifyAccountTelegramLinkToken(secret, strings.TrimSpace(req.LinkToken))
+		linkClaims, err := VerifyAccountTelegramLinkToken(secret, cfgBrandID(cfg), strings.TrimSpace(req.LinkToken))
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_link_token")
 			return
@@ -341,7 +341,7 @@ func serveAccountLinkLoginStart(cfg *config.Config, app accountWebApp, rl *leadR
 			return
 		}
 
-		emailTok, err := CreateAccountLinkEmailToken(secret, linkClaims.ShmUserID, linkClaims.TelegramChatID, normEmail, cfg)
+		emailTok, err := CreateAccountLinkEmailToken(secret, cfgBrandID(cfg), linkClaims.ShmUserID, linkClaims.TelegramChatID, normEmail, cfg)
 		if err != nil {
 			slog.Error("link login", "stage", "create_link_email_token", "user_id", linkClaims.ShmUserID, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")

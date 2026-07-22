@@ -42,7 +42,7 @@ func TestServeAccountCatalog_Success_TrialExcluded(t *testing.T) {
 	cfg.API.BaseURL = "https://api.example.com"
 	cfg.Features.Trial.Enabled = true
 	cfg.Features.Trial.BaseServiceID = 77
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 5, "web_ab", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 5, "web_ab", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestServeAccountCatalog_PremiumFieldsMatchPublicOffer(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.example.com"
 	cfg.PremiumSquadName = squad
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 44, "web_aa", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 44, "web_aa", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestServeAccountCatalog_PremiumFieldsMatchPublicOffer(t *testing.T) {
 
 func TestServeAccountCatalog_NoInternalFieldsLeak(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 12, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 12, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestServeAccountCatalog_NoInternalFieldsLeak(t *testing.T) {
 
 func TestServeAccountCatalog_GetServicesFails(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 1, "lg", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 1, "lg", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestServeAccountServiceOrder_InvalidToken(t *testing.T) {
 
 func TestServeAccountServiceOrder_InvalidService(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 8, "w", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 8, "w", time.Hour)
 	h := serveAccountServiceOrder(cfg, &stubAccountWeb{})
 	req := httptest.NewRequest(http.MethodPost, "/api/account/service/order",
 		strings.NewReader(`{"token":"`+tok+`","service_id":0}`))
@@ -193,7 +193,7 @@ func TestServeAccountServiceOrder_TrialBlocked(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.Features.Trial.Enabled = true
 	cfg.Features.Trial.BaseServiceID = 900
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 77, "w77", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 77, "w77", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			900: {ServiceID: 900, Name: "T", AllowToOrder: 1},
@@ -211,7 +211,7 @@ func TestServeAccountServiceOrder_TrialBlocked(t *testing.T) {
 
 func TestServeAccountServiceOrder_ServiceNotFound(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 71, "w71", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 71, "w71", time.Hour)
 	st := &stubAccountWeb{}
 	h := serveAccountServiceOrder(cfg, st)
 	rec := httptest.NewRecorder()
@@ -226,7 +226,7 @@ func TestServeAccountServiceOrder_ServiceNotFound(t *testing.T) {
 func TestServeAccountServiceOrder_GetServiceByIDNotFoundError(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.x/"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 2, "w", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 2, "w", time.Hour)
 	st := &stubAccountWeb{getSvcByErr: errors.New("service 55 not found")}
 	h := serveAccountServiceOrder(cfg, st)
 	rec := httptest.NewRecorder()
@@ -240,7 +240,7 @@ func TestServeAccountServiceOrder_GetServiceByIDNotFoundError(t *testing.T) {
 
 func TestServeAccountServiceOrder_NotOrderable_ServiceNotFound(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 71, "w71", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 71, "w71", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			902: {ServiceID: 902, Name: "Hidden", AllowToOrder: 0, Cost: 10},
@@ -259,7 +259,7 @@ func TestServeAccountServiceOrder_NotOrderable_ServiceNotFound(t *testing.T) {
 func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@buy.com", 3381, "web_b3381", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@buy.com", 3381, "web_b3381", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			// Cost выше суммы платежа: оплата идёт по SHM Forecast после заказа, не по тарифу.
@@ -301,7 +301,7 @@ func TestServeAccountServiceOrder_SuccessCreatesUserService(t *testing.T) {
 func TestServeAccountServiceOrder_ExistingUnpaidOtherTariffReturned(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "buyer@x.com", 501, "web_buy", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "buyer@x.com", 501, "web_buy", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			4: {ServiceID: 4, Name: "3 месяца", Descr: "x", Cost: 399, Period: 3, AllowToOrder: 1},
@@ -354,7 +354,7 @@ func TestServeAccountServiceOrder_ExistingUnpaidOtherTariffReturned(t *testing.T
 func TestServeAccountServiceOrder_ServiceOrderFails(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.good.test"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 71, "w71", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 71, "w71", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 100},
@@ -374,7 +374,7 @@ func TestServeAccountServiceOrder_ServiceOrderFails(t *testing.T) {
 func TestServeAccountServiceOrder_NoPaymentURL_WithForecast_EmptyAPIBaseOK(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = ""
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 701, "w701", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 701, "w701", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 120},

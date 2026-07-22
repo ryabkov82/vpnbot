@@ -136,7 +136,7 @@ func TestBuildPublicServiceRowsFromList_RemnawaveUnchanged(t *testing.T) {
 
 func TestServeAccountCatalog_EN_USDDisplay(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 5, "web_ab", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 5, "web_ab", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestServeAccountCatalog_EN_USDDisplay(t *testing.T) {
 
 func TestServeAccountCatalog_EN_DisplayLocalizedCopy(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 5, "web_ab", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 5, "web_ab", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestServeAccountCatalog_EN_DisplayLocalizedCopy(t *testing.T) {
 
 func TestServeAccountCatalog_EN_PeriodFallbackCopy(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 1, "lg", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 1, "lg", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestServeAccountCatalog_EN_PeriodFallbackCopy(t *testing.T) {
 
 func TestServeAccountCatalog_RU_UnchangedWithoutDisplay(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 5, "web_ab", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 5, "web_ab", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestServeAccountCatalog_RU_UnchangedWithoutDisplay(t *testing.T) {
 
 func TestServeAccountCatalog_EN_MonthlyPeriods(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 1, "lg", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 1, "lg", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestServeAccountCatalog_EN_MonthlyPeriods(t *testing.T) {
 
 func TestServeAccountCatalog_PricingNoInternalLeak(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 12, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 12, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

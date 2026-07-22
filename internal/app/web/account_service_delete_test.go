@@ -28,7 +28,7 @@ func TestServeAccountServiceDelete_InvalidToken(t *testing.T) {
 
 func TestServeAccountServiceDelete_InvalidUserServiceID(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 1, "lg", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 1, "lg", time.Hour)
 	h := serveAccountServiceDelete(cfg, &stubAccountWeb{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/account/service/delete",
@@ -41,7 +41,7 @@ func TestServeAccountServiceDelete_InvalidUserServiceID(t *testing.T) {
 
 func TestServeAccountServiceDelete_ServiceNilForbidden(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 10, "lg", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 10, "lg", time.Hour)
 	st := &stubAccountWeb{}
 	h := serveAccountServiceDelete(cfg, st)
 	rec := httptest.NewRecorder()
@@ -55,7 +55,7 @@ func TestServeAccountServiceDelete_ServiceNilForbidden(t *testing.T) {
 
 func TestServeAccountServiceDelete_UserMismatchForbidden(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 10, "lg", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 10, "lg", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			55: {
@@ -77,7 +77,7 @@ func TestServeAccountServiceDelete_UserMismatchForbidden(t *testing.T) {
 
 func TestServeAccountServiceDelete_ServiceIDsMismatchForbidden(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 10, "lg", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 10, "lg", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			55: {
@@ -98,7 +98,7 @@ func TestServeAccountServiceDelete_ServiceIDsMismatchForbidden(t *testing.T) {
 
 func TestServeAccountServiceDelete_ActiveForbidden(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 10, "lg", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 10, "lg", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			100: {
@@ -122,7 +122,7 @@ func TestServeAccountServiceDelete_ActiveForbidden(t *testing.T) {
 func TestServeAccountServiceDelete_NotPaidDeletes(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://pay.test/"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 88, "lg88", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 88, "lg88", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			337: {
@@ -155,7 +155,7 @@ func TestServeAccountServiceDelete_NotPaidDeletes(t *testing.T) {
 func TestServeAccountServiceDelete_DeleteFails(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://pay.test/"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@z.z", 88, "lg88", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@z.z", 88, "lg88", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			337: {UserID: 88, ServiceID: 337, Status: "BLOCK"},

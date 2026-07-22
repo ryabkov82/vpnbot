@@ -12,7 +12,7 @@ import (
 func TestServeAccountBalanceTopupCrypto_SuccessPaymentURL(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://bill.fix.test"
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 701, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 701, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

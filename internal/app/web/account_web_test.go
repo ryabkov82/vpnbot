@@ -292,7 +292,7 @@ func TestServeAccountLoginStart_UnknownEmailSendsSignupTokenMail_NoWebUserYet(t 
 		t.Fatalf("%#v err=%v", out, err)
 	}
 	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
-	sc, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, rawTok)
+	sc, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, "vff", rawTok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 		t.Fatalf("missing magic link body: %s", raw[:min(600, len(raw))])
 	}
 	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
-	ac, err := ParseAndVerifyAccountToken(cfg.WebSales.OrderTokenSecret, rawTok)
+	ac, err := ParseAndVerifyAccountToken(cfg.WebSales.OrderTokenSecret, "vff", rawTok)
 	if err != nil || ac.UserID != 511 || ac.Email != wantNorm || ac.Login != u.Login {
 		t.Fatalf("account claims %+v err=%v", ac, err)
 	}
@@ -367,14 +367,14 @@ func TestServeAccountLoginStart_PrefersSettingsWebEmailUser(t *testing.T) {
 	}
 	rawTok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
 	sec := cfg.WebSales.OrderTokenSecret
-	ac, err := ParseAndVerifyAccountToken(sec, rawTok)
+	ac, err := ParseAndVerifyAccountToken(sec, "vff", rawTok)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ac.UserID != 918 || ac.Email != normWant || ac.Login != linked.Login {
 		t.Fatalf("claims %+v", ac)
 	}
-	if _, err := ParseAndVerifyAccountSignupToken(sec, rawTok); err == nil {
+	if _, err := ParseAndVerifyAccountSignupToken(sec, "vff", rawTok); err == nil {
 		t.Fatal("expected signup decode to fail (account magic link)")
 	}
 }
@@ -458,7 +458,7 @@ func TestServeAccountSessionStart_AccountTokenReturnsSame(t *testing.T) {
 	})
 	cfg := orderStartTestCfg()
 	sec := cfg.WebSales.OrderTokenSecret
-	rawTok, err := CreateAccountToken(sec, "acc@test.com", 44, "web_acc44", time.Hour)
+	rawTok, err := CreateAccountToken(sec, "vff", "acc@test.com", 44, "web_acc44", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +498,7 @@ func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
 	if st.findOrCreateCalls != 1 {
 		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
 	}
-	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
+	ac, err := ParseAndVerifyAccountToken(sec, "vff", out.AccountToken)
 	if err != nil || ac.UserID != 6600 || ac.Login != login || ac.Email != norm {
 		t.Fatalf("%+v err=%v", ac, err)
 	}
@@ -540,7 +540,7 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	em := "signup-old@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	if st.findOrCreateCalls != 1 {
 		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
 	}
-	ac, err := ParseAndVerifyAccountToken(sec, out.AccountToken)
+	ac, err := ParseAndVerifyAccountToken(sec, "vff", out.AccountToken)
 	if err != nil || ac.UserID != 6611 {
 		t.Fatalf("%+v err=%v", ac, err)
 	}
@@ -598,7 +598,7 @@ func TestServeAccountSessionStart_SignupNewUserTelegramAPIErrorStill200(t *testi
 	em := "tg-error@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +624,7 @@ func TestServeAccountSessionStart_SignupNewUserNotifierGetsFirstXFFIP(t *testing
 	em := "xff@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, _ := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
 	want := &models.User{ID: 8801, Login: login}
 	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
 
@@ -646,7 +646,7 @@ func TestServeAccountSessionStart_SignupTokenWebUserFails(t *testing.T) {
 	em := "fail-create@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, _ := CreateAccountSignupToken(sec, norm, login, time.Hour)
+	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
 	st := &stubAccountWeb{findOrCreateErr: errors.New("register failed")}
 	h := serveAccountSessionStart(cfg, st)
 	rec := httptest.NewRecorder()
@@ -663,7 +663,7 @@ func TestServeAccountSessionStart_SignupTokenLoginMismatch(t *testing.T) {
 	sec := cfg.WebSales.OrderTokenSecret
 	em := "mis@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
-	tok, err := CreateAccountSignupToken(sec, norm, "not_the_derived_login", time.Hour)
+	tok, err := CreateAccountSignupToken(sec, "vff", norm, "not_the_derived_login", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,7 +711,7 @@ func TestServeAccountPayments_InvalidToken401(t *testing.T) {
 
 func TestServeAccountPayments_APIDown500(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "p@test.com", 5, "l", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "p@test.com", 5, "l", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +730,7 @@ func TestServeAccountPayments_FiltersCanceledNoLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "pay@test.com", 9, "l9", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "pay@test.com", 9, "l9", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,7 +771,7 @@ func TestServeAccountPayments_OnlyCanceledEmptySlice(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "empty@test.com", 3, "l3", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "empty@test.com", 3, "l3", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -797,7 +797,7 @@ func TestServeAccountPayments_OnlyCanceledEmptySlice(t *testing.T) {
 
 func TestServeAccountPayments_LimitTwenty(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "lim@test.com", 2, "l2", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "lim@test.com", 2, "l2", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -829,7 +829,7 @@ func TestServeAccountPayments_LimitTwenty(t *testing.T) {
 func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
-	tok, err := CreateAccountToken(secret, "ok@test.com", 99, "web_l99", time.Hour)
+	tok, err := CreateAccountToken(secret, "vff", "ok@test.com", 99, "web_l99", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -896,7 +896,7 @@ func TestServeAccountServices_SuccessNoSensitiveLeak(t *testing.T) {
 func TestServeAccountServices_NotPaidIncludesCostFromUser(t *testing.T) {
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
-	tok, err := CreateAccountToken(secret, "paid@test.com", 77, "web_lp", time.Hour)
+	tok, err := CreateAccountToken(secret, "vff", "paid@test.com", 77, "web_lp", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -937,7 +937,7 @@ func TestServeAccountServices_NotPaidIncludesCostFromUser(t *testing.T) {
 
 func TestServeAccountServices_NotPaidUsesCatalogFallbackWhenUserCostBlank(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "cat@test.com", 88, "web_lc", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "cat@test.com", 88, "web_lc", time.Hour)
 	st := &stubAccountWeb{
 		balance: &models.UserBalance{Balance: 0, Forecast: 0},
 		services: []models.UserService{{
@@ -976,7 +976,7 @@ func TestServeAccountServices_NotPaidUsesCatalogFallbackWhenUserCostBlank(t *tes
 func TestServeAccountConnect_ACTIVE_OK(t *testing.T) {
 	cfg := orderStartTestCfg()
 	secret := cfg.WebSales.OrderTokenSecret
-	tok, err := CreateAccountToken(secret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, err := CreateAccountToken(secret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1010,7 +1010,7 @@ func TestServeAccountConnect_ACTIVE_OK(t *testing.T) {
 
 func TestServeAccountConnect_UserMismatchForbidden(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			336: {
@@ -1032,7 +1032,7 @@ func TestServeAccountConnect_UserMismatchForbidden(t *testing.T) {
 
 func TestServeAccountConnect_NotPaid_NotReady(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	st := &stubAccountWeb{
 		single: map[int]*models.UserService{
 			336: {
@@ -1063,7 +1063,7 @@ func TestServeAccountServices_PremiumActive(t *testing.T) {
 	squad := "anti-premium-squad-x"
 	cfg.PremiumSquadName = squad
 	secret := cfg.WebSales.OrderTokenSecret
-	tok, err := CreateAccountToken(secret, "p@test.com", 55, "web_p55", time.Hour)
+	tok, err := CreateAccountToken(secret, "vff", "p@test.com", 55, "web_p55", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1110,7 +1110,7 @@ func TestServeAccountServices_PremiumNotPaid_NoConnect(t *testing.T) {
 	cfg := orderStartTestCfg()
 	squad := "anti-premium-squad-x"
 	cfg.PremiumSquadName = squad
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "p@test.com", 55, "web_p55", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "p@test.com", 55, "web_p55", time.Hour)
 	st := &stubAccountWeb{
 		services: []models.UserService{{
 			Name:          "Premium line",
@@ -1140,7 +1140,7 @@ func TestServeAccountConnect_Premium_OK_WithSignedLink(t *testing.T) {
 	cfg.PremiumSquadName = "ps-web"
 	cfg.PremiumConnectBaseURL = "https://shop.example/premium-connect"
 	cfg.PremiumLinkSigningSecret = "signing-signing-xx"
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	us := &models.UserService{
 		UserID:        10,
 		ServiceID:     442,
@@ -1176,7 +1176,7 @@ func TestServeAccountConnect_Premium_NoSecret_NotRawSubscription(t *testing.T) {
 	cfg.PremiumSquadName = "ps-web"
 	cfg.PremiumConnectBaseURL = "https://shop.example/pc"
 	cfg.PremiumLinkSigningSecret = ""
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "me@test.com", 10, "web_aa", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "me@test.com", 10, "web_aa", time.Hour)
 	us := &models.UserService{
 		UserID:     10,
 		ServiceID:  442,
@@ -1198,7 +1198,7 @@ func TestServeAccountConnect_Premium_NoSecret_NotRawSubscription(t *testing.T) {
 
 func TestServeAccountServices_TelegramUsername(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "tg@example.com", 12, "web_tg12", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "tg@example.com", 12, "web_tg12", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1233,7 +1233,7 @@ func TestServeAccountServices_TelegramUsername(t *testing.T) {
 
 func TestServeAccountServices_TelegramChatIDOnly(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "id@example.com", 13, "web_tg13", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "id@example.com", 13, "web_tg13", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1259,7 +1259,7 @@ func TestServeAccountServices_TelegramChatIDOnly(t *testing.T) {
 
 func TestServeAccountServices_TelegramNotLinkedWebOnly(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "web@example.com", 14, "web_only14", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "web@example.com", 14, "web_only14", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1285,7 +1285,7 @@ func TestServeAccountServices_TelegramNotLinkedWebOnly(t *testing.T) {
 
 func TestServeAccountServices_BalanceFailed(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 50, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 50, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1315,7 +1315,7 @@ func TestServeAccountBalanceTopup_InvalidToken(t *testing.T) {
 func TestServeAccountBalanceTopup_InvalidAmount(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.example.com"
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 51, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 51, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1338,7 +1338,7 @@ func TestServeAccountBalanceTopup_InvalidAmount(t *testing.T) {
 func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.fix.test"
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 701, "web_xx", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 701, "web_xx", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1365,7 +1365,7 @@ func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
 func TestServeAccountBalanceTopup_PaymentURLFailed_EmptyAPIBase(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = ""
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "z@z.z", 2, "web_yy", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "z@z.z", 2, "web_yy", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

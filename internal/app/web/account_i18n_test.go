@@ -353,7 +353,7 @@ func TestRenderedAccountSession_EN_CatalogCardNoPeriodMeta(t *testing.T) {
 
 func TestRenderedAccountSession_EN_CatalogAPIStillShowsTitlesAndUSD(t *testing.T) {
 	cfg := orderStartTestCfg()
-	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "u@test.com", 1, "lg", time.Hour)
+	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "u@test.com", 1, "lg", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

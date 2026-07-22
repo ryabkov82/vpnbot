@@ -37,7 +37,7 @@ func TestServeAccountServiceOrder_UsesBrandCategoryNotLegacy(t *testing.T) {
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     "telegram_bot",
 	}
-	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "a@b.c", 42, "web_a", time.Hour)
+	tok, _ := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "vff", "a@b.c", 42, "web_a", time.Hour)
 	st := &stubAccountWeb{
 		svcByID: map[int]*models.Service{
 			3: {ServiceID: 3, AllowToOrder: 1, Cost: 100, Category: "brand-category"},
@@ -88,15 +88,15 @@ func TestSignupToken_UsesEffectiveWebLoginPrefix(t *testing.T) {
 	if want == legacy {
 		t.Fatal("prefix must change login")
 	}
-	tok, err := CreateAccountSignupToken(cfg.WebSales.OrderTokenSecret, em, want, time.Hour)
+	tok, err := CreateAccountSignupToken(cfg.WebSales.OrderTokenSecret, "fc", em, want, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, tok)
+	claims, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, "fc", tok)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.Login != want {
-		t.Fatalf("signup login %q want %q", claims.Login, want)
+	if claims.Login != want || claims.BrandID != "fc" {
+		t.Fatalf("signup claims=%+v want login %q", claims, want)
 	}
 }

@@ -314,7 +314,7 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 		sec := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 		linkQS := strings.TrimSpace(r.URL.Query().Get("link_token"))
 		if linkQS != "" {
-			if _, err := VerifyAccountTelegramLinkToken(sec, linkQS); err != nil {
+			if _, err := VerifyAccountTelegramLinkToken(sec, cfgBrandID(cfg), linkQS); err != nil {
 				writeJSONError(w, http.StatusBadRequest, "invalid_link_token")
 				return
 			}
@@ -402,7 +402,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 		if strings.TrimSpace(linkCookie) != "" {
-			linkClaims, lerr := VerifyAccountTelegramLinkToken(secret, linkCookie)
+			linkClaims, lerr := VerifyAccountTelegramLinkToken(secret, cfgBrandID(cfg), linkCookie)
 			if lerr != nil {
 				errCode := "invalid_confirm_token"
 				if errors.Is(lerr, ErrAccountTokenExpired) {
@@ -458,7 +458,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 				return
 			}
 			linkDoneMs := time.Since(linkStarted).Milliseconds()
-			rawSessionTok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+			rawSessionTok, err := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 			if err != nil {
 				slog.Error("google oauth link", "stage", "create_session_token", "user_id", user.ID, "err", err)
 				http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"token_failed"}}.Encode(), http.StatusFound)
@@ -477,7 +477,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		rawSessionTok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		rawSessionTok, err := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 		if err != nil {
 			slog.Error("google oauth callback", "stage", "create_session_token", "user_id", user.ID, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")

@@ -21,24 +21,27 @@ const (
 
 // AccountTokenClaims — magic-link личного кабинета.
 type AccountTokenClaims struct {
-	Typ    string `json:"typ"`
-	Email  string `json:"email"`
-	UserID int    `json:"user_id"`
-	Login  string `json:"login"`
-	Exp    int64  `json:"exp"`
+	Typ     string `json:"typ"`
+	BrandID string `json:"brand_id"`
+	Email   string `json:"email"`
+	UserID  int    `json:"user_id"`
+	Login   string `json:"login"`
+	Exp     int64  `json:"exp"`
 }
 
 // AccountSignupTokenClaims — одноразовый magic-link до создания shm user (нет user_id).
 type AccountSignupTokenClaims struct {
-	Typ   string `json:"typ"`
-	Email string `json:"email"`
-	Login string `json:"login"`
-	Exp   int64  `json:"exp"`
+	Typ     string `json:"typ"`
+	BrandID string `json:"brand_id"`
+	Email   string `json:"email"`
+	Login   string `json:"login"`
+	Exp     int64  `json:"exp"`
 }
 
 // AccountTelegramLinkClaims — короткий токен из бота до привязки web-email.
 type AccountTelegramLinkClaims struct {
 	Typ            string `json:"typ"`
+	BrandID        string `json:"brand_id"`
 	ShmUserID      int    `json:"shm_user_id"`
 	TelegramChatID int64  `json:"telegram_chat_id"`
 	Exp            int64  `json:"exp"`
@@ -47,6 +50,7 @@ type AccountTelegramLinkClaims struct {
 // AccountLinkEmailClaims — переход из письма после ввода email на странице /account/link.
 type AccountLinkEmailClaims struct {
 	Typ            string `json:"typ"`
+	BrandID        string `json:"brand_id"`
 	ShmUserID      int    `json:"shm_user_id"`
 	TelegramChatID int64  `json:"telegram_chat_id"`
 	Email          string `json:"email"`
@@ -59,7 +63,32 @@ var (
 	ErrAccountTokenExpired     = errors.New("account token expired")
 	ErrAccountTokenType        = errors.New("invalid account token type")
 	ErrAccountTokenEmptySecret = errors.New("account token secret is empty")
+	ErrAccountTokenBrand       = errors.New("invalid account token brand")
 )
+
+func requireAccountTokenBrandID(brandID string) (string, error) {
+	brandID = strings.TrimSpace(brandID)
+	if brandID == "" {
+		return "", ErrAccountTokenBrand
+	}
+	return brandID, nil
+}
+
+func matchAccountTokenBrand(got, expected string) error {
+	expected = strings.TrimSpace(expected)
+	got = strings.TrimSpace(got)
+	if expected == "" || got == "" || got != expected {
+		return ErrAccountTokenBrand
+	}
+	return nil
+}
+
+func cfgBrandID(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.EffectiveBrand().ID)
+}
 
 func verifyAccountMagicTokenPayload(secret, token string) ([]byte, error) {
 	if strings.TrimSpace(secret) == "" {
@@ -92,10 +121,21 @@ func verifyAccountMagicTokenPayload(secret, token string) ([]byte, error) {
 	return payloadJSON, nil
 }
 
+func signAndEncodeAccountPayload(secret string, payloadJSON []byte) (string, error) {
+	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
+	encSig := base64.RawURLEncoding.EncodeToString(sig)
+	return encPayload + "." + encSig, nil
+}
+
 // CreateAccountToken — base64url(JSON).base64url(HMAC-SHA256(JSON, secret)).
-func CreateAccountToken(secret string, email string, userID int, login string, ttl time.Duration) (string, error) {
+func CreateAccountToken(secret, brandID, email string, userID int, login string, ttl time.Duration) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrAccountTokenEmptySecret
+	}
+	brandID, err := requireAccountTokenBrandID(brandID)
+	if err != nil {
+		return "", err
 	}
 	if ttl <= 0 {
 		return "", errors.New("ttl must be positive")
@@ -104,26 +144,28 @@ func CreateAccountToken(secret string, email string, userID int, login string, t
 		return "", errors.New("invalid account token fields")
 	}
 	payload := AccountTokenClaims{
-		Typ:    accountTokenTypAccount,
-		Email:  email,
-		UserID: userID,
-		Login:  login,
-		Exp:    time.Now().Add(ttl).Unix(),
+		Typ:     accountTokenTypAccount,
+		BrandID: brandID,
+		Email:   email,
+		UserID:  userID,
+		Login:   login,
+		Exp:     time.Now().Add(ttl).Unix(),
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
-	encSig := base64.RawURLEncoding.EncodeToString(sig)
-	return encPayload + "." + encSig, nil
+	return signAndEncodeAccountPayload(secret, payloadJSON)
 }
 
 // CreateAccountSignupToken — onboarding magic-link перед созданием web user в SHM.
-func CreateAccountSignupToken(secret, email, login string, ttl time.Duration) (string, error) {
+func CreateAccountSignupToken(secret, brandID, email, login string, ttl time.Duration) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrAccountTokenEmptySecret
+	}
+	brandID, err := requireAccountTokenBrandID(brandID)
+	if err != nil {
+		return "", err
 	}
 	if ttl <= 0 {
 		return "", errors.New("ttl must be positive")
@@ -132,19 +174,17 @@ func CreateAccountSignupToken(secret, email, login string, ttl time.Duration) (s
 		return "", errors.New("invalid signup token fields")
 	}
 	payload := AccountSignupTokenClaims{
-		Typ:   accountTokenTypSignup,
-		Email: strings.TrimSpace(email),
-		Login: strings.TrimSpace(login),
-		Exp:   time.Now().Add(ttl).Unix(),
+		Typ:     accountTokenTypSignup,
+		BrandID: brandID,
+		Email:   strings.TrimSpace(email),
+		Login:   strings.TrimSpace(login),
+		Exp:     time.Now().Add(ttl).Unix(),
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
-	encSig := base64.RawURLEncoding.EncodeToString(sig)
-	return encPayload + "." + encSig, nil
+	return signAndEncodeAccountPayload(secret, payloadJSON)
 }
 
 func accountTelegramLinkTTL(cfg *config.Config) time.Duration {
@@ -162,9 +202,13 @@ func accountLinkEmailMagicTTL(cfg *config.Config) time.Duration {
 }
 
 // CreateAccountTelegramLinkToken — короткая ссылка из Telegram («Личный кабинет»).
-func CreateAccountTelegramLinkToken(secret string, userID int, chatID int64, cfg *config.Config) (string, error) {
+func CreateAccountTelegramLinkToken(secret, brandID string, userID int, chatID int64, cfg *config.Config) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrAccountTokenEmptySecret
+	}
+	brandID, err := requireAccountTokenBrandID(brandID)
+	if err != nil {
+		return "", err
 	}
 	if userID <= 0 || chatID <= 0 {
 		return "", errors.New("invalid telegram link payload")
@@ -172,6 +216,7 @@ func CreateAccountTelegramLinkToken(secret string, userID int, chatID int64, cfg
 	ttl := accountTelegramLinkTTL(cfg)
 	payload := AccountTelegramLinkClaims{
 		Typ:            accountTokenTypTelegramLink,
+		BrandID:        brandID,
 		ShmUserID:      userID,
 		TelegramChatID: chatID,
 		Exp:            time.Now().Add(ttl).Unix(),
@@ -180,14 +225,11 @@ func CreateAccountTelegramLinkToken(secret string, userID int, chatID int64, cfg
 	if err != nil {
 		return "", err
 	}
-	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
-	encSig := base64.RawURLEncoding.EncodeToString(sig)
-	return encPayload + "." + encSig, nil
+	return signAndEncodeAccountPayload(secret, payloadJSON)
 }
 
 // VerifyAccountTelegramLinkToken проверяет токен привязки из бота.
-func VerifyAccountTelegramLinkToken(secret, token string) (*AccountTelegramLinkClaims, error) {
+func VerifyAccountTelegramLinkToken(secret, expectedBrandID, token string) (*AccountTelegramLinkClaims, error) {
 	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
 	if err != nil {
 		return nil, err
@@ -199,6 +241,9 @@ func VerifyAccountTelegramLinkToken(secret, token string) (*AccountTelegramLinkC
 	if claims.Typ != accountTokenTypTelegramLink {
 		return nil, ErrAccountTokenType
 	}
+	if err := matchAccountTokenBrand(claims.BrandID, expectedBrandID); err != nil {
+		return nil, err
+	}
 	if claims.Exp <= time.Now().Unix() {
 		return nil, ErrAccountTokenExpired
 	}
@@ -209,9 +254,13 @@ func VerifyAccountTelegramLinkToken(secret, token string) (*AccountTelegramLinkC
 }
 
 // CreateAccountLinkEmailToken — продолжение flow после запроса письма с /account/link.
-func CreateAccountLinkEmailToken(secret string, shmUserID int, chatID int64, normEmail string, cfg *config.Config) (string, error) {
+func CreateAccountLinkEmailToken(secret, brandID string, shmUserID int, chatID int64, normEmail string, cfg *config.Config) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrAccountTokenEmptySecret
+	}
+	brandID, err := requireAccountTokenBrandID(brandID)
+	if err != nil {
+		return "", err
 	}
 	normEmail = strings.TrimSpace(normEmail)
 	if shmUserID <= 0 || chatID <= 0 || normEmail == "" {
@@ -220,6 +269,7 @@ func CreateAccountLinkEmailToken(secret string, shmUserID int, chatID int64, nor
 	ttl := accountLinkEmailMagicTTL(cfg)
 	payload := AccountLinkEmailClaims{
 		Typ:            accountTokenTypLinkEmail,
+		BrandID:        brandID,
 		ShmUserID:      shmUserID,
 		TelegramChatID: chatID,
 		Email:          normEmail,
@@ -229,14 +279,11 @@ func CreateAccountLinkEmailToken(secret string, shmUserID int, chatID int64, nor
 	if err != nil {
 		return "", err
 	}
-	encPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-	sig := signOrderTokenPayload([]byte(secret), payloadJSON)
-	encSig := base64.RawURLEncoding.EncodeToString(sig)
-	return encPayload + "." + encSig, nil
+	return signAndEncodeAccountPayload(secret, payloadJSON)
 }
 
 // VerifyAccountLinkEmailToken проверяет одноразовую ссылку из письма привязки.
-func VerifyAccountLinkEmailToken(secret, token string) (*AccountLinkEmailClaims, error) {
+func VerifyAccountLinkEmailToken(secret, expectedBrandID, token string) (*AccountLinkEmailClaims, error) {
 	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
 	if err != nil {
 		return nil, err
@@ -248,6 +295,9 @@ func VerifyAccountLinkEmailToken(secret, token string) (*AccountLinkEmailClaims,
 	if claims.Typ != accountTokenTypLinkEmail {
 		return nil, ErrAccountTokenType
 	}
+	if err := matchAccountTokenBrand(claims.BrandID, expectedBrandID); err != nil {
+		return nil, err
+	}
 	if claims.Exp <= time.Now().Unix() {
 		return nil, ErrAccountTokenExpired
 	}
@@ -257,8 +307,8 @@ func VerifyAccountLinkEmailToken(secret, token string) (*AccountLinkEmailClaims,
 	return &claims, nil
 }
 
-// ParseAndVerifyAccountToken проверяет подпись и срок токена кабинета.
-func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, error) {
+// ParseAndVerifyAccountToken проверяет подпись, бренд и срок токена кабинета.
+func ParseAndVerifyAccountToken(secret, expectedBrandID, token string) (*AccountTokenClaims, error) {
 	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
 	if err != nil {
 		return nil, err
@@ -270,6 +320,9 @@ func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, erro
 	if claims.Typ != accountTokenTypAccount {
 		return nil, ErrAccountTokenType
 	}
+	if err := matchAccountTokenBrand(claims.BrandID, expectedBrandID); err != nil {
+		return nil, err
+	}
 	if claims.Exp <= time.Now().Unix() {
 		return nil, ErrAccountTokenExpired
 	}
@@ -280,7 +333,7 @@ func ParseAndVerifyAccountToken(secret, token string) (*AccountTokenClaims, erro
 }
 
 // ParseAndVerifyAccountSignupToken проверяет onboarding-токен (без user_id).
-func ParseAndVerifyAccountSignupToken(secret, token string) (*AccountSignupTokenClaims, error) {
+func ParseAndVerifyAccountSignupToken(secret, expectedBrandID, token string) (*AccountSignupTokenClaims, error) {
 	payloadJSON, err := verifyAccountMagicTokenPayload(secret, token)
 	if err != nil {
 		return nil, err
@@ -291,6 +344,9 @@ func ParseAndVerifyAccountSignupToken(secret, token string) (*AccountSignupToken
 	}
 	if claims.Typ != accountTokenTypSignup {
 		return nil, ErrAccountTokenType
+	}
+	if err := matchAccountTokenBrand(claims.BrandID, expectedBrandID); err != nil {
+		return nil, err
 	}
 	if claims.Exp <= time.Now().Unix() {
 		return nil, ErrAccountTokenExpired

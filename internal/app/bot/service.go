@@ -1110,7 +1110,7 @@ func (s *Service) telegramWebCabinetURL(chatID int64, shmUserID int) string {
 	if base == "" || secret == "" || chatID <= 0 || shmUserID <= 0 {
 		return ""
 	}
-	tok, err := web.CreateAccountTelegramLinkToken(secret, shmUserID, chatID, s.config)
+	tok, err := web.CreateAccountTelegramLinkToken(secret, strings.TrimSpace(s.config.EffectiveBrand().ID), shmUserID, chatID, s.config)
 	if err != nil {
 		log.Printf("CreateAccountTelegramLinkToken: %v", err)
 		return ""

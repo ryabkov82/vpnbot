@@ -109,6 +109,7 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		brandID := cfgBrandID(cfg)
 
 		login, err := webuser.WebLoginFromEmailWithPrefix(normEmail, cfg.WebUserLoginPrefix())
 		if err != nil {
@@ -138,9 +139,9 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 
 		var magicTok string
 		if shmUser != nil {
-			magicTok, err = CreateAccountToken(secret, normEmail, shmUser.ID, shmUser.Login, accountTokenTTL(cfg))
+			magicTok, err = CreateAccountToken(secret, brandID, normEmail, shmUser.ID, shmUser.Login, accountTokenTTL(cfg))
 		} else {
-			magicTok, err = CreateAccountSignupToken(secret, normEmail, login, accountTokenTTL(cfg))
+			magicTok, err = CreateAccountSignupToken(secret, brandID, normEmail, login, accountTokenTTL(cfg))
 		}
 		if err != nil {
 			slog.Error("account login start: magic token", "err", err)
@@ -208,8 +209,9 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 		}
 
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		brandID := cfgBrandID(cfg)
 
-		if _, err := ParseAndVerifyAccountToken(secret, raw); err == nil {
+		if _, err := ParseAndVerifyAccountToken(secret, brandID, raw); err == nil {
 			writeJSON(w, http.StatusOK, accountSessionStartOKJSON{
 				Status:       "ok",
 				AccountToken: raw,
@@ -218,7 +220,7 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		signup, err := ParseAndVerifyAccountSignupToken(secret, raw)
+		signup, err := ParseAndVerifyAccountSignupToken(secret, brandID, raw)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return
@@ -249,7 +251,7 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 		user := u2
 		isNewUser := created
 
-		acTok, err := CreateAccountToken(secret, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		acTok, err := CreateAccountToken(secret, brandID, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 		if err != nil {
 			slog.Error("account session start: CreateAccountToken", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
@@ -386,7 +388,7 @@ func serveAccountPayments(cfg *config.Config, app accountWebApp) http.HandlerFun
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
@@ -441,7 +443,7 @@ func serveAccountServices(cfg *config.Config, app accountWebApp) http.HandlerFun
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return
@@ -562,7 +564,7 @@ func serveAccountServiceConnect(cfg *config.Config, app accountWebApp) http.Hand
 		}
 
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), rawTok)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_token")
 			return
@@ -701,7 +703,7 @@ func serveAccountBalanceTopup(cfg *config.Config, _ accountWebApp) http.HandlerF
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
 		}
-		claims, err := ParseAndVerifyAccountToken(secret, raw)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
@@ -761,7 +763,7 @@ func serveAccountCatalogServices(cfg *config.Config, app accountWebApp) http.Han
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		if _, err := ParseAndVerifyAccountToken(secret, raw); err != nil {
+		if _, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw); err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
 		}
@@ -828,7 +830,7 @@ func serveAccountServiceOrder(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), rawTok)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
@@ -986,7 +988,7 @@ func serveAccountServiceDelete(cfg *config.Config, app accountWebApp) http.Handl
 			return
 		}
 		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		claims, err := ParseAndVerifyAccountToken(secret, rawTok)
+		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), rawTok)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
 			return
