@@ -618,7 +618,7 @@ test_renderer() {
   "telegram": {"token": "SECRET-TOKEN"},
   "api": {"api_pass": "SECRET-PASS"},
   "services": {"category": "vpn-mz-fc", "extra": 1},
-  "web_sales": {"public_base_url": "https://connect-fc.vpn-for-friends.com", "order_token_secret": "SECRET-ORDER", "enabled": true},
+  "web_sales": {"public_base_url": "https://connect.friends-connect.club", "order_token_secret": "SECRET-ORDER", "enabled": true},
   "payments": {"profile": "telegram_friends_connect_bot", "keep": true}
 }
 EOF
@@ -788,7 +788,7 @@ test_renderer_source_eq_output() {
   dir="$(mktemp -d)"
   src="${dir}/same.json"
   cat >"${src}" <<'EOF'
-{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect-fc.vpn-for-friends.com"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   local before rc=0
   before="$(cat "${src}")"
@@ -825,7 +825,7 @@ test_renderer_temp_in_outdir_and_mode() {
   src="${dir}/src.json"
   out="${dir}/out.json"
   cat >"${src}" <<'EOF'
-{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect-fc.vpn-for-friends.com"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   # Intercept mktemp to record template.
   cat >"${dir}/mktemp" <<EOF
@@ -856,7 +856,7 @@ test_no_secrets_stdout() {
 {
   "telegram": {"token": "SECRET-TELEGRAM-TOKEN-VALUE"},
   "services": {"category": "vpn-mz-fc"},
-  "web_sales": {"public_base_url": "https://connect-fc.vpn-for-friends.com"},
+  "web_sales": {"public_base_url": "https://connect.friends-connect.club"},
   "payments": {"profile": "telegram_friends_connect_bot"}
 }
 EOF
@@ -877,7 +877,7 @@ test_renderer_to_configcheck() {
   dir="$(mktemp -d)"
 
   cat >"${dir}/fc-src.json" <<'EOF'
-{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect-fc.vpn-for-friends.com"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   # Legacy source itself is invalid for runtime (no brand.id).
   rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/fc-src.json" 2>&1)" || rc=$?
