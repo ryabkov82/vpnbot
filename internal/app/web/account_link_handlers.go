@@ -211,6 +211,10 @@ func serveAccountLinkConfirm(cfg *config.Config, app accountWebApp) http.Handler
 		switch {
 		case err == nil:
 			break
+		case errors.Is(err, appService.ErrUserIdentityMismatch):
+			slog.Warn("link confirm: identity mismatch", "shm_user_id", claims.ShmUserID)
+			http.Redirect(w, r, "/account/link"+linkErrQuery("link_failed"), http.StatusFound)
+			return
 		case errors.Is(err, appService.ErrWebEmailAlreadyLinked):
 			http.Redirect(w, r, "/account/link"+linkErrQuery("already_linked"), http.StatusFound)
 			return
@@ -330,6 +334,11 @@ func serveAccountLinkLoginStart(cfg *config.Config, app accountWebApp, rl *leadR
 
 		other, err := app.FindUserByWebEmail(normEmail)
 		if err != nil {
+			if errors.Is(err, appService.ErrUserIdentityMismatch) {
+				slog.Warn("link login: identity mismatch", "user_id", linkClaims.ShmUserID)
+				writeJSONError(w, http.StatusConflict, accountErrorEmailAlreadyLinked)
+				return
+			}
 			slog.Error("link login", "stage", "find_user_by_web_login", "user_id", linkClaims.ShmUserID, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return

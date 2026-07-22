@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
@@ -15,7 +14,7 @@ import (
 
 const accountBalanceCryptoTopupMessage = "После оплаты баланс будет пополнен. Если средств достаточно, сервис автоматически активирует неоплаченные услуги или использует баланс для будущего продления. При частичной оплате доступ может не активироваться автоматически. Если платеж не зачислился, обратитесь в поддержку."
 
-func serveAccountBalanceTopupCrypto(cfg *config.Config, _ accountWebApp) http.HandlerFunc {
+func serveAccountBalanceTopupCrypto(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/account/balance/topup/cryptocloud" {
 			http.NotFound(w, r)
@@ -39,15 +38,9 @@ func serveAccountBalanceTopupCrypto(cfg *config.Config, _ accountWebApp) http.Ha
 			return
 		}
 
-		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		raw := strings.TrimSpace(req.Token)
-		if raw == "" {
-			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
-			return
-		}
-		claims, err := ParseAndVerifyAccountToken(secret, cfgBrandID(cfg), raw)
+		claims, _, err := authenticateWebAccount(cfg, app, req.Token)
 		if err != nil {
-			writeJSONError(w, http.StatusUnauthorized, "invalid_token")
+			writeAccountAuthError(w, err)
 			return
 		}
 

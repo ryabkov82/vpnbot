@@ -71,6 +71,29 @@ type stubAccountWeb struct {
 	getUserByIDRets  map[int]*models.User
 	getUserByIDRet   *models.User
 	getUserByIDErr   error
+
+	validateWebAccountCalls int
+	validateWebAccountErr   error
+	validateWebAccountRet   *models.User
+}
+
+func (s *stubAccountWeb) ValidateWebAccountUser(userID int, tokenLogin, tokenEmail string) (*models.User, error) {
+	s.validateWebAccountCalls++
+	if s.validateWebAccountErr != nil {
+		return nil, s.validateWebAccountErr
+	}
+	if s.validateWebAccountRet != nil {
+		return s.validateWebAccountRet, nil
+	}
+	// Default success for handler unit tests focused on business logic.
+	return &models.User{
+		ID:    userID,
+		Login: tokenLogin,
+		Settings: models.UserSettings{
+			BrandID: "vff",
+			Web:     models.WebInfo{Email: tokenEmail},
+		},
+	}, nil
 }
 
 func (s *stubAccountWeb) GetUserByID(userID int) (*models.User, error) {
@@ -321,7 +344,7 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	}
 	wantLogin := webuser.WebLoginFromEmail(wantNorm)
 	u := &models.User{ID: 511, Login: wantLogin}
-	st := &stubAccountWeb{userByLogin: u}
+	st := &stubAccountWeb{findUserByWebEmailRet: u}
 	h := serveAccountLoginStart(cfg, st, rl)
 	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+em+`","website":""}`))
 	req.Host = "localhost:9090"
@@ -393,7 +416,7 @@ func TestServeAccountLoginStart_KnownAndUnknownSameJSONBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	kLogin := webuser.WebLoginFromEmail(kNorm)
-	serveAccountLoginStart(cfg, &stubAccountWeb{userByLogin: &models.User{ID: 77, Login: kLogin}}, rl).ServeHTTP(kRec,
+	serveAccountLoginStart(cfg, &stubAccountWeb{findUserByWebEmailRet: &models.User{ID: 77, Login: kLogin}}, rl).ServeHTTP(kRec,
 		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+knownEmail+`","website":""}`)))
 	if kRec.Code != http.StatusOK {
 		t.Fatalf("known email: %s", kRec.Body.String())
@@ -419,7 +442,7 @@ func TestServeAccountLoginStart_SMTPError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := &stubAccountWeb{userByLogin: &models.User{ID: 1, Login: webuser.WebLoginFromEmail(un)}}
+	st := &stubAccountWeb{findUserByWebEmailRet: &models.User{ID: 1, Login: webuser.WebLoginFromEmail(un)}}
 	h := serveAccountLoginStart(cfg, st, rl)
 	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"u@test.com","website":""}`))
 	rec := httptest.NewRecorder()
@@ -683,7 +706,7 @@ func TestServeAccountServices_InvalidToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/account/services?token=bad.token.here", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
+	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
@@ -1204,9 +1227,12 @@ func TestServeAccountServices_TelegramUsername(t *testing.T) {
 	}
 	st := &stubAccountWeb{
 		balance: &models.UserBalance{Balance: 1, Forecast: 0},
-		getUserByIDRet: &models.User{
-			ID: 12,
+		validateWebAccountRet: &models.User{
+			ID:    12,
+			Login: "web_tg12",
 			Settings: models.UserSettings{
+				BrandID:  "vff",
+				Web:      models.WebInfo{Email: "tg@example.com"},
 				Telegram: models.TelegramInfo{Username: "vpn_friend", ChatID: 555},
 			},
 		},
@@ -1216,8 +1242,8 @@ func TestServeAccountServices_TelegramUsername(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	if st.getUserByIDCalls != 1 || st.getUserByIDArg != 12 {
-		t.Fatalf("GetUserByID calls=%d arg=%d", st.getUserByIDCalls, st.getUserByIDArg)
+	if st.validateWebAccountCalls != 1 {
+		t.Fatalf("ValidateWebAccountUser calls=%d", st.validateWebAccountCalls)
 	}
 	var env accountServicesOKJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
@@ -1239,8 +1265,14 @@ func TestServeAccountServices_TelegramChatIDOnly(t *testing.T) {
 	}
 	st := &stubAccountWeb{
 		balance: &models.UserBalance{},
-		getUserByIDRet: &models.User{
-			Settings: models.UserSettings{Telegram: models.TelegramInfo{ChatID: 919191}},
+		validateWebAccountRet: &models.User{
+			ID:    13,
+			Login: "web_tg13",
+			Settings: models.UserSettings{
+				BrandID:  "vff",
+				Web:      models.WebInfo{Email: "id@example.com"},
+				Telegram: models.TelegramInfo{ChatID: 919191},
+			},
 		},
 	}
 	rec := httptest.NewRecorder()
@@ -1265,8 +1297,13 @@ func TestServeAccountServices_TelegramNotLinkedWebOnly(t *testing.T) {
 	}
 	st := &stubAccountWeb{
 		balance: &models.UserBalance{},
-		getUserByIDRet: &models.User{
-			Settings: models.UserSettings{Web: models.WebInfo{Email: "web@example.com"}},
+		validateWebAccountRet: &models.User{
+			ID:    14,
+			Login: "web_only14",
+			Settings: models.UserSettings{
+				BrandID: "vff",
+				Web:     models.WebInfo{Email: "web@example.com"},
+			},
 		},
 	}
 	rec := httptest.NewRecorder()

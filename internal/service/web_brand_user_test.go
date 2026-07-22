@@ -1,9 +1,14 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
+	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
@@ -165,6 +170,56 @@ func TestSyntheticFCTelegramLinkedWeb_SharedPrefix(t *testing.T) {
 	_, created, err := findOrCreateWebUser(reg, norm, "web_", "vpn-for-friends.com", "fc")
 	if err != nil || created {
 		t.Fatalf("FindOrCreate must reuse, created=%v err=%v", created, err)
+	}
+}
+
+func TestSyntheticFC_LinkWebEmailIdempotent(t *testing.T) {
+	em := "synthetic@example.com"
+	norm, err := webuser.NormalizeEmail(em)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wLogin := webuser.WebLoginFromEmail(norm)
+	const chatID int64 = 100200300
+	tgLogin := telegramSHMLogin("fc", chatID)
+	row := models.User{
+		ID:     9001,
+		Login:  tgLogin,
+		Login2: wLogin,
+		Settings: models.UserSettings{
+			BrandID:  "fc",
+			Telegram: models.TelegramInfo{ChatID: chatID},
+			Web:      models.WebInfo{Email: norm, Source: "telegram_link"},
+		},
+	}
+	rowJSON, _ := json.Marshal(map[string][]models.User{"data": {row}})
+	var posts atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+			return
+		}
+		f := decodeFilter(t, r.URL.Query().Get("filter"))
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case f["user_id"] != nil:
+			_, _ = w.Write(rowJSON)
+		case f["login"] != nil:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case f["login2"] != nil:
+			_, _ = w.Write(rowJSON)
+		default:
+			t.Fatalf("unexpected %#v", f)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, brandCfg("fc"))
+	u, err := svc.LinkWebEmailForTelegramUser(9001, chatID, em, "telegram_link")
+	if err != nil || u == nil || u.ID != 9001 {
+		t.Fatalf("u=%v err=%v", u, err)
+	}
+	if posts.Load() != 0 {
+		t.Fatal("idempotent link must not POST")
 	}
 }
 

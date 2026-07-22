@@ -413,6 +413,11 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			}
 			other, ferr := app.FindUserByWebEmail(normEmail)
 			if ferr != nil {
+				if errors.Is(ferr, appService.ErrUserIdentityMismatch) {
+					slog.Warn("google oauth link: identity mismatch", "user_id", linkClaims.ShmUserID)
+					respondLinkEmailAlreadyLinked(w, r, linkCookie)
+					return
+				}
 				slog.Error("google oauth link", "stage", "find_user_by_web_login", "user_id", linkClaims.ShmUserID, "err", ferr)
 				writeJSONError(w, http.StatusInternalServerError, "web_user_failed")
 				return
@@ -428,6 +433,10 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			switch {
 			case linkErr == nil:
 				break
+			case errors.Is(linkErr, appService.ErrUserIdentityMismatch):
+				slog.Warn("google oauth link: link identity mismatch", "user_id", linkClaims.ShmUserID)
+				http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"link_failed"}}.Encode(), http.StatusFound)
+				return
 			case errors.Is(linkErr, appService.ErrWebEmailAlreadyLinked):
 				http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"already_linked"}}.Encode(), http.StatusFound)
 				return
@@ -472,6 +481,11 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 
 		user, created, ferr := app.FindOrCreateWebUser(normEmail)
 		if ferr != nil || user == nil {
+			if errors.Is(ferr, appService.ErrUserIdentityMismatch) {
+				slog.Warn("google oauth callback: identity mismatch")
+				writeJSONError(w, http.StatusForbidden, "google_auth_failed")
+				return
+			}
 			slog.Error("google oauth callback", "stage", "find_or_create_web_user", "err", ferr)
 			writeJSONError(w, http.StatusInternalServerError, "web_user_failed")
 			return
