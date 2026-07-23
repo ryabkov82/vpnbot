@@ -141,12 +141,13 @@ write_probe_config() {
   local api_base="$1"
   local ps="${2:-yookassa}"
   local public_base="${3:-https://connect.brand.example}"
+  local brand_id="${4:-vff}"
   local path="${MOCK_DIR}/probe-config.json"
   cat >"${path}" <<EOF
 {
   "api": {"base_url": "${api_base}", "api_login": "secret-login", "api_pass": "secret-pass"},
   "brand": {
-    "id": "vff",
+    "id": "${brand_id}",
     "name": "VPN for Friends",
     "public_base_url": "${public_base}",
     "yookassa_pay_system": "${ps}"
@@ -158,6 +159,7 @@ EOF
 
 assert_query() {
   local want_ps="${1:-yookassa_probe}"
+  local want_brand="${2:-vff}"
   python3 - <<PY
 import json
 obs = json.load(open("${MOCK_DIR}/observed.json"))
@@ -166,6 +168,7 @@ assert q.get("action") == "create", obs
 assert q.get("user_id") == "-1", obs
 assert q.get("amount") == "1", obs
 assert q.get("ps") == "${want_ps}", obs
+assert q.get("brand_id") == "${want_brand}", obs
 assert obs.get("path") == "/shm/pay_systems/yookassa.cgi", obs
 print("ok")
 PY
@@ -173,7 +176,7 @@ PY
 
 run_check() {
   SMOKE_YOOKASSA_LABEL="test" SMOKE_YOOKASSA_CGI_MAX_TIME="${1:-5}" \
-    smoke_yookassa_cgi_check "http://127.0.0.1:${MOCK_PORT}" "yookassa_probe"
+    smoke_yookassa_cgi_check "http://127.0.0.1:${MOCK_PORT}" "yookassa_probe" "vff"
 }
 
 test_ok_400_unknown_user() {
@@ -184,7 +187,7 @@ test_ok_400_unknown_user() {
   if ! grep -Fq 'controlled unknown-user rejection' <<<"${out}"; then
     fail ok400 "msg: ${out}"; return
   fi
-  assert_query yookassa_probe >/dev/null || { fail ok400 "query"; return; }
+  assert_query yookassa_probe vff >/dev/null || { fail ok400 "query"; return; }
   pass ok400_unknown_user
 }
 
@@ -233,7 +236,7 @@ test_fail_timeout_or_connection() {
   cleanup
   local out rc=0
   out="$(SMOKE_YOOKASSA_LABEL=test SMOKE_YOOKASSA_CGI_MAX_TIME=2 \
-    smoke_yookassa_cgi_check "http://127.0.0.1:1" "yookassa_probe" 2>&1)" || rc=$?
+    smoke_yookassa_cgi_check "http://127.0.0.1:1" "yookassa_probe" "vff" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail conn "should fail"; return; fi
   if ! grep -Fq 'transport/timeout error' <<<"${out}"; then
     fail conn "msg: ${out}"; return
@@ -251,12 +254,22 @@ test_fail_timeout_or_connection() {
 
 test_fail_empty_pay_system() {
   local out rc=0
-  out="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_check "http://127.0.0.1:9" "" 2>&1)" || rc=$?
+  out="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_check "http://127.0.0.1:9" "" "vff" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail empty_ps "should fail"; return; fi
   if ! grep -Fq 'invalid or empty yookassa_pay_system' <<<"${out}"; then
     fail empty_ps "msg: ${out}"; return
   fi
   pass fail_empty_pay_system
+}
+
+test_fail_empty_brand_id() {
+  local out rc=0
+  out="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_check "http://127.0.0.1:9" "yookassa" "" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail empty_brand "should fail"; return; fi
+  if ! grep -Fq 'invalid or empty brand.id' <<<"${out}"; then
+    fail empty_brand "msg: ${out}"; return
+  fi
+  pass fail_empty_brand_id
 }
 
 test_cgi_uses_api_base_not_public_url() {
@@ -278,30 +291,47 @@ obs = json.load(open("${MOCK_DIR}/observed.json"))
 assert obs["host"].startswith("127.0.0.1:"), obs
 assert "connect.brand.example" not in obs["host"], obs
 assert obs["query"].get("ps") == "yookassa", obs
+assert obs["query"].get("brand_id") == "vff", obs
 print("ok")
 PY
   pass cgi_uses_api_base_not_public_url
 }
 
-test_read_config_extracts_api_and_ps() {
+test_cgi_sends_brand_id_from_config() {
+  start_mock ok400 || return
+  local cfg out rc=0
+  cfg="$(write_probe_config "http://127.0.0.1:${MOCK_PORT}" "yookassa" "https://connect.brand.example" "fc")"
+  out="$(SMOKE_YOOKASSA_LABEL=test SMOKE_YOOKASSA_CGI_MAX_TIME=5 \
+    smoke_yookassa_cgi_check_from_config "${cfg}" 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then fail brand_id "rc=${rc} ${out}"; return; fi
+  assert_query yookassa fc >/dev/null || { fail brand_id "query"; return; }
+  pass cgi_sends_brand_id_from_config
+}
+
+test_read_config_extracts_api_ps_and_brand() {
   MOCK_DIR="$(mktemp -d)"
-  local cfg pair api_base ps
-  cfg="$(write_probe_config "https://shm.example.com" "yookassa" "https://connect.brand.example")"
+  local cfg pair api_base ps brand_id rest
+  cfg="$(write_probe_config "https://shm.example.com" "yookassa" "https://connect.brand.example" "fc")"
   pair="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_read_config "${cfg}")" || {
     fail read_cfg "read failed"; return
   }
   api_base="${pair%%$'\t'*}"
-  ps="${pair#*$'\t'}"
+  rest="${pair#*$'\t'}"
+  ps="${rest%%$'\t'*}"
+  brand_id="${rest#*$'\t'}"
   if [[ "${api_base}" != "https://shm.example.com" ]]; then
     fail read_cfg "api_base=${api_base}"; return
   fi
   if [[ "${ps}" != "yookassa" ]]; then
     fail read_cfg "ps=${ps}"; return
   fi
+  if [[ "${brand_id}" != "fc" ]]; then
+    fail read_cfg "brand_id=${brand_id}"; return
+  fi
   if grep -Eiq 'secret-login|secret-pass' <<<"${pair}"; then
     fail read_cfg "leaked secrets"; return
   fi
-  pass read_config_extracts_api_and_ps
+  pass read_config_extracts_api_ps_and_brand
 }
 
 test_read_config_rejects_equal_public_url() {
@@ -321,7 +351,7 @@ test_read_config_requires_api_base() {
   local cfg out rc=0
   cfg="${MOCK_DIR}/no-api.json"
   cat >"${cfg}" <<'EOF'
-{"brand":{"public_base_url":"https://connect.brand.example","yookassa_pay_system":"yookassa"}}
+{"brand":{"id":"vff","public_base_url":"https://connect.brand.example","yookassa_pay_system":"yookassa"}}
 EOF
   out="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_read_config "${cfg}" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail no_api "should fail"; return; fi
@@ -331,6 +361,21 @@ EOF
   pass read_config_requires_api_base
 }
 
+test_read_config_requires_brand_id() {
+  MOCK_DIR="$(mktemp -d)"
+  local cfg out rc=0
+  cfg="${MOCK_DIR}/no-brand.json"
+  cat >"${cfg}" <<'EOF'
+{"api":{"base_url":"https://shm.example.com"},"brand":{"public_base_url":"https://connect.brand.example","yookassa_pay_system":"yookassa"}}
+EOF
+  out="$(SMOKE_YOOKASSA_LABEL=test smoke_yookassa_cgi_read_config "${cfg}" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then fail no_brand "should fail"; return; fi
+  if ! grep -Fq 'brand.id' <<<"${out}"; then
+    fail no_brand "msg: ${out}"; return
+  fi
+  pass read_config_requires_brand_id
+}
+
 test_ok_400_unknown_user
 test_ok_400_json
 test_fail_502_empty_response
@@ -338,10 +383,13 @@ test_fail_http_200
 test_fail_400_other_message
 test_fail_timeout_or_connection
 test_fail_empty_pay_system
+test_fail_empty_brand_id
 test_cgi_uses_api_base_not_public_url
-test_read_config_extracts_api_and_ps
+test_cgi_sends_brand_id_from_config
+test_read_config_extracts_api_ps_and_brand
 test_read_config_rejects_equal_public_url
 test_read_config_requires_api_base
+test_read_config_requires_brand_id
 
 if [[ "${FAILS}" -ne 0 ]]; then
   echo "smoke_yookassa_cgi_test: ${FAILS} failed" >&2

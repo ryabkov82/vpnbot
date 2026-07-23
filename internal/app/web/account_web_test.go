@@ -1401,8 +1401,8 @@ func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pu.Query().Get("ps") != "yookassa" {
-		t.Fatalf("want shared ps=yookassa, got %s", out.PaymentURL)
+	if pu.Query().Get("ps") != "yookassa" || pu.Query().Get("brand_id") != "vff" {
+		t.Fatalf("want ps=yookassa brand_id=vff, got %s", out.PaymentURL)
 	}
 }
 

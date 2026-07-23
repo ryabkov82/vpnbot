@@ -152,11 +152,13 @@ func serveAdminWebOrderTest(cfg *config.Config, app adminWebOrderApp) http.Handl
 
 		baseURL := ""
 		paySystem := ""
+		brandID := ""
 		if cfg != nil {
 			baseURL = cfg.API.BaseURL
 			paySystem = cfg.YooKassaPaySystem()
+			brandID = cfg.BrandID()
 		}
-		payURL, err := payments.BuildYooKassaPaymentURL(baseURL, user.ID, amount, time.Now().Unix(), paySystem)
+		payURL, err := payments.BuildYooKassaPaymentURL(baseURL, user.ID, amount, time.Now().Unix(), paySystem, brandID)
 		if err != nil {
 			slog.Error("admin web-order test: BuildYooKassaPaymentURL", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "payment_url_failed")

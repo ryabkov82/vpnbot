@@ -693,12 +693,14 @@ func serveAccountBalanceTopup(cfg *config.Config, app accountWebApp) http.Handle
 
 		baseURL := ""
 		paySystem := ""
+		brandID := ""
 		if cfg != nil {
 			baseURL = cfg.API.BaseURL
 			paySystem = cfg.YooKassaPaySystem()
+			brandID = cfg.BrandID()
 		}
 		amountRounded := math.Round(req.Amount*100) / 100
-		paymentURL, err := payments.BuildYooKassaPaymentURL(baseURL, claims.UserID, amountRounded, time.Now().Unix(), paySystem)
+		paymentURL, err := payments.BuildYooKassaPaymentURL(baseURL, claims.UserID, amountRounded, time.Now().Unix(), paySystem, brandID)
 		if err != nil {
 			slog.Error("account balance topup: BuildYooKassaPaymentURL", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "payment_url_failed")

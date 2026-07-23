@@ -8,9 +8,9 @@
 # is not required to proxy /shm/.
 #
 # Usage (after sourcing):
-#   smoke_yookassa_cgi_check <shm-api-base-url> <yookassa_pay_system>
+#   smoke_yookassa_cgi_check <shm-api-base-url> <yookassa_pay_system> <brand_id>
 #   smoke_yookassa_cgi_check_from_config <config.json>
-#   smoke_yookassa_cgi_read_config <config.json>  # prints: <api_base>\t<pay_system>
+#   smoke_yookassa_cgi_read_config <config.json>  # prints: <api_base>\t<pay_system>\t<brand_id>
 #
 # Success: HTTP 400 and body contains "unknown user" (text or JSON).
 # Failure: 2xx, 5xx, empty body, transport/timeout, or unexpected 400 payload.
@@ -41,8 +41,15 @@ smoke_yookassa_cgi_body_ok() {
   [[ "${lc}" == *"unknown user"* ]]
 }
 
+smoke_yookassa_cgi_brand_id_ok() {
+  local id="${1:-}"
+  [[ -n "${id}" ]] || return 1
+  [[ "${id}" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || return 1
+  return 0
+}
+
 # smoke_yookassa_cgi_read_config <config.json>
-# Prints: <api.base_url>\t<brand.yookassa_pay_system>
+# Prints: <api.base_url>\t<brand.yookassa_pay_system>\t<brand.id>
 # Does not print secrets. Fail-closed on missing/invalid fields.
 smoke_yookassa_cgi_read_config() {
   local cfg="${1:-}"
@@ -56,16 +63,18 @@ smoke_yookassa_cgi_read_config() {
     return 1
   fi
 
-  local api_base ps public_base
+  local api_base ps public_base brand_id
   api_base="$(jq -r '.api.base_url // empty' "${cfg}" 2>/dev/null || true)"
   ps="$(jq -r '.brand.yookassa_pay_system // empty' "${cfg}" 2>/dev/null || true)"
   public_base="$(jq -r '.brand.public_base_url // empty' "${cfg}" 2>/dev/null || true)"
+  brand_id="$(jq -r '.brand.id // empty' "${cfg}" 2>/dev/null || true)"
 
   api_base="$(printf '%s' "${api_base}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   api_base="${api_base%/}"
   ps="$(printf '%s' "${ps}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   public_base="$(printf '%s' "${public_base}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   public_base="${public_base%/}"
+  brand_id="$(printf '%s' "${brand_id}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
   if ! smoke_yookassa_cgi_api_base_ok "${api_base}"; then
     echo "smoke-${label}: config api.base_url is missing or invalid" >&2
@@ -75,25 +84,31 @@ smoke_yookassa_cgi_read_config() {
     echo "smoke-${label}: config brand.yookassa_pay_system is missing or invalid" >&2
     return 1
   fi
+  if ! smoke_yookassa_cgi_brand_id_ok "${brand_id}"; then
+    echo "smoke-${label}: config brand.id is missing or invalid" >&2
+    return 1
+  fi
   # Guard against accidental use of brand public URL as SHM base.
   if [[ -n "${public_base}" && "${api_base}" == "${public_base}" ]]; then
     echo "smoke-${label}: api.base_url must not equal brand.public_base_url (SHM is not brand web)" >&2
     return 1
   fi
 
-  printf '%s\t%s\n' "${api_base}" "${ps}"
+  printf '%s\t%s\t%s\n' "${api_base}" "${ps}" "${brand_id}"
 }
 
 # smoke_yookassa_cgi_check_from_config <config.json>
 smoke_yookassa_cgi_check_from_config() {
   local cfg="${1:-}"
   local label="${SMOKE_YOOKASSA_LABEL:-yookassa-cgi}"
-  local pair api_base ps
+  local pair api_base ps brand_id rest
   pair="$(smoke_yookassa_cgi_read_config "${cfg}")" || return 1
   api_base="${pair%%$'\t'*}"
-  ps="${pair#*$'\t'}"
+  rest="${pair#*$'\t'}"
+  ps="${rest%%$'\t'*}"
+  brand_id="${rest#*$'\t'}"
   echo "smoke-${label}: using api.base_url from config (not brand.public_base_url)"
-  smoke_yookassa_cgi_check "${api_base}" "${ps}"
+  smoke_yookassa_cgi_check "${api_base}" "${ps}" "${brand_id}"
 }
 
 # Fetch runtime explicit config from the brand host (no secrets printed).
@@ -160,15 +175,17 @@ smoke_yookassa_cgi_resolve_and_check() {
   return "${rc}"
 }
 
-# smoke_yookassa_cgi_check <shm_api_base_url> <pay_system>
+# smoke_yookassa_cgi_check <shm_api_base_url> <pay_system> <brand_id>
 smoke_yookassa_cgi_check() {
   local base="${1:-}"
   local ps="${2:-}"
+  local brand_id="${3:-}"
   local label="${SMOKE_YOOKASSA_LABEL:-yookassa-cgi}"
 
   base="${base%/}"
   base="$(printf '%s' "${base}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   ps="$(printf '%s' "${ps}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  brand_id="$(printf '%s' "${brand_id}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
   if ! smoke_yookassa_cgi_api_base_ok "${base}"; then
     echo "smoke-${label}: SHM/API base URL (api.base_url) is missing or invalid" >&2
@@ -176,6 +193,10 @@ smoke_yookassa_cgi_check() {
   fi
   if ! smoke_yookassa_cgi_pay_system_ok "${ps}"; then
     echo "smoke-${label}: invalid or empty yookassa_pay_system" >&2
+    return 1
+  fi
+  if ! smoke_yookassa_cgi_brand_id_ok "${brand_id}"; then
+    echo "smoke-${label}: invalid or empty brand.id" >&2
     return 1
   fi
 
@@ -193,6 +214,7 @@ smoke_yookassa_cgi_check() {
       --data-urlencode "user_id=-1" \
       --data-urlencode "amount=1" \
       --data-urlencode "ps=${ps}" \
+      --data-urlencode "brand_id=${brand_id}" \
       "${base}${SMOKE_YOOKASSA_CGI_PATH}"
   )"
   curl_rc=$?
@@ -206,8 +228,7 @@ smoke_yookassa_cgi_check() {
     return 1
   fi
 
-  echo "smoke-${label}: ${base}${SMOKE_YOOKASSA_CGI_PATH} (ps from brand.yookassa_pay_system) -> ${code}"
-
+  echo "smoke-${label}: ${base}${SMOKE_YOOKASSA_CGI_PATH} (ps/brand_id from brand config) -> ${code}"
   case "${code}" in
     '' | 000)
       echo "smoke-${label}: empty/zero HTTP status" >&2

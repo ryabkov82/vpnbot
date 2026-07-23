@@ -28,6 +28,17 @@ var brandIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 // shmPaySystemKeyPattern — безопасное имя ключа SHM pay_systems / query ps.
 var shmPaySystemKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
+// IsValidBrandID — безопасный формат brand.id (после TrimSpace).
+func IsValidBrandID(id string) bool {
+	id = strings.TrimSpace(id)
+	return id != "" && brandIDPattern.MatchString(id)
+}
+
+// BrandID — id активного бренда (nil-safe, только explicit brand).
+func (c *Config) BrandID() string {
+	return strings.TrimSpace(c.EffectiveBrand().ID)
+}
+
 // EffectiveBrand возвращает активный бренд процесса.
 // Nil-safe: (*Config)(nil) и частично заполненные тестовые конфиги не паникуют.
 //

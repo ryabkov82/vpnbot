@@ -52,6 +52,7 @@ func testAdminWebOrderCfg(token string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Admin.Token = token
 	cfg.API.BaseURL = "https://pay.example"
+	cfg.Brand.ID = "vff"
 	cfg.Brand.WebUserLoginPrefix = "web_"
 	cfg.Brand.WebUserSource = "vpn-for-friends.com"
 	cfg.Brand.YooKassaPaySystem = "yookassa"
@@ -179,8 +180,8 @@ func TestServeAdminWebOrderTest_SuccessPaymentURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pu.Query().Get("ps") != "yookassa" {
-		t.Fatalf("want shared ps=yookassa, got %q", out.PaymentURL)
+	if pu.Query().Get("ps") != "yookassa" || pu.Query().Get("brand_id") != "vff" {
+		t.Fatalf("want ps=yookassa brand_id=vff, got %q", out.PaymentURL)
 	}
 }
 

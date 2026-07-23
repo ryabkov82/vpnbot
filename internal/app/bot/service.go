@@ -226,12 +226,14 @@ func (s *Service) handleBalance(c telebot.Context) error {
 	apiBase := ""
 	paymentProfile := ""
 	yookassaPS := ""
+	brandID := ""
 	if s.config != nil {
 		apiBase = s.config.API.BaseURL
 		paymentProfile = s.config.PaymentProfile()
 		yookassaPS = s.config.YooKassaPaySystem()
+		brandID = s.config.BrandID()
 	}
-	payURL, err := telegramPaymentsWebAppURL(apiBase, userBalance.ID, paymentProfile, yookassaPS)
+	payURL, err := telegramPaymentsWebAppURL(apiBase, userBalance.ID, paymentProfile, yookassaPS, brandID)
 	if err != nil {
 		log.Printf("handleBalance: telegram payments webapp url: %v", err)
 		return c.Send("Ошибка системы, попробуйте позже")
@@ -260,9 +262,10 @@ func (s *Service) handleBalance(c telebot.Context) error {
 }
 
 // telegramPaymentsWebAppURL собирает URL SHM Telegram payments WebApp.
-// profile — brand.payment_profile (Telegram WebApp auth); yookassaPS — brand.yookassa_pay_system (SHM pay_systems overlay).
-// Оба значения обязательны; пустые — fail-closed. Не смешивать назначения параметров.
-func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile, yookassaPS string) (string, error) {
+// profile — brand.payment_profile (Telegram WebApp auth); yookassaPS — brand.yookassa_pay_system (SHM overlay);
+// brandID — brand.id (для будущей маршрутизации return_url в CGI; template пока может игнорировать).
+// Все brand-значения обязательны; пустые — fail-closed. Не смешивать назначения параметров.
+func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile, yookassaPS, brandID string) (string, error) {
 	profile := strings.TrimSpace(paymentProfile)
 	if profile == "" {
 		return "", errors.New("brand payment profile is empty")
@@ -270,6 +273,13 @@ func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile, yo
 	ps := strings.TrimSpace(yookassaPS)
 	if ps == "" {
 		return "", errors.New("brand yookassa pay system is empty")
+	}
+	brandID = strings.TrimSpace(brandID)
+	if !config.IsValidBrandID(brandID) {
+		if brandID == "" {
+			return "", errors.New("brand id is empty")
+		}
+		return "", errors.New("brand id is invalid")
 	}
 	if userID <= 0 {
 		return "", errors.New("user id must be positive")
@@ -287,6 +297,7 @@ func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile, yo
 	q.Set("user_id", strconv.Itoa(userID))
 	q.Set("profile", profile)
 	q.Set("yookassa_ps", ps)
+	q.Set("brand_id", brandID)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
