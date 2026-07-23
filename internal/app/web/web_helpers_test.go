@@ -15,7 +15,7 @@ func orderStartTestCfg() *config.Config {
 	cfg.Brand.PublicBaseURL = "https://shop.example"
 	cfg.Brand.WebUserLoginPrefix = "web_"
 	cfg.Brand.WebUserSource = "vpn-for-friends.com"
-	cfg.Brand.YooKassaPaySystem = "yookassa_vff"
+	cfg.Brand.YooKassaPaySystem = "yookassa"
 	cfg.Email.Enabled = true
 	cfg.Email.SMTPHost = "smtp.test"
 	cfg.Email.SMTPPort = 587

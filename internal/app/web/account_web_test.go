@@ -1397,8 +1397,12 @@ func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
 	if !strings.Contains(out.PaymentURL, "yookassa.cgi") || !strings.Contains(out.PaymentURL, "701") || !strings.Contains(out.PaymentURL, "amount=150") {
 		t.Fatal(out.PaymentURL)
 	}
-	if !strings.Contains(out.PaymentURL, "ps=yookassa_vff") || strings.Contains(out.PaymentURL, "ps=yookassa_fc") {
-		t.Fatalf("want VFF yookassa ps, got %s", out.PaymentURL)
+	pu, err := url.Parse(out.PaymentURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pu.Query().Get("ps") != "yookassa" {
+		t.Fatalf("want shared ps=yookassa, got %s", out.PaymentURL)
 	}
 }
 

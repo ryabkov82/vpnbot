@@ -20,7 +20,7 @@
     "landing_url": "https://friends-connect.club",
     "service_category": "vpn-mz-fc",
     "payment_profile": "telegram_friends_connect_bot",
-    "yookassa_pay_system": "yookassa_fc",
+    "yookassa_pay_system": "yookassa",
     "web_login_prefix": "web_fc_",
     "web_user_source": "vpn-for-friends.com"
   }

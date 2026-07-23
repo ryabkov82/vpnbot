@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -53,7 +54,7 @@ func testAdminWebOrderCfg(token string) *config.Config {
 	cfg.API.BaseURL = "https://pay.example"
 	cfg.Brand.WebUserLoginPrefix = "web_"
 	cfg.Brand.WebUserSource = "vpn-for-friends.com"
-	cfg.Brand.YooKassaPaySystem = "yookassa_vff"
+	cfg.Brand.YooKassaPaySystem = "yookassa"
 	return cfg
 }
 
@@ -174,8 +175,12 @@ func TestServeAdminWebOrderTest_SuccessPaymentURL(t *testing.T) {
 	if !strings.Contains(out.PaymentURL, "yookassa.cgi") || !strings.Contains(out.PaymentURL, "user_id=123") {
 		t.Fatalf("payment_url: %q", out.PaymentURL)
 	}
-	if !strings.Contains(out.PaymentURL, "ps=yookassa_vff") {
-		t.Fatalf("want ps=yookassa_vff, got %q", out.PaymentURL)
+	pu, err := url.Parse(out.PaymentURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pu.Query().Get("ps") != "yookassa" {
+		t.Fatalf("want shared ps=yookassa, got %q", out.PaymentURL)
 	}
 }
 

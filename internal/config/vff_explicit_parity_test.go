@@ -26,7 +26,7 @@ func TestExplicitVFFBrandGetters(t *testing.T) {
 		WebUserLoginPrefix: "web_",
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     "telegram_bot",
-		YooKassaPaySystem:  "yookassa_vff",
+		YooKassaPaySystem:  "yookassa",
 	}
 	if err := explicit.Normalize(); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestExplicitVFFBrandGetters(t *testing.T) {
 	if explicit.PaymentProfile() != "telegram_bot" {
 		t.Fatalf("PaymentProfile=%q", explicit.PaymentProfile())
 	}
-	if explicit.YooKassaPaySystem() != "yookassa_vff" {
+	if explicit.YooKassaPaySystem() != "yookassa" {
 		t.Fatalf("YooKassaPaySystem=%q", explicit.YooKassaPaySystem())
 	}
 	if explicit.WebUserLoginPrefix() != "web_" {
@@ -105,7 +105,7 @@ func TestFormatSafeBrandSummary_NoSecrets(t *testing.T) {
 		"brand.web_user_login_prefix=web_",
 		"brand.web_user_source=vpn-for-friends.com",
 		"brand.payment_profile=telegram_bot",
-		"brand.yookassa_pay_system=yookassa_vff",
+		"brand.yookassa_pay_system=yookassa",
 	} {
 		if !strings.Contains(out, need) {
 			t.Fatalf("missing %q in %s", need, out)
@@ -137,7 +137,7 @@ func TestConfigcheckBinary_NoSecretsInStdout(t *testing.T) {
 			"web_user_login_prefix": "web_",
 			"web_user_source": "vpn-for-friends.com",
 			"payment_profile": "telegram_bot",
-			"yookassa_pay_system": "yookassa_vff"
+			"yookassa_pay_system": "yookassa"
 		}
 	}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

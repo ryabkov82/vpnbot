@@ -132,7 +132,7 @@ test_global_uniqueness() {
   local field
   for field in '.id' '.runtime.service' '.runtime.directory' '.runtime.binary' \
     '.runtime.explicit_config' '.runtime.dropin' '.brand.public_base_url' \
-    '.brand.service_category' '.brand.payment_profile' '.brand.yookassa_pay_system'; do
+    '.brand.service_category' '.brand.payment_profile'; do
     local total uniq
     total="$(jq -r "${field}" "${PROFILES_DIR}"/*.json | wc -l)"
     uniq="$(jq -r "${field}" "${PROFILES_DIR}"/*.json | sort -u | wc -l)"

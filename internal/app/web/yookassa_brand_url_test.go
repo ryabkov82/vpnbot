@@ -4,16 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestServeAccountBalanceTopup_FCYooKassaPaySystem(t *testing.T) {
+func TestServeAccountBalanceTopup_FCSharedYooKassaPaySystem(t *testing.T) {
 	cfg := orderStartTestCfg()
 	cfg.API.BaseURL = "https://api.fc.test"
 	cfg.Brand.ID = "fc"
-	cfg.Brand.YooKassaPaySystem = "yookassa_fc"
+	cfg.Brand.YooKassaPaySystem = "yookassa"
 	tok, err := CreateAccountToken(cfg.WebSales.OrderTokenSecret, "fc", "a@b.c", 55, "web_fc_x", time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -29,11 +30,12 @@ func TestServeAccountBalanceTopup_FCYooKassaPaySystem(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.PaymentURL, "ps=yookassa_fc") {
-		t.Fatalf("want ps=yookassa_fc, got %s", out.PaymentURL)
+	u, err := url.Parse(out.PaymentURL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(out.PaymentURL, "ps=yookassa_vff") || strings.Contains(out.PaymentURL, "ps=yookassa&") || strings.HasSuffix(out.PaymentURL, "ps=yookassa") {
-		t.Fatalf("must not use VFF/default ps: %s", out.PaymentURL)
+	if got := u.Query().Get("ps"); got != "yookassa" {
+		t.Fatalf("want ps=yookassa, got %q url=%s", got, out.PaymentURL)
 	}
 }
 
