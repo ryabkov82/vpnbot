@@ -639,7 +639,7 @@ assert c["web_sales"]["enabled"] is True
 assert c["web_sales"]["order_token_secret"]=="SECRET-ORDER"
 assert "profile" not in c.get("payments", {})
 assert c["payments"]["keep"] is True
-assert c["brand"]["web_user_login_prefix"]=="web_"
+assert c["brand"]["web_user_login_prefix"]=="web_fc_"
 assert c["brand"]["web_user_source"]=="vpn-for-friends.com"
 print("ok")
 PY
