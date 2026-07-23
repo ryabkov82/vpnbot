@@ -11,6 +11,7 @@ LOCAL_CONFIGCHECK := ./dist/configcheck-linux-amd64
 	brand-profile brand-deploy brand-rollout brand-rollout-recover brand-config-render brand-config-deploy \
 	brand-config-activate brand-config-rollback brand-smoke brand-status \
 	brand-logs brand-rollback \
+	shm-yookassa-check shm-yookassa-diff shm-yookassa-deploy shm-yookassa-rollback \
 	deploy status logs rollback smoke \
 	vff-config-render deploy-vff-config activate-vff-config rollback-vff-config smoke-vff \
 	rollout-vff \
@@ -93,6 +94,21 @@ brand-logs:
 brand-rollback:
 	@if [ -z "$(BRAND)" ]; then echo "BRAND is required (e.g. make brand-rollback BRAND=fc)" >&2; exit 1; fi
 	bash scripts/rollback-brand-binary.sh "$(BRAND)"
+
+# --- SHM YooKassa CGI brand routing (host-mounted overlay on SHM host) ---
+
+shm-yookassa-check:
+	bash scripts/deploy-shm-yookassa.sh check
+
+shm-yookassa-diff:
+	bash scripts/deploy-shm-yookassa.sh diff
+
+shm-yookassa-deploy:
+	bash scripts/deploy-shm-yookassa.sh deploy
+
+shm-yookassa-rollback:
+	@if [ -z "$(BACKUP)" ]; then echo "BACKUP is required (e.g. make shm-yookassa-rollback BACKUP=/opt/shm/pay_systems/yookassa.cgi.bak.<UTC>)" >&2; exit 1; fi
+	BACKUP="$(BACKUP)" bash scripts/deploy-shm-yookassa.sh rollback
 
 # --- Backward-compatible aliases (delegate only; no profile values here) ---
 
