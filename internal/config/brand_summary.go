@@ -19,6 +19,7 @@ func FormatSafeBrandSummary(cfg *Config) string {
 	sb.WriteString(fmt.Sprintf("brand.web_user_login_prefix=%s\n", b.WebUserLoginPrefix))
 	sb.WriteString(fmt.Sprintf("brand.web_user_source=%s\n", b.WebUserSource))
 	sb.WriteString(fmt.Sprintf("brand.payment_profile=%s\n", b.PaymentProfile))
+	sb.WriteString(fmt.Sprintf("brand.yookassa_pay_system=%s\n", b.YooKassaPaySystem))
 	return sb.String()
 }
 

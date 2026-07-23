@@ -66,6 +66,9 @@ func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 
 	mux.HandleFunc("/account", serveAccount(cfg))
 	mux.HandleFunc("/account/", serveAccount(cfg))
+	payReturnH := servePaymentReturn(cfg)
+	mux.HandleFunc("/payment/return", payReturnH)
+	mux.HandleFunc("/payment/return/", payReturnH)
 	linkH := serveAccountLink(cfg, app)
 	mux.HandleFunc("/account/link", linkH)
 	mux.HandleFunc("/account/link/", linkH)

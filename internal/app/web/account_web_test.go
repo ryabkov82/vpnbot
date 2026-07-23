@@ -1397,6 +1397,9 @@ func TestServeAccountBalanceTopup_SuccessPaymentURL(t *testing.T) {
 	if !strings.Contains(out.PaymentURL, "yookassa.cgi") || !strings.Contains(out.PaymentURL, "701") || !strings.Contains(out.PaymentURL, "amount=150") {
 		t.Fatal(out.PaymentURL)
 	}
+	if !strings.Contains(out.PaymentURL, "ps=yookassa_vff") || strings.Contains(out.PaymentURL, "ps=yookassa_fc") {
+		t.Fatalf("want VFF yookassa ps, got %s", out.PaymentURL)
+	}
 }
 
 func TestServeAccountBalanceTopup_PaymentURLFailed_EmptyAPIBase(t *testing.T) {

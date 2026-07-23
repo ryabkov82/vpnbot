@@ -181,6 +181,7 @@ func TestNormalize_MissingEachRequiredField(t *testing.T) {
 		"web_user_login_prefix": func(c *Config) { c.Brand.WebUserLoginPrefix = "" },
 		"web_user_source":       func(c *Config) { c.Brand.WebUserSource = "" },
 		"payment_profile":       func(c *Config) { c.Brand.PaymentProfile = "" },
+		"yookassa_pay_system":   func(c *Config) { c.Brand.YooKassaPaySystem = "" },
 	}
 	for field, mutate := range cases {
 		t.Run(field, func(t *testing.T) {
@@ -336,26 +337,26 @@ func TestLoadFromFile_ExplicitVFFAndFC(t *testing.T) {
 	dir := t.TempDir()
 
 	vffPath := filepath.Join(dir, "vff.json")
-	if err := os.WriteFile(vffPath, []byte(explicitBrandJSON("vff", "VPN for Friends", "connect.vpn-for-friends.com", "https://connect.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-main", "telegram_bot")), 0o600); err != nil {
+	if err := os.WriteFile(vffPath, []byte(explicitBrandJSON("vff", "VPN for Friends", "connect.vpn-for-friends.com", "https://connect.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-main", "telegram_bot", "yookassa_vff")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	vff, err := LoadFromFile(vffPath)
 	if err != nil {
 		t.Fatalf("explicit VFF must load: %v", err)
 	}
-	if vff.Brand.ID != "vff" || vff.ServiceCategory() != "vpn-mz-main" {
+	if vff.Brand.ID != "vff" || vff.ServiceCategory() != "vpn-mz-main" || vff.YooKassaPaySystem() != "yookassa_vff" {
 		t.Fatalf("vff: %#v", vff.Brand)
 	}
 
 	fcPath := filepath.Join(dir, "fc.json")
-	if err := os.WriteFile(fcPath, []byte(explicitBrandJSON("fc", "Friends Connect", "connect-fc.vpn-for-friends.com", "https://connect-fc.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-fc", "telegram_friends_connect_bot")), 0o600); err != nil {
+	if err := os.WriteFile(fcPath, []byte(explicitBrandJSON("fc", "Friends Connect", "connect-fc.vpn-for-friends.com", "https://connect-fc.vpn-for-friends.com", "https://vpn-for-friends.com", "vpn-mz-fc", "telegram_friends_connect_bot", "yookassa_fc")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fc, err := LoadFromFile(fcPath)
 	if err != nil {
 		t.Fatalf("explicit FC must load: %v", err)
 	}
-	if fc.Brand.ID != "fc" || fc.ServiceCategory() != "vpn-mz-fc" {
+	if fc.Brand.ID != "fc" || fc.ServiceCategory() != "vpn-mz-fc" || fc.YooKassaPaySystem() != "yookassa_fc" {
 		t.Fatalf("fc: %#v", fc.Brand)
 	}
 
@@ -383,7 +384,7 @@ func TestLoadFromFile_WithoutEnvKeepsSearchOrder(t *testing.T) {
 	}
 }
 
-func explicitBrandJSON(id, name, host, publicBaseURL, landingURL, category, profile string) string {
+func explicitBrandJSON(id, name, host, publicBaseURL, landingURL, category, profile, yookassaPS string) string {
 	brand := BrandConfig{
 		ID:                 id,
 		Name:               name,
@@ -394,6 +395,7 @@ func explicitBrandJSON(id, name, host, publicBaseURL, landingURL, category, prof
 		WebUserLoginPrefix: "web_",
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     profile,
+		YooKassaPaySystem:  yookassaPS,
 	}
 	b, _ := json.Marshal(brand)
 	return `{"telegram":{"token":"test-token"},"brand":` + string(b) + `}`
@@ -412,6 +414,7 @@ func validExplicitBrandCfg() *Config {
 		WebUserLoginPrefix: "web_",
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     "telegram_bot",
+		YooKassaPaySystem:  "yookassa_vff",
 	}
 	return cfg
 }
@@ -429,6 +432,50 @@ func validExplicitFCBrandCfg() *Config {
 		WebUserLoginPrefix: "web_",
 		WebUserSource:      "vpn-for-friends.com",
 		PaymentProfile:     "telegram_friends_connect_bot",
+		YooKassaPaySystem:  "yookassa_fc",
 	}
 	return cfg
+}
+
+func TestNormalize_YooKassaPaySystemVFFAndFC(t *testing.T) {
+	vff := validExplicitBrandCfg()
+	if err := vff.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if vff.YooKassaPaySystem() != "yookassa_vff" {
+		t.Fatalf("vff=%q", vff.YooKassaPaySystem())
+	}
+	fc := validExplicitFCBrandCfg()
+	if err := fc.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if fc.YooKassaPaySystem() != "yookassa_fc" {
+		t.Fatalf("fc=%q", fc.YooKassaPaySystem())
+	}
+}
+
+func TestNormalize_YooKassaPaySystemEmptyFail(t *testing.T) {
+	cfg := validExplicitBrandCfg()
+	cfg.Brand.YooKassaPaySystem = ""
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "yookassa_pay_system") {
+		t.Fatalf("want yookassa_pay_system error, got %v", err)
+	}
+}
+
+func TestNormalize_YooKassaPaySystemWhitespaceFail(t *testing.T) {
+	cfg := validExplicitBrandCfg()
+	cfg.Brand.YooKassaPaySystem = "   \t  "
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "yookassa_pay_system") {
+		t.Fatalf("want yookassa_pay_system error, got %v", err)
+	}
+}
+
+func TestNormalize_YooKassaPaySystemInvalidCharsFail(t *testing.T) {
+	for _, bad := range []string{"YooKassa", "yookassa/vff", "yookassa vff", "yookassa.vff", "-yookassa", "yookassa+fc"} {
+		cfg := validExplicitBrandCfg()
+		cfg.Brand.YooKassaPaySystem = bad
+		if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "yookassa_pay_system") {
+			t.Fatalf("%q: want invalid error, got %v", bad, err)
+		}
+	}
 }

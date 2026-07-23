@@ -225,11 +225,13 @@ func (s *Service) handleBalance(c telebot.Context) error {
 
 	apiBase := ""
 	paymentProfile := ""
+	yookassaPS := ""
 	if s.config != nil {
 		apiBase = s.config.API.BaseURL
 		paymentProfile = s.config.PaymentProfile()
+		yookassaPS = s.config.YooKassaPaySystem()
 	}
-	payURL, err := telegramPaymentsWebAppURL(apiBase, userBalance.ID, paymentProfile)
+	payURL, err := telegramPaymentsWebAppURL(apiBase, userBalance.ID, paymentProfile, yookassaPS)
 	if err != nil {
 		log.Printf("handleBalance: telegram payments webapp url: %v", err)
 		return c.Send("Ошибка системы, попробуйте позже")
@@ -258,11 +260,16 @@ func (s *Service) handleBalance(c telebot.Context) error {
 }
 
 // telegramPaymentsWebAppURL собирает URL SHM Telegram payments WebApp.
-// profile берётся только из brand.payment_profile активного бренда; пустой — fail-closed.
-func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile string) (string, error) {
+// profile — brand.payment_profile (Telegram WebApp auth); yookassaPS — brand.yookassa_pay_system (SHM pay_systems overlay).
+// Оба значения обязательны; пустые — fail-closed. Не смешивать назначения параметров.
+func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile, yookassaPS string) (string, error) {
 	profile := strings.TrimSpace(paymentProfile)
 	if profile == "" {
 		return "", errors.New("brand payment profile is empty")
+	}
+	ps := strings.TrimSpace(yookassaPS)
+	if ps == "" {
+		return "", errors.New("brand yookassa pay system is empty")
 	}
 	if userID <= 0 {
 		return "", errors.New("user id must be positive")
@@ -279,6 +286,7 @@ func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile str
 	q.Set("format", "html")
 	q.Set("user_id", strconv.Itoa(userID))
 	q.Set("profile", profile)
+	q.Set("yookassa_ps", ps)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

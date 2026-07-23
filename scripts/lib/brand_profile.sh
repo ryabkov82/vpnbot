@@ -61,6 +61,8 @@ if type != "object" then error("profile: must be a JSON object") else . end
 | s($p.brand.landing_url; "brand.landing_url")
 | s($p.brand.service_category; "brand.service_category")
 | s($p.brand.payment_profile; "brand.payment_profile")
+| (s($p.brand.yookassa_pay_system; "brand.yookassa_pay_system")
+   | if (test("^[a-z0-9][a-z0-9_-]*$")|not) then error("brand.yookassa_pay_system: must match ^[a-z0-9][a-z0-9_-]*$") else . end)
 | s($p.brand.web_login_prefix; "brand.web_login_prefix")
 | s($p.brand.web_user_source; "brand.web_user_source")
 | ([$p | paths | .[] | select(type=="string")]
@@ -178,7 +180,7 @@ brand_profile_validate_loaded() {
   for v in SERVER_USER SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_BINARY \
     REMOTE_LEGACY_CONFIG REMOTE_EXPLICIT_CONFIG DROPIN_FILE EXPECTED_BRAND_ID \
     BRAND_LABEL SMOKE_BASE_URL EXPECT_PUBLIC_BASE_URL EXPECT_SERVICE_CATEGORY \
-    EXPECT_PAYMENT_PROFILE BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
+    EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
     WEB_USER_SOURCE REMOTE_CONFIG_VFF REMOTE_CONFIG_LEGACY; do
     if [[ -z "${!v:-}" ]]; then
       missing+=("${v}")
@@ -235,13 +237,13 @@ brand_profile_load() {
     .runtime.service, .runtime.directory, .runtime.binary,
     .runtime.legacy_config, .runtime.explicit_config, .runtime.dropin,
     .brand.allowed_host, .brand.public_base_url, .brand.landing_url,
-    .brand.service_category, .brand.payment_profile,
+    .brand.service_category, .brand.payment_profile, .brand.yookassa_pay_system,
     .brand.web_login_prefix, .brand.web_user_source
   ' "${file}"); then
     echo "brand_profile_load: failed to read profile '${id}'" >&2
     return 1
   fi
-  if [[ "${#vals[@]}" -ne 18 ]]; then
+  if [[ "${#vals[@]}" -ne 19 ]]; then
     echo "brand_profile_load: unexpected field count for '${id}'" >&2
     return 1
   fi
@@ -263,8 +265,9 @@ brand_profile_load() {
   export LANDING_URL="${vals[13]}"
   export EXPECT_SERVICE_CATEGORY="${vals[14]}"
   export EXPECT_PAYMENT_PROFILE="${vals[15]}"
-  export WEB_LOGIN_PREFIX="${vals[16]}"
-  export WEB_USER_SOURCE="${vals[17]}"
+  export EXPECT_YOOKASSA_PAY_SYSTEM="${vals[16]}"
+  export WEB_LOGIN_PREFIX="${vals[17]}"
+  export WEB_USER_SOURCE="${vals[18]}"
 
   # Compatibility aliases for older VFF scripts/tests.
   export REMOTE_CONFIG_VFF="${REMOTE_EXPLICIT_CONFIG}"
@@ -304,4 +307,5 @@ brand_profile_summary() {
   printf 'brand.public_base_url=%s\n' "${EXPECT_PUBLIC_BASE_URL}"
   printf 'brand.service_category=%s\n' "${EXPECT_SERVICE_CATEGORY}"
   printf 'brand.payment_profile=%s\n' "${EXPECT_PAYMENT_PROFILE}"
+  printf 'brand.yookassa_pay_system=%s\n' "${EXPECT_YOOKASSA_PAY_SYSTEM}"
 }

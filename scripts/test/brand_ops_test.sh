@@ -641,6 +641,7 @@ assert "profile" not in c.get("payments", {})
 assert c["payments"]["keep"] is True
 assert c["brand"]["web_user_login_prefix"]=="web_fc_"
 assert c["brand"]["web_user_source"]=="vpn-for-friends.com"
+assert c["brand"]["yookassa_pay_system"]=="yookassa_fc"
 print("ok")
 PY
 
@@ -680,6 +681,7 @@ assert "category" not in c.get("services", {})
 assert c.get("web_sales", {}).get("enabled") is True
 assert "public_base_url" not in c.get("web_sales", {})
 assert "payments" not in c or "profile" not in c.get("payments", {})
+assert c["brand"]["yookassa_pay_system"]=="yookassa_vff"
 print("ok")
 PY
   pass renderer_vff

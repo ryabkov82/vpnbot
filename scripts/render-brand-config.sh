@@ -94,6 +94,7 @@ if ! jq -e \
   --arg landing_url "${LANDING_URL}" \
   --arg web_prefix "${WEB_LOGIN_PREFIX}" \
   --arg web_source "${WEB_USER_SOURCE}" \
+  --arg yookassa_ps "${EXPECT_YOOKASSA_PAY_SYSTEM}" \
   --arg expect_pbu "${EXPECT_PUBLIC_BASE_URL}" \
   --arg expect_cat "${EXPECT_SERVICE_CATEGORY}" \
   --arg expect_prof "${EXPECT_PAYMENT_PROFILE}" \
@@ -116,6 +117,7 @@ if ! jq -e \
   | (req("web_sales.public_base_url"; ($root.web_sales.public_base_url // ""))) as $pbu0
   | (req("services.category"; ($root.services.category // ""))) as $cat0
   | (req("payments.profile"; ($root.payments.profile // ""))) as $prof0
+  | (req("brand.yookassa_pay_system"; $yookassa_ps)) as $yk
   | (assert_eq("web_sales.public_base_url"; $pbu0; $expect_pbu)) as $pbu
   | (assert_eq("services.category"; $cat0; $expect_cat)) as $cat
   | (assert_eq("payments.profile"; $prof0; $expect_prof)) as $prof
@@ -129,7 +131,8 @@ if ! jq -e \
       "service_category": $cat,
       "web_user_login_prefix": $web_prefix,
       "web_user_source": $web_source,
-      "payment_profile": $prof
+      "payment_profile": $prof,
+      "yookassa_pay_system": $yk
     }
   | del(.services.category)
   | if ((.services // {}) | type) == "object" and ((.services | keys | length) == 0) then del(.services) else . end

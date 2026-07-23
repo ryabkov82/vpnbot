@@ -34,6 +34,7 @@ base_json() {
     "landing_url": "https://demo-landing.example.com",
     "service_category": "vpn-demo",
     "payment_profile": "telegram_demo_bot",
+    "yookassa_pay_system": "yookassa_demo",
     "web_login_prefix": "web_",
     "web_user_source": "vpn-for-friends.com"
   }
@@ -64,7 +65,7 @@ test_each_profile() {
     for v in SERVER_USER SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_BINARY \
       REMOTE_LEGACY_CONFIG REMOTE_EXPLICIT_CONFIG DROPIN_FILE EXPECTED_BRAND_ID \
       BRAND_LABEL SMOKE_BASE_URL EXPECT_PUBLIC_BASE_URL EXPECT_SERVICE_CATEGORY \
-      EXPECT_PAYMENT_PROFILE BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
+      EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
       WEB_USER_SOURCE REMOTE_CONFIG_VFF REMOTE_CONFIG_LEGACY; do
       if [[ -z "${!v:-}" ]]; then fail "profile:${id}" "unset ${v}"; ok=0; fi
     done
@@ -131,7 +132,7 @@ test_global_uniqueness() {
   local field
   for field in '.id' '.runtime.service' '.runtime.directory' '.runtime.binary' \
     '.runtime.explicit_config' '.runtime.dropin' '.brand.public_base_url' \
-    '.brand.service_category' '.brand.payment_profile'; do
+    '.brand.service_category' '.brand.payment_profile' '.brand.yookassa_pay_system'; do
     local total uniq
     total="$(jq -r "${field}" "${PROFILES_DIR}"/*.json | wc -l)"
     uniq="$(jq -r "${field}" "${PROFILES_DIR}"/*.json | sort -u | wc -l)"

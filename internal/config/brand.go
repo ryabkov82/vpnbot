@@ -18,9 +18,15 @@ type BrandConfig struct {
 	WebUserLoginPrefix string   `json:"web_user_login_prefix"`
 	WebUserSource      string   `json:"web_user_source"`
 	PaymentProfile     string   `json:"payment_profile"`
+	// YooKassaPaySystem — имя ключа в SHM config.pay_systems для web/Telegram YooKassa overlay (ps=).
+	// Не путать с PaymentProfile (Telegram WebApp auth profile).
+	YooKassaPaySystem string `json:"yookassa_pay_system"`
 }
 
 var brandIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// shmPaySystemKeyPattern — безопасное имя ключа SHM pay_systems / query ps.
+var shmPaySystemKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // EffectiveBrand возвращает активный бренд процесса.
 // Nil-safe: (*Config)(nil) и частично заполненные тестовые конфиги не паникуют.
@@ -46,9 +52,14 @@ func (c *Config) PublicBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(c.EffectiveBrand().PublicBaseURL), "/")
 }
 
-// PaymentProfile — платёжный профиль активного бренда (nil-safe, только explicit brand).
+// PaymentProfile — Telegram WebApp profile активного бренда (nil-safe, только explicit brand).
 func (c *Config) PaymentProfile() string {
 	return strings.TrimSpace(c.EffectiveBrand().PaymentProfile)
+}
+
+// YooKassaPaySystem — ключ SHM pay_systems для YooKassa (query ps=), nil-safe.
+func (c *Config) YooKassaPaySystem() string {
+	return strings.TrimSpace(c.EffectiveBrand().YooKassaPaySystem)
 }
 
 // WebUserLoginPrefix — префикс web-login активного бренда (nil-safe, только explicit brand).
@@ -70,6 +81,7 @@ func normalizeBrandFields(b BrandConfig) BrandConfig {
 	b.WebUserLoginPrefix = strings.TrimSpace(b.WebUserLoginPrefix)
 	b.WebUserSource = strings.TrimSpace(b.WebUserSource)
 	b.PaymentProfile = strings.TrimSpace(b.PaymentProfile)
+	b.YooKassaPaySystem = strings.TrimSpace(b.YooKassaPaySystem)
 	b.AllowedHosts = normalizeAllowedHosts(b.AllowedHosts)
 	return b
 }
@@ -212,6 +224,12 @@ func validateExplicitBrand(b BrandConfig) error {
 	}
 	if b.PaymentProfile == "" {
 		return fmt.Errorf("brand.payment_profile is required")
+	}
+	if b.YooKassaPaySystem == "" {
+		return fmt.Errorf("brand.yookassa_pay_system is required")
+	}
+	if !shmPaySystemKeyPattern.MatchString(b.YooKassaPaySystem) {
+		return fmt.Errorf("brand.yookassa_pay_system %q is invalid: must match %s", b.YooKassaPaySystem, shmPaySystemKeyPattern.String())
 	}
 	return nil
 }

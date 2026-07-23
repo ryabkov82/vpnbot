@@ -20,6 +20,7 @@
     "landing_url": "https://vpn-for-friends.com",
     "service_category": "vpn-mz-test",
     "payment_profile": "telegram_bot",
+    "yookassa_pay_system": "yookassa_vff",
     "web_login_prefix": "web_",
     "web_user_source": "vpn-for-friends.com"
   }
