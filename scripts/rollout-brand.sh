@@ -192,9 +192,12 @@ case "${remote_rc}" in
     ;;
 esac
 
-echo "rollout-${BRAND_LABEL}: public smoke..."
+# Public smoke includes YooKassa CGI controlled-rejection probe (via smoke-brand.sh).
+# CGI probe uses candidate config .api.base_url (not brand.public_base_url).
+# Failure here rolls back before finalize.
+echo "rollout-${BRAND_LABEL}: public smoke (includes YooKassa CGI)..."
 set +e
-bash "${ROOT}/scripts/smoke-brand.sh" "${EXPECTED_BRAND_ID}"
+bash "${ROOT}/scripts/smoke-brand.sh" "${EXPECTED_BRAND_ID}" --config "${CONFIG}"
 smoke_rc=$?
 set -e
 if [[ "${smoke_rc}" -ne 0 ]]; then
