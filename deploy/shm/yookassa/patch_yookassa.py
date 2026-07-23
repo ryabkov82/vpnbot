@@ -4,6 +4,9 @@
 Reads brand id + brand.public_base_url from vpnbot brand profiles and inserts a
 versioned, fail-closed brand_id → return_url map into upstream yookassa.cgi.
 
+Brand validation runs before user lookup inside the create/payment branch so
+unknown brand_id is not masked by the unknown-user path (user_id=-1 probes).
+
 Does not embed YooKassa credentials. Refuses unknown CGI structure.
 """
 
@@ -19,10 +22,25 @@ from urllib.parse import urlparse
 
 MARKER = "VPNBOT_BRAND_ROUTING_VERSION=1"
 MARKER_PREFIX = "VPNBOT_BRAND_ROUTING_VERSION="
+
+# Early block: validate brand_id before user lookup; compute override URL.
 BEGIN_MARKER = "    # BEGIN VPNBOT_BRAND_ROUTING"
 END_MARKER = "    # END VPNBOT_BRAND_ROUTING"
 
+# Late block: apply computed override after legacy return_url assignment.
+BEGIN_APPLY_MARKER = "    # BEGIN VPNBOT_BRAND_RETURN_APPLY"
+END_APPLY_MARKER = "    # END VPNBOT_BRAND_RETURN_APPLY"
+
+BLOCK_PAIRS = (
+    (BEGIN_MARKER, END_MARKER),
+    (BEGIN_APPLY_MARKER, END_APPLY_MARKER),
+)
+
 # Exact semantic anchors from upstream SHM yookassa.cgi (must each appear once).
+ANCHOR_CREATE_BRANCH = (
+    "if ( $vars{action} eq 'create' || $vars{action} eq 'payment' ) {"
+)
+ANCHOR_USER_LOOKUP = "    if ( $vars{user_id} ) {"
 ANCHOR_RETURN_URL = "    my $return_url =     $ps_config{return_url};"
 ANCHOR_CONFIRMATION_RETURN = (
     "                return_url => $return_url || 'https://www.example.com',"
@@ -49,6 +67,8 @@ def _count_exact(haystack: str, needle: str) -> int:
 
 
 require_unique = (
+    ("create/payment branch", ANCHOR_CREATE_BRANCH),
+    ("user_id lookup", ANCHOR_USER_LOOKUP),
     ("return_url assignment", ANCHOR_RETURN_URL),
     ("confirmation return_url", ANCHOR_CONFIRMATION_RETURN),
     ("unknown user rejection", ANCHOR_UNKNOWN_USER),
@@ -149,38 +169,56 @@ def load_brand_mapping(profiles: Sequence[Path]) -> Dict[str, str]:
     return mapping
 
 
-def build_routing_block(mapping: Dict[str, str]) -> str:
+def build_validation_block(mapping: Dict[str, str]) -> str:
+    """Validate brand_id and compute override URL before user lookup."""
     lines = [
         BEGIN_MARKER,
         f"    # {MARKER}",
         "    # Managed by vpnbot deploy/shm/yookassa — do not edit by hand.",
+        "    # Must run before user lookup so unknown brand_id is not masked.",
         "    my %vpnbot_brand_return_urls = (",
     ]
     for brand_id in sorted(mapping):
         url = mapping[brand_id]
-        # Perl single-quoted string; mapping values are validated URLs.
         if "'" in url or "\\" in url:
             raise PatchError(f"return_url contains unsafe characters: {url!r}")
         lines.append(f"        '{brand_id}' => '{url}',")
     lines.extend(
         [
             "    );",
+            "    my $vpnbot_brand_return_url;",
             "    if ( exists $vars{brand_id} && defined $vars{brand_id}"
             " && length($vars{brand_id}) ) {",
             "        my $vpnbot_brand_id = $vars{brand_id};",
             "        $vpnbot_brand_id =~ s/^\\s+|\\s+$//g;",
-            "        if ( exists $vpnbot_brand_return_urls{$vpnbot_brand_id} ) {",
-            "            $return_url = $vpnbot_brand_return_urls{$vpnbot_brand_id};",
-            "        }",
-            "        else {",
-            "            print_json({ status => 400,"
+            "        if ( length($vpnbot_brand_id) ) {",
+            "            if ( exists"
+            " $vpnbot_brand_return_urls{$vpnbot_brand_id} ) {",
+            "                $vpnbot_brand_return_url ="
+            " $vpnbot_brand_return_urls{$vpnbot_brand_id};",
+            "            }",
+            "            else {",
+            "                print_json({ status => 400,"
             " msg => 'Error: unknown brand_id' });",
-            "            exit 0;",
+            "                exit 0;",
+            "            }",
             "        }",
             "    }",
             END_MARKER,
         ]
     )
+    return "\n".join(lines) + "\n"
+
+
+def build_apply_block() -> str:
+    """Apply computed brand return_url after legacy ps_config assignment."""
+    lines = [
+        BEGIN_APPLY_MARKER,
+        f"    # {MARKER}",
+        "    $return_url = $vpnbot_brand_return_url"
+        " if defined $vpnbot_brand_return_url;",
+        END_APPLY_MARKER,
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -196,31 +234,24 @@ def detect_marker_version(source: str) -> int | None:
     return uniq[0]
 
 
-def strip_routing_block(source: str) -> str:
-    begin = source.find(BEGIN_MARKER)
-    end = source.find(END_MARKER)
+def _strip_one_block(source: str, begin_m: str, end_m: str) -> str:
+    begin = source.find(begin_m)
+    end = source.find(end_m)
     if begin < 0 and end < 0:
-        # Legacy single-line marker without BEGIN/END (should not happen for v1).
-        if MARKER_PREFIX in source:
-            raise PatchError(
-                "refusing to patch: routing marker present without "
-                "BEGIN/END block boundaries"
-            )
         return source
     if begin < 0 or end < 0:
         raise PatchError(
-            "refusing to patch: incomplete VPNBOT_BRAND_ROUTING block markers"
+            "refusing to patch: incomplete VPNBOT brand-routing block markers"
         )
-    if source.count(BEGIN_MARKER) != 1 or source.count(END_MARKER) != 1:
+    if source.count(begin_m) != 1 or source.count(end_m) != 1:
         raise PatchError(
-            "refusing to patch: duplicated VPNBOT_BRAND_ROUTING block markers"
+            "refusing to patch: duplicated VPNBOT brand-routing block markers"
         )
     if end < begin:
         raise PatchError(
             "refusing to patch: END marker before BEGIN marker"
         )
-    end_line = end + len(END_MARKER)
-    # Consume trailing newline after END marker.
+    end_line = end + len(end_m)
     if end_line < len(source) and source[end_line] == "\n":
         end_line += 1
     # Older builds accidentally left one blank line after END; drop it so
@@ -228,6 +259,56 @@ def strip_routing_block(source: str) -> str:
     if end_line < len(source) and source.startswith("\n", end_line):
         end_line += 1
     return source[:begin] + source[end_line:]
+
+
+def strip_routing_block(source: str) -> str:
+    """Remove all managed VPNBOT brand-routing regions (early + apply)."""
+    result = source
+    for begin_m, end_m in BLOCK_PAIRS:
+        result = _strip_one_block(result, begin_m, end_m)
+    if MARKER_PREFIX in result:
+        raise PatchError(
+            "refusing to patch: routing marker present without "
+            "known BEGIN/END block boundaries"
+        )
+    return result
+
+
+def _insert_after_line(base: str, anchor_line: str, block: str, label: str) -> str:
+    needle = anchor_line + "\n"
+    if _count_exact(base, needle) != 1:
+        raise PatchError(
+            f"refusing to patch: {label} line+newline not unique"
+        )
+    patched = base.replace(needle, needle + block, 1)
+    if patched == base:
+        raise PatchError(f"internal error: failed to insert {label} block")
+    return patched
+
+
+def _require_order(patched: str) -> None:
+    idx_create = patched.find(ANCHOR_CREATE_BRANCH)
+    idx_brand = patched.find("Error: unknown brand_id")
+    idx_user_lookup = patched.find(ANCHOR_USER_LOOKUP)
+    idx_unknown_user = patched.find("Error: unknown user")
+    idx_return = patched.find(ANCHOR_RETURN_URL)
+    idx_apply = patched.find(
+        "$return_url = $vpnbot_brand_return_url if defined $vpnbot_brand_return_url;"
+    )
+    if min(idx_create, idx_brand, idx_user_lookup, idx_unknown_user, idx_return, idx_apply) < 0:
+        raise PatchError("internal error: expected order anchors missing after patch")
+    if not (
+        idx_create
+        < idx_brand
+        < idx_user_lookup
+        < idx_unknown_user
+        < idx_return
+        < idx_apply
+    ):
+        raise PatchError(
+            "internal error: brand validation must run before user lookup "
+            "and return_url apply must follow legacy return_url assignment"
+        )
 
 
 def apply_patch(source: str, mapping: Dict[str, str]) -> str:
@@ -239,39 +320,51 @@ def apply_patch(source: str, mapping: Dict[str, str]) -> str:
         )
 
     base = strip_routing_block(source) if version == 1 else source
+    # Also strip when markers absent but somehow version detected — handled above.
+    if version is None and (
+        BEGIN_MARKER in source
+        or BEGIN_APPLY_MARKER in source
+        or MARKER_PREFIX in source
+    ):
+        base = strip_routing_block(source)
+
     require_unique_anchors(base)
 
-    block = build_routing_block(mapping)
-    # Insert immediately after the return_url assignment line, preserving the
-    # original following newline so we do not introduce a blank line.
-    anchor_line = ANCHOR_RETURN_URL + "\n"
-    if _count_exact(base, anchor_line) != 1:
+    # Create branch must immediately precede user lookup in upstream shape.
+    create_then_user = ANCHOR_CREATE_BRANCH + "\n" + ANCHOR_USER_LOOKUP
+    if _count_exact(base, create_then_user) != 1:
         raise PatchError(
-            "refusing to patch: return_url assignment line+newline not unique"
+            "refusing to patch: create/payment branch does not uniquely "
+            "precede user_id lookup"
         )
-    patched = base.replace(anchor_line, anchor_line + block, 1)
-    if patched == base:
-        raise PatchError("internal error: failed to insert routing block")
 
-    # Post-conditions: anchors that must remain unique / unchanged.
-    require_unique_anchors(
-        # After insert, return_url assignment still unique; routing block may
-        # mention return_url variable but not the exact assignment anchor.
-        patched
+    validation = build_validation_block(mapping)
+    apply = build_apply_block()
+
+    patched = _insert_after_line(
+        base, ANCHOR_CREATE_BRANCH, validation, "brand validation"
     )
+    patched = _insert_after_line(
+        patched, ANCHOR_RETURN_URL, apply, "return_url apply"
+    )
+
+    require_unique_anchors(patched)
+    _require_order(patched)
+
     if MARKER not in patched:
         raise PatchError("internal error: marker missing after patch")
     if "Error: unknown brand_id" not in patched:
         raise PatchError("internal error: unknown brand_id path missing")
+    if "my $vpnbot_brand_return_url;" not in patched:
+        raise PatchError("internal error: brand return_url variable missing")
 
-    # Credentials / callback / metadata literals must be byte-identical to base
-    # outside our inserted block.
     for label, anchor in (
         ("api_key assignment", ANCHOR_API_KEY),
         ("account_id assignment", ANCHOR_ACCOUNT_ID),
         ("metadata section", ANCHOR_METADATA),
         ("confirmation return_url", ANCHOR_CONFIRMATION_RETURN),
         ("unknown user rejection", ANCHOR_UNKNOWN_USER),
+        ("user_id lookup", ANCHOR_USER_LOOKUP),
     ):
         if _count_exact(patched, anchor) != 1:
             raise PatchError(f"post-check failed for {label}")
@@ -297,17 +390,11 @@ def patch_file(
     if patched == source:
         msg = "already applied: VPNBOT_BRAND_ROUTING_VERSION=1 (identical)"
         if not force:
-            # Still write identical output for deterministic pipelines.
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(patched, encoding="utf-8")
         return msg
 
     version = detect_marker_version(source)
-    if version == 1 and not force:
-        # Source had v1 but content differed from regenerated mapping.
-        # Regenerating is intentional when brand profiles change.
-        pass
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(patched, encoding="utf-8")
     if version == 1:

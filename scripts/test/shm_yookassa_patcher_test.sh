@@ -104,26 +104,70 @@ EOF
   pass trailing_slash
 }
 
-test_unknown_brand_fail_closed_in_output() {
+test_brand_validation_before_user_lookup() {
   setup
   local out="${WORK}/out.cgi"
   run_patch "${UPSTREAM}" "${out}" >/dev/null
-  # Ensure fail-closed branch exists before credential checks / payment create.
-  local ret_line brand_line
-  ret_line="$(grep -n 'my \$return_url =     \$ps_config{return_url};' "${out}" | head -1 | cut -d: -f1)"
+  local brand_line user_lookup_line unknown_user_line
   brand_line="$(grep -n "Error: unknown brand_id" "${out}" | head -1 | cut -d: -f1)"
-  if [[ -z "${ret_line}" || -z "${brand_line}" || "${brand_line}" -le "${ret_line}" ]]; then
-    fail unknown_brand_order "brand_id check not after return_url load"; return
+  user_lookup_line="$(grep -n 'if ( \$vars{user_id} ) {' "${out}" | head -1 | cut -d: -f1)"
+  unknown_user_line="$(grep -n "Error: unknown user" "${out}" | head -1 | cut -d: -f1)"
+  if [[ -z "${brand_line}" || -z "${user_lookup_line}" || -z "${unknown_user_line}" ]]; then
+    fail brand_before_user "missing order anchors"; return
   fi
-  pass unknown_brand_fail_closed
+  if [[ "${brand_line}" -ge "${user_lookup_line}" ]]; then
+    fail brand_before_user "brand validation not before user lookup (${brand_line} >= ${user_lookup_line})"; return
+  fi
+  if [[ "${brand_line}" -ge "${unknown_user_line}" ]]; then
+    fail brand_before_user "brand validation not before unknown-user path"; return
+  fi
+  pass brand_validation_before_user_lookup
+}
+
+test_unknown_brand_not_masked_by_user() {
+  setup
+  local out="${WORK}/out.cgi"
+  run_patch "${UPSTREAM}" "${out}" >/dev/null
+  # Structural guarantee: unknown brand_id exits before user_id lookup body.
+  python3 - <<'PY' "${out}"
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+brand = text.find("Error: unknown brand_id")
+user = text.find("    if ( $vars{user_id} ) {")
+assert brand >= 0 and user >= 0 and brand < user, (brand, user)
+# Ensure validation writes into a separate variable, not $return_url directly.
+assert "$vpnbot_brand_return_url =" in text
+assert "my $vpnbot_brand_return_url;" in text
+print("ok")
+PY
+  pass unknown_brand_not_masked_by_user
+}
+
+test_return_url_override_applied() {
+  setup
+  local out="${WORK}/out.cgi"
+  run_patch "${UPSTREAM}" "${out}" >/dev/null
+  local ret_line apply_line
+  ret_line="$(grep -n 'my \$return_url =     \$ps_config{return_url};' "${out}" | head -1 | cut -d: -f1)"
+  apply_line="$(grep -n '\$return_url = \$vpnbot_brand_return_url if defined \$vpnbot_brand_return_url;' "${out}" | head -1 | cut -d: -f1)"
+  if [[ -z "${ret_line}" || -z "${apply_line}" || "${apply_line}" -le "${ret_line}" ]]; then
+    fail return_url_override "apply not after legacy return_url assignment"; return
+  fi
+  grep -Fq 'BEGIN VPNBOT_BRAND_RETURN_APPLY' "${out}" || { fail return_url_override "apply block missing"; return; }
+  pass return_url_override_applied
 }
 
 test_legacy_route_preserved() {
   setup
   local out="${WORK}/out.cgi"
   run_patch "${UPSTREAM}" "${out}" >/dev/null
-  # Missing brand_id must fall through to $return_url from ps_config (no overwrite).
-  grep -Fq 'length($vars{brand_id})' "${out}" || { fail legacy "length guard missing"; return; }
+  # Missing/empty brand_id leaves $vpnbot_brand_return_url undefined → legacy ps_config URL.
+  grep -Fq 'my $vpnbot_brand_return_url;' "${out}" || { fail legacy "override var missing"; return; }
+  grep -Fq '$return_url = $vpnbot_brand_return_url if defined $vpnbot_brand_return_url;' "${out}" \
+    || { fail legacy "conditional apply missing"; return; }
+  grep -Fq 'my $return_url =     $ps_config{return_url};' "${out}" \
+    || { fail legacy "legacy return_url assignment missing"; return; }
   # confirmation still uses $return_url variable (legacy value when brand_id absent).
   grep -Fq "return_url => \$return_url || 'https://www.example.com'" "${out}" \
     || { fail legacy "confirmation return_url changed"; return; }
@@ -139,9 +183,13 @@ test_idempotent_reapply() {
   if ! cmp -s "${once}" "${twice}"; then
     fail idempotent "second apply changed content"; return
   fi
-  local count
+  local count begin_v begin_a
   count="$(grep -c 'VPNBOT_BRAND_ROUTING_VERSION=1' "${twice}" || true)"
-  [[ "${count}" -eq 1 ]] || { fail idempotent "marker count=${count}"; return; }
+  begin_v="$(grep -c 'BEGIN VPNBOT_BRAND_ROUTING$' "${twice}" || true)"
+  begin_a="$(grep -c 'BEGIN VPNBOT_BRAND_RETURN_APPLY$' "${twice}" || true)"
+  # Marker appears in validation + apply blocks; each block once.
+  [[ "${count}" -eq 2 ]] || { fail idempotent "marker count=${count} (want 2)"; return; }
+  [[ "${begin_v}" -eq 1 && "${begin_a}" -eq 1 ]] || { fail idempotent "block counts v=${begin_v} a=${begin_a}"; return; }
   pass idempotent
 }
 
@@ -204,30 +252,26 @@ test_credentials_callback_metadata_unchanged() {
   setup
   local out="${WORK}/out.cgi"
   run_patch "${UPSTREAM}" "${out}" >/dev/null
-  # Strip our block and compare remainder to upstream for protected sections.
-  python3 - <<'PY' "${UPSTREAM}" "${out}" "${WORK}/stripped.cgi"
+  # Strip managed regions via patcher and compare remainder to upstream.
+  python3 - <<'PY' "${PATCHER}" "${UPSTREAM}" "${out}"
+import importlib.util
 from pathlib import Path
 import sys
-src, patched, stripped_path = map(Path, sys.argv[1:4])
-text = patched.read_text(encoding="utf-8")
-begin = "    # BEGIN VPNBOT_BRAND_ROUTING"
-end = "    # END VPNBOT_BRAND_ROUTING"
-b = text.find(begin)
-e = text.find(end)
-assert b >= 0 and e > b
-e2 = e + len(end)
-if e2 < len(text) and text[e2] == "\n":
-    e2 += 1
-stripped = text[:b] + text[e2:]
-stripped_path.write_text(stripped, encoding="utf-8")
-assert stripped == src.read_text(encoding="utf-8")
+patcher_path, src_path, patched_path = map(Path, sys.argv[1:4])
+spec = importlib.util.spec_from_file_location("patch_yookassa", patcher_path)
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+stripped = mod.strip_routing_block(patched_path.read_text(encoding="utf-8"))
+assert stripped == src_path.read_text(encoding="utf-8")
 PY
   # Explicit anchors still present once.
   for needle in \
     'my $api_key =        $ps_config{api_key};' \
     'my $account_id =     $ps_config{account_id};' \
     'metadata => {' \
-    'return_url => $return_url || '"'"'https://www.example.com'"'"','
+    'return_url => $return_url || '"'"'https://www.example.com'"'"',' \
+    'if ( $vars{user_id} ) {'
   do
     local n
     n="$(grep -F -c "${needle}" "${out}" || true)"
@@ -517,7 +561,9 @@ test_probe_helpers() {
 
 test_inserts_vff_fc_mapping_from_profiles
 test_trailing_slash_normalized
-test_unknown_brand_fail_closed_in_output
+test_brand_validation_before_user_lookup
+test_unknown_brand_not_masked_by_user
+test_return_url_override_applied
 test_legacy_route_preserved
 test_idempotent_reapply
 test_missing_anchor_refuses

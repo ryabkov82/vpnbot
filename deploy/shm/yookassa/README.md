@@ -36,7 +36,12 @@ Behaviour after patch (`VPNBOT_BRAND_ROUTING_VERSION=1`):
 | unknown non-empty | HTTP 400 `Error: unknown brand_id` |
 | absent / empty | legacy `return_url` from SHM yookassa config |
 
-Credentials, callbacks, metadata, and the rest of CGI logic are left untouched.
+Insertion order (important for probes with `user_id=-1`):
+
+1. **Before user lookup** inside `create`/`payment`: validate `brand_id`, fail-closed on unknown, compute override into `$vpnbot_brand_return_url`.
+2. **After** legacy `my $return_url = $ps_config{return_url}`: apply override only when defined.
+
+Credentials, callbacks, metadata, user lookup, and the rest of CGI logic are left untouched.
 Do **not** store YooKassa API keys / `account_id` in git.
 
 ## Commands
