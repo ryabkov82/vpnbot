@@ -170,17 +170,27 @@ run_patcher() {
 summarize_patch_delta() {
   local src="$1"
   local out="$2"
+  local src_ver out_ver
+  src_ver="$(grep -oE 'VPNBOT_BRAND_ROUTING_VERSION=[0-9]+' "${src}" 2>/dev/null | head -1 | cut -d= -f2 || true)"
+  out_ver="$(grep -oE 'VPNBOT_BRAND_ROUTING_VERSION=[0-9]+' "${out}" 2>/dev/null | head -1 | cut -d= -f2 || true)"
+
   if cmp -s "${src}" "${out}"; then
-    echo "deploy-shm-yookassa: patch result identical to current CGI (routing already current)"
+    echo "deploy-shm-yookassa: patch result identical to current CGI (VERSION=${out_ver:-none} already current)"
     return 0
   fi
+
   local added
-  added="$(diff -u "${src}" "${out}" | grep -c '^+.*VPNBOT_BRAND_ROUTING' || true)"
-  echo "deploy-shm-yookassa: patch would change CGI (routing markers touched≈${added})"
-  if grep -q 'VPNBOT_BRAND_ROUTING_VERSION=1' "${src}"; then
-    echo "deploy-shm-yookassa: note: source already has VERSION=1; regenerating from brand profiles"
+  added="$(diff -u "${src}" "${out}" | grep -cE '^\+.*(VPNBOT_BRAND_|vpnbot_route_check)' || true)"
+  echo "deploy-shm-yookassa: patch would change CGI (managed lines touched≈${added})"
+
+  if [[ "${src_ver}" == "1" && "${out_ver}" == "2" ]]; then
+    echo "deploy-shm-yookassa: upgrade available VERSION=1 → VERSION=2 (adds vpnbot_route_check diagnostics)"
+  elif [[ -z "${src_ver}" && "${out_ver}" == "2" ]]; then
+    echo "deploy-shm-yookassa: note: source has no brand routing marker; will insert VERSION=2"
+  elif [[ "${src_ver}" == "2" && "${out_ver}" == "2" ]]; then
+    echo "deploy-shm-yookassa: note: source has VERSION=2; regenerating from brand profiles"
   else
-    echo "deploy-shm-yookassa: note: source has no brand routing marker; will insert VERSION=1"
+    echo "deploy-shm-yookassa: note: source VERSION=${src_ver:-none} → candidate VERSION=${out_ver:-none}"
   fi
 }
 
