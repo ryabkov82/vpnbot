@@ -29,10 +29,10 @@
 
 Принятые решения:
 
-1. **one process = one BrandConfig**  
+1. **one process = one BrandConfig**
    Процесс загружает ровно одну явную и полностью валидную секцию `brand`. Неявный fallback к VFF запрещён.
 
-2. **Отдельный runtime-контур на бренд**  
+2. **Отдельный runtime-контур на бренд**
    Каждому бренду соответствуют:
    - systemd service;
    - runtime directory;
@@ -41,10 +41,10 @@
    - SHM service category;
    - payment profile.
 
-3. **Общие секреты и backend допустимы, brand identity — явная**  
+3. **Общие секреты и backend допустимы, brand identity — явная**
    Несколько процессов могут использовать общий SHM/API backend, но активный бренд и его identity-правила всегда берутся из runtime config текущего процесса.
 
-4. **Cross-brand fallback запрещён**  
+4. **Cross-brand fallback запрещён**
    Поиск пользователя не должен «догонять» запись другого бренда. Несовпадение identity нельзя трактовать как обычный not found (риск последующей регистрации в занятый login).
 
 Ключевые реализации:
@@ -67,11 +67,18 @@
 | Service | `bot.service` | `bot-friends-connect.service` |
 | Runtime | `/opt/bot` | `/opt/bot-friends-connect` |
 | Explicit config | `config-vff.json` | `config-fc.json` |
-| Public host | `connect.vpn-for-friends.com` | `connect-fc.vpn-for-friends.com` |
+| Public host | `connect.vpn-for-friends.com` | `connect.friends-connect.club` |
 | Landing | `vpn-for-friends.com` | `friends-connect.club` |
 | SHM category | `vpn-mz-test` | `vpn-mz-fc` |
 | Payment profile | `telegram_bot` | `telegram_friends_connect_bot` |
 | Telegram login | `@<chat_id>` | `@fc_<chat_id>` |
+
+Публичный домен FC:
+
+- production FC runtime принимает только `connect.friends-connect.club`;
+- старый домен `connect-fc.vpn-for-friends.com` больше не используется как runtime host;
+- старый домен оставлен только как HTTP 301 redirect на `connect.friends-connect.club` с сохранением request URI;
+- для нового домена настроены отдельные DNS, nginx vhost и TLS.
 
 Дополнительно (из brand profiles):
 
@@ -153,48 +160,51 @@ Runtime без полной секции `brand` не допускается.
 
 ## 5. Независимые web identities — 🟡 Частично
 
-Этап **частично реализован** (логическая изоляция). Физическое разведение login prefix ещё впереди.
+Этап **частично реализован**: логическая brand isolation уже есть; физическое разведение login prefix ещё впереди.
 
 Аудит lifecycle: `docs/MULTIBRAND_WEB_IDENTITY_AUDIT.md` (исторический snapshot).
 
 ### Реализовано
 
-- web membership validation (`internal/service/web_brand_user.go`);
-- `settings.brand_id` при новой web registration;
-- brand-bound account/link/signup tokens (`brand_id` в claims, fail-closed без dual-read);
-- повторная brand validation account handlers (`ValidateWebAccountUser` + `authenticateWebAccount`);
-- brand-aware Telegram ↔ web linking (canonical Telegram login + brand membership).
+- `settings.brand_id` при web registration;
+- brand membership validation (`internal/service/web_brand_user.go`);
+- brand-bound account/signup/link tokens (`brand_id` в claims, fail-closed без dual-read);
+- повторная проверка пользователя в account handlers (`ValidateWebAccountUser` + `authenticateWebAccount`);
+- brand-aware Telegram ↔ web linking (canonical Telegram login + brand membership);
+- FC не получает доступ к VFF web identity при общем prefix (mismatch → `ErrUserIdentityMismatch`, без чужой сессии и без новой регистрации).
 
-Переходное состояние deploy profiles (без изменения на этом этапе):
+### Принятое целевое именование web login
+
+- VFF: `web_<hash(email)>`
+- FC: `web_fc_<hash(email)>`
+- будущие бренды: `web_<brand_id>_<hash(email)>`
+
+### Текущее переходное состояние
 
 | Поле | VFF | FC |
 |------|-----|----|
 | `web_user_login_prefix` | `web_` | `web_` |
 | `web_user_source` | `vpn-for-friends.com` | `vpn-for-friends.com` |
 
-При общем prefix одинаковый email по-прежнему занимает один SHM login. Второй runtime возвращает `ErrUserIdentityMismatch` и не выдаёт чужую сессию / не регистрирует нового user.
+При общем prefix одинаковый email по-прежнему занимает один SHM login. Логическая изоляция не допускает выдачу чужой сессии второму runtime.
 
 ### Осталось
 
-- coordinated переход FC с `web_` на `web_fc_`;
-- ручная корректировка единственной известной FC web-привязки;
-- production verification;
-- e2e smoke VFF/FC;
-- подтверждение независимой регистрации одного email в двух брендах.
+- изменить единственную существующую FC web-привязку с `web_` на `web_fc_`;
+- coordinated переключить FC `web_user_login_prefix` на `web_fc_`;
+- выполнить production verification;
+- выполнить e2e smoke VFF/FC;
+- подтвердить независимую регистрацию одного email в двух брендах;
+- подтвердить работу magic link, Google OAuth и Telegram linking после cutover.
 
-### Предварительное целевое направление (не утверждено)
-
-- VFF: `web_<hash(email)>`
-- FC: `web_fc_<hash(email)>`
-
-либо общий шаблон `web_<brand_id>_`.
+Конкретные `user_id`, email и hash в roadmap не включаются.
 
 ### Критерии полного завершения M5
 
 - один email может независимо зарегистрироваться в VFF и FC;
 - session/magic link/OAuth/linking не пересекают бренды;
 - услуги другого бренда недоступны;
-- существующие web-пользователи проаудированы; миграция при необходимости — allowlist-based, dry-run-first.
+- cutover FC prefix выполнен и проверен в production.
 
 ---
 
@@ -222,24 +232,31 @@ Runtime без полной секции `brand` не допускается.
 
 ## 7. Контент и коммуникации — 🟡 Частично
 
-Точки проверки:
+### Реализовано
 
-- название бренда;
-- логотип;
+- account email используют `brand.name` в теме и тексте;
+- explicit `email.from_name` имеет приоритет для From header;
+- автоматические письма Friends Connect отправляются как
+  `Friends Connect <noreply@friends-connect.club>`;
+- вручную проверены magic-link login и письмо подтверждения Telegram → web linking;
+- для FC создан отдельный Google OAuth Web client;
+- Google callback переведён на
+  `https://connect.friends-connect.club/api/account/google/callback`;
+- Google OAuth вручную проверен в production;
+- создан официальный адрес поддержки: `support@friends-connect.club`;
+- входящие на `support@friends-connect.club` принимаются через Cloudflare Email Routing;
+- ответы поддержки отправляются из Gmail через SMTP2GO как
+  `Friends Connect Support <support@friends-connect.club>`.
+
+### Осталось (общий аудит)
+
+- logo и static assets;
 - Telegram-тексты;
-- support URL;
-- news channel;
-- email sender/name;
-- email templates;
-- заголовки страниц;
-- favicon;
-- static assets;
+- support/news links;
+- favicon и page titles;
 - тексты ошибок;
-- ссылки на landing;
-- отсутствие VFF-oriented fallback в FC.
-
-Известный технический долг: в bot runtime есть VFF-oriented default logo URL  
-(`internal/app/bot/service.go`, `defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"`).
+- VFF-oriented defaults;
+- известный `defaultLogoURL` в `internal/app/bot/service.go`.
 
 ---
 
@@ -305,16 +322,16 @@ Runtime без полной секции `brand` не допускается.
 | M4 | ✅ | Telegram identity isolation |
 | M5 | 🟡 | Web identity audit and isolation |
 | M6 | ⬜ | Payment end-to-end audit |
-| M7 | ⬜ | Brand-specific content cleanup |
+| M7 | 🟡 | Brand-specific content cleanup |
 | M8 | ⬜ | Attribution and analytics |
 | M9 | ⬜ | Third-brand onboarding validation |
 
 ### M5 — Web identity audit and isolation
 
-- **Статус:** 🟡 частично — логическая изоляция (membership, brand_id, tokens, handler revalidation, linking) реализована; общий prefix `web_` у VFF/FC сохранён как переходное состояние.
+- **Статус:** 🟡 частично — логическая brand isolation реализована; целевое именование утверждено (`web_` / `web_fc_` / `web_<brand_id>_`); deploy profiles пока на общем prefix `web_`.
 - **Цель:** независимые web identities VFF/FC (email/login/login2/session/OAuth/linking).
-- **Основные риски:** коллизии login по email при общем prefix; незавершённый переход FC на `web_fc_`; необходимость production verification.
-- **Ожидаемый результат:** brand-aware web login + запись `settings.brand_id`; brand-scoped поиск и linking; allowlist-миграция при необходимости.
+- **Основные риски:** незавершённый cutover FC на `web_fc_`; необходимость production verification после смены prefix.
+- **Ожидаемый результат:** FC prefix `web_fc_`; независимая регистрация одного email в двух брендах; проверенные magic link / OAuth / linking.
 - **Критерий завершения:** один email независимо существует в каждом бренде; session/magic link/OAuth/linking не пересекают бренды; услуги другого бренда недоступны.
 
 ### M6 — Payment end-to-end audit
@@ -326,6 +343,7 @@ Runtime без полной секции `brand` не допускается.
 
 ### M7 — Brand-specific content cleanup
 
+- **Статус:** 🟡 частично — account emails / From branding, FC Google OAuth client и support mailbox уже работают; остаётся общий аудит UI/Telegram/assets/defaults.
 - **Цель:** убрать VFF-oriented defaults и выровнять brand content/communications.
 - **Основные риски:** скрытые hardcoded URL/тексты/logo/support в bot и web.
 - **Ожидаемый результат:** контент и коммуникации берутся из brand/runtime config без VFF fallback в FC.
@@ -366,6 +384,9 @@ Runtime без полной секции `brand` не допускается.
 
 ## 12. Следующий шаг
 
-**Продолжение M5:** coordinated переход FC prefix `web_` → `web_fc_` (после ручной корректировки известной FC web-привязки и production verification), затем e2e smoke и подтверждение независимой регистрации одного email в двух брендах.
-
-Параллельно / далее по приоритету: **M6 — Payment end-to-end audit**.
+1. подготовить FC config с `web_user_login_prefix = web_fc_`;
+2. coordinated изменить существующую FC web-привязку;
+3. выполнить rollout FC с новым prefix;
+4. выполнить e2e smoke VFF/FC;
+5. подтвердить независимое существование одного email в обоих брендах;
+6. после закрытия M5 перейти к **M6 — Payment end-to-end audit**.
