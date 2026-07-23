@@ -3,7 +3,9 @@ package service
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image/png"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +20,25 @@ import (
 
 var (
 	ErrUserNotFound = errors.New("user not found")
+	// ErrServiceCategoryDenied — заказ услуги запрещён из‑за category / identity brand boundary.
+	ErrServiceCategoryDenied = errors.New("service category denied")
 )
+
+// ServiceCategoryDeniedError — внутренняя ошибка fail-closed category guard перед ServiceOrder.
+type ServiceCategoryDeniedError struct {
+	ServiceID int
+	Expected  string
+	Actual    string
+}
+
+func (e *ServiceCategoryDeniedError) Error() string {
+	if e == nil {
+		return ErrServiceCategoryDenied.Error()
+	}
+	return fmt.Sprintf("service %d category %q denied for brand category %q", e.ServiceID, e.Actual, e.Expected)
+}
+
+func (e *ServiceCategoryDeniedError) Unwrap() error { return ErrServiceCategoryDenied }
 
 type Service struct {
 	apiClient          *api.APIClient
@@ -263,6 +283,9 @@ func (s *Service) ServiceOrder(userID int64, serviceID string) (*models.UserServ
 		return nil, err
 	}
 
+	if err := s.ensureServiceAllowedForOrder(srvID); err != nil {
+		return nil, err
+	}
 	return s.apiClient.ServiceOrder(user.ID, srvID)
 
 }
@@ -275,7 +298,66 @@ func (s *Service) ServiceOrderByUserID(userID int, serviceID int) (*models.UserS
 	if serviceID <= 0 {
 		return nil, errors.New("invalid service id")
 	}
+	if err := s.ensureServiceAllowedForOrder(serviceID); err != nil {
+		return nil, err
+	}
 	return s.apiClient.ServiceOrder(userID, serviceID)
+}
+
+// ensureServiceAllowedForOrder повторно читает услугу из SHM и fail-closed сверяет category
+// активного бренда непосредственно перед mutation ServiceOrder.
+func (s *Service) ensureServiceAllowedForOrder(serviceID int) error {
+	if s == nil || s.apiClient == nil {
+		return errors.New("service api client is not configured")
+	}
+	expected := strings.TrimSpace(s.expectedServiceCategory())
+	if expected == "" {
+		slog.Error("service order denied: empty expected brand category", "service_id", serviceID)
+		return &ServiceCategoryDeniedError{ServiceID: serviceID}
+	}
+	svc, err := s.apiClient.GetServiceByID(serviceID)
+	if err != nil {
+		return fmt.Errorf("service order lookup: %w", err)
+	}
+	if err := validateOrderedService(svc, serviceID, expected); err != nil {
+		var denied *ServiceCategoryDeniedError
+		if errors.As(err, &denied) {
+			slog.Error("service order denied",
+				"service_id", denied.ServiceID,
+				"expected_category", denied.Expected,
+				"actual_category", denied.Actual,
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+// validateOrderedService — чистая fail-closed проверка category/id перед ServiceOrder.
+func validateOrderedService(svc *models.Service, serviceID int, expectedCategory string) error {
+	expected := strings.TrimSpace(expectedCategory)
+	if expected == "" {
+		return &ServiceCategoryDeniedError{ServiceID: serviceID}
+	}
+	if svc == nil {
+		return fmt.Errorf("service %d not found: %w", serviceID, api.ErrServiceNotFound)
+	}
+	if svc.ServiceID != serviceID {
+		return &ServiceCategoryDeniedError{
+			ServiceID: serviceID,
+			Expected:  expected,
+			Actual:    strings.TrimSpace(svc.Category),
+		}
+	}
+	actual := strings.TrimSpace(svc.Category)
+	if actual == "" || actual != expected {
+		return &ServiceCategoryDeniedError{
+			ServiceID: serviceID,
+			Expected:  expected,
+			Actual:    actual,
+		}
+	}
+	return nil
 }
 
 // DeleteUserServiceByUserID удаляет user_service по числовому user_id (личный кабинет)
