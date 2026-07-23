@@ -223,21 +223,20 @@ func (s *Service) handleBalance(c telebot.Context) error {
 		return c.Send("Ошибка системы, попробуйте позже")
 	}
 
-	// профиль оплаты из конфига (дефолт — telegram_bot)
-	paymentProfile := s.config.PaymentProfile()
-	if paymentProfile == "" {
-		paymentProfile = "telegram_bot"
+	apiBase := ""
+	paymentProfile := ""
+	if s.config != nil {
+		apiBase = s.config.API.BaseURL
+		paymentProfile = s.config.PaymentProfile()
+	}
+	payURL, err := telegramPaymentsWebAppURL(apiBase, userBalance.ID, paymentProfile)
+	if err != nil {
+		log.Printf("handleBalance: telegram payments webapp url: %v", err)
+		return c.Send("Ошибка системы, попробуйте позже")
 	}
 
 	menu := &telebot.ReplyMarkup{}
-	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{
-		URL: fmt.Sprintf(
-			"%s/shm/v1/public/tg_payments_webapp?format=html&user_id=%d&profile=%s",
-			s.config.API.BaseURL,
-			userBalance.ID,
-			url.QueryEscape(paymentProfile),
-		),
-	})
+	btnPay := menu.WebApp("✚ Пополнить баланс", &telebot.WebApp{URL: payURL})
 
 	btnPays := menu.Data("☰ История платежей", "/pays")
 
@@ -256,6 +255,32 @@ func (s *Service) handleBalance(c telebot.Context) error {
 		menu,
 		telebot.ModeMarkdown,
 	)
+}
+
+// telegramPaymentsWebAppURL собирает URL SHM Telegram payments WebApp.
+// profile берётся только из brand.payment_profile активного бренда; пустой — fail-closed.
+func telegramPaymentsWebAppURL(apiBaseURL string, userID int, paymentProfile string) (string, error) {
+	profile := strings.TrimSpace(paymentProfile)
+	if profile == "" {
+		return "", errors.New("brand payment profile is empty")
+	}
+	if userID <= 0 {
+		return "", errors.New("user id must be positive")
+	}
+	base := strings.TrimRight(strings.TrimSpace(apiBaseURL), "/")
+	if base == "" {
+		return "", errors.New("api base url is empty")
+	}
+	u, err := url.Parse(base + "/shm/v1/public/tg_payments_webapp")
+	if err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	q.Set("format", "html")
+	q.Set("user_id", strconv.Itoa(userID))
+	q.Set("profile", profile)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 func (s *Service) handleList(c telebot.Context) error {
