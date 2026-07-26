@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"html"
@@ -107,29 +106,29 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 
 		var body []byte
+		var renderErr error
 		switch {
 		case strings.TrimSpace(token) != "":
 			secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 			claims, err := VerifyAccountTelegramLinkToken(secret, cfgBrandID(cfg), token)
 			if err != nil {
-				body = accountLinkInvalidHTML
+				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 				break
 			}
 			shu, errGU := app.GetUserByID(claims.ShmUserID)
 			if errGU != nil {
 				slog.Error("account link", "stage", "get_user_by_id", "user_id", claims.ShmUserID, "err", errGU)
-				body = accountLinkInvalidHTML
+				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 				break
 			}
 			if shu == nil || shu.Settings.Telegram.ChatID != claims.TelegramChatID {
-				body = accountLinkInvalidHTML
+				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 				break
 			}
 			if isWebLinkedTelegramUser(cfg, shu) {
 				normEmail, nerr := webuser.NormalizeEmail(shu.Settings.Web.Email)
 				if nerr != nil || strings.TrimSpace(shu.Login) == "" {
-					qs := strconv.Quote(token)
-					body = bytes.ReplaceAll(accountLinkStartHTML, []byte("__GO_JS_STRING__"), []byte(qs))
+					body, renderErr = renderedAccountLinkStartHTML(cfg, token)
 					break
 				}
 				rawTok, terr := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, shu.ID, shu.Login, accountTokenTTL(cfg))
@@ -143,15 +142,14 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 				http.Redirect(w, r, "/account/session?token="+url.QueryEscape(rawTok), http.StatusFound)
 				return
 			}
-			qs := strconv.Quote(token)
-			body = bytes.ReplaceAll(accountLinkStartHTML, []byte("__GO_JS_STRING__"), []byte(qs))
+			body, renderErr = renderedAccountLinkStartHTML(cfg, token)
 
 		default:
 			switch errQS {
 			case "google_email_conflict":
-				body = accountLinkStandaloneConflictHTML
+				body, renderErr = renderedAccountLinkStandaloneConflictHTML(cfg)
 			case "email_used_by_other":
-				body = accountLinkStandaloneConflictHTML
+				body, renderErr = renderedAccountLinkStandaloneConflictHTML(cfg)
 			case "already_linked":
 				body = standaloneLinkNoticePage(
 					"Привязка кабинета",
@@ -171,10 +169,16 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 			case "link_failed":
 				body = standaloneLinkNoticePage("Привязка кабинета", "Не удалось сохранить привязку. Попробуйте позже или напишите в поддержку.")
 			case "invalid_confirm_token", "expired_confirm":
-				body = accountLinkInvalidHTML
+				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 			default:
-				body = accountLinkInvalidHTML
+				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 			}
+		}
+
+		if renderErr != nil {
+			slog.Error("account link", "stage", "render_page", "err", renderErr)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))

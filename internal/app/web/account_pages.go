@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -138,13 +139,109 @@ func withAccountTopupPaymentMethods(body []byte) []byte {
 }
 
 //go:embed static/account/link_invalid.html
-var accountLinkInvalidHTML []byte
+var accountLinkInvalidTemplateSrc string
 
 //go:embed static/account/link_start.html
-var accountLinkStartHTML []byte
+var accountLinkStartTemplateSrc string
 
 //go:embed static/account/link_standalone_conflict.html
-var accountLinkStandaloneConflictHTML []byte
+var accountLinkStandaloneConflictTemplateSrc string
+
+var (
+	accountLinkInvalidTmplOnce sync.Once
+	accountLinkInvalidTmpl     *template.Template
+	accountLinkInvalidTmplErr  error
+
+	accountLinkStartTmplOnce sync.Once
+	accountLinkStartTmpl     *template.Template
+	accountLinkStartTmplErr  error
+
+	accountLinkConflictTmplOnce sync.Once
+	accountLinkConflictTmpl     *template.Template
+	accountLinkConflictTmplErr  error
+)
+
+type accountLinkPageData struct {
+	BrandName string
+}
+
+const accountLinkStartTokenMarker = "__GO_JS_STRING__"
+
+func accountLinkBrandName(cfg *config.Config) (string, error) {
+	if cfg == nil {
+		return "", errors.New("account link brand name is required")
+	}
+	name := strings.TrimSpace(cfg.EffectiveBrand().Name)
+	if name == "" {
+		return "", errors.New("account link brand name is required")
+	}
+	return name, nil
+}
+
+func accountLinkInvalidTemplate() (*template.Template, error) {
+	accountLinkInvalidTmplOnce.Do(func() {
+		accountLinkInvalidTmpl, accountLinkInvalidTmplErr = template.New("account-link-invalid").Parse(accountLinkInvalidTemplateSrc)
+	})
+	return accountLinkInvalidTmpl, accountLinkInvalidTmplErr
+}
+
+func accountLinkStartTemplate() (*template.Template, error) {
+	accountLinkStartTmplOnce.Do(func() {
+		accountLinkStartTmpl, accountLinkStartTmplErr = template.New("account-link-start").Parse(accountLinkStartTemplateSrc)
+	})
+	return accountLinkStartTmpl, accountLinkStartTmplErr
+}
+
+func accountLinkConflictTemplate() (*template.Template, error) {
+	accountLinkConflictTmplOnce.Do(func() {
+		accountLinkConflictTmpl, accountLinkConflictTmplErr = template.New("account-link-conflict").Parse(accountLinkStandaloneConflictTemplateSrc)
+	})
+	return accountLinkConflictTmpl, accountLinkConflictTmplErr
+}
+
+func renderAccountLinkTemplate(tmpl *template.Template, cfg *config.Config) ([]byte, error) {
+	brandName, err := accountLinkBrandName(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, accountLinkPageData{BrandName: brandName}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func renderedAccountLinkInvalidHTML(cfg *config.Config) ([]byte, error) {
+	tmpl, err := accountLinkInvalidTemplate()
+	if err != nil {
+		return nil, err
+	}
+	return renderAccountLinkTemplate(tmpl, cfg)
+}
+
+func renderedAccountLinkStandaloneConflictHTML(cfg *config.Config) ([]byte, error) {
+	tmpl, err := accountLinkConflictTemplate()
+	if err != nil {
+		return nil, err
+	}
+	return renderAccountLinkTemplate(tmpl, cfg)
+}
+
+func renderedAccountLinkStartHTML(cfg *config.Config, token string) ([]byte, error) {
+	tmpl, err := accountLinkStartTemplate()
+	if err != nil {
+		return nil, err
+	}
+	body, err := renderAccountLinkTemplate(tmpl, cfg)
+	if err != nil {
+		return nil, err
+	}
+	marker := []byte(accountLinkStartTokenMarker)
+	if n := bytes.Count(body, marker); n != 1 {
+		return nil, errors.New("account link start token marker missing or duplicated")
+	}
+	return bytes.Replace(body, marker, []byte(strconv.Quote(token)), 1), nil
+}
 
 func serveAccount(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
