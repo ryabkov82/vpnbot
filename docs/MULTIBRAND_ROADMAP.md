@@ -268,33 +268,80 @@ Callback, idempotency, зачисление и активация услуги �
 
 ---
 
-## 7. Контент и коммуникации — 🟡 Частично
+## 7. Контент и коммуникации — ✅ Готово
 
-### Реализовано
+### Итог M7
 
-- account email используют `brand.name` в теме и тексте;
+P0/P1 runtime findings из content audit закрыты и развёрнуты:
+
+- account/buy/payment/link titles и notices строятся из `brand.name` / `brand.landing_url`;
+- payment support и public buy support — через `WebCabinetResolvedSupportURL`;
+- Telegram logo fail-open на VFF удалён (`assets.logo_url` обязателен);
+- premium-connect support/redirect изолированы (same-origin `/redirect.html`);
+- operator lead notifications brand-aware (`EffectiveBrand().Name`);
+- brand-specific favicon asset sets (VFF/FC);
+- последний email fallback `"VPN for Friends"` удалён (fail-closed `brand.name`).
+
+Исторический snapshot аудита до remediation: `docs/MULTIBRAND_CONTENT_AUDIT.md` (не изменяется).
+
+### Content contract
+
+**Required / fail-closed**
+
+- `brand.id`, `brand.name`, `brand.allowed_hosts`, `brand.public_base_url`, `brand.landing_url`;
+- `brand.service_category`, `brand.web_user_login_prefix`, `brand.web_user_source`;
+- `brand.payment_profile`, `brand.yookassa_pay_system`;
+- `assets.logo_url`;
+- favicon asset set для поддерживаемого `brand.id`;
+- user-visible titles и operator labels — из `brand.name`;
+- public/marketing links — из active brand URLs;
+- cross-brand fallback запрещён.
+
+**Optional or intentionally shared**
+
+- `telegram.news_channel` — optional;
+- Telegram support contact может быть общим для брендов;
+- текущий общий support: `https://t.me/friends_connect_support`;
+- generic RU/EN UX copy может быть общей;
+- dark Bootstrap theme может быть общей;
+- общий SHM/backend/payment merchant не является content identity;
+- отдельная visual theme на бренд сейчас не требуется.
+
+**Favicon model**
+
+- VFF и FC используют отдельные embedded asset sets;
+- неизвестный `brand.id` отклоняется fail-closed;
+- добавление asset pack третьего бренда проверяется в M9.
+
+### Accepted P2 debt
+
+Внутренние идентификаторы (не блокируют M7):
+
+- `window.VFF_ACCOUNT`;
+- `window.VFF_I18N`;
+- cookie `vff_lang`.
+
+Они не отображаются пользователю, не влияют на brand routing/identity, сохранены ради
+минимизации churn и совместимости cookie; могут быть переименованы отдельным refactor
+после M9.
+
+Также приняты: shared visual theme; VFF strings в test fixtures и исторических docs.
+
+### Production verification
+
+- VFF и FC binary deploy прошёл;
+- explicit brand startup verified;
+- public smoke прошёл;
+- UI titles/landing/support/logo/favicon проверены;
+- favicon production hashes разделены; VFF assets не изменились;
+- FC не получает VFF identity/defaults;
+- lead operator flow сейчас не используется UI, но builder brand-aware и покрыт tests.
+
+### Прочее (ранее реализовано)
+
 - explicit `email.from_name` имеет приоритет для From header;
-- автоматические письма Friends Connect отправляются как
-  `Friends Connect <noreply@friends-connect.club>`;
-- вручную проверены magic-link login и письмо подтверждения Telegram → web linking;
-- для FC создан отдельный Google OAuth Web client;
-- Google callback переведён на
-  `https://connect.friends-connect.club/api/account/google/callback`;
-- Google OAuth вручную проверен в production;
-- создан официальный адрес поддержки: `support@friends-connect.club`;
-- входящие на `support@friends-connect.club` принимаются через Cloudflare Email Routing;
-- ответы поддержки отправляются из Gmail через SMTP2GO как
-  `Friends Connect Support <support@friends-connect.club>`.
-
-### Осталось (общий аудит)
-
-- logo и static assets;
-- Telegram-тексты;
-- support/news links;
-- favicon и page titles;
-- тексты ошибок;
-- VFF-oriented defaults;
-- известный `defaultLogoURL` в `internal/app/bot/service.go`.
+- FC Google OAuth Web client и callback на `connect.friends-connect.club`;
+- `support@friends-connect.club` (Cloudflare Email Routing / SMTP2GO).
 
 ---
 
@@ -360,7 +407,7 @@ Callback, idempotency, зачисление и активация услуги �
 | M4 | ✅ | Telegram identity isolation |
 | M5 | ✅ | Web identity audit and isolation |
 | M6 | ✅ | Payment end-to-end audit and routing isolation |
-| M7 | 🟡 | Brand-specific content cleanup |
+| M7 | ✅ | Brand-specific content cleanup |
 | M8 | ⬜ | Attribution and analytics |
 | M9 | ⬜ | Third-brand onboarding validation |
 
@@ -382,11 +429,10 @@ Callback, idempotency, зачисление и активация услуги �
 
 ### M7 — Brand-specific content cleanup
 
-- **Статус:** 🟡 частично — account emails / From branding, FC Google OAuth client и support mailbox уже работают; остаётся общий аудит UI/Telegram/assets/defaults.
-- **Цель:** убрать VFF-oriented defaults и выровнять brand content/communications.
-- **Основные риски:** скрытые hardcoded URL/тексты/logo/support в bot и web.
-- **Ожидаемый результат:** контент и коммуникации берутся из brand/runtime config без VFF fallback в FC.
-- **Критерий завершения:** FC UI/email/Telegram не показывают VFF identity; default logo debt закрыт.
+- **Статус:** ✅ готово.
+- **Цель:** выполнена — убраны VFF-oriented runtime defaults; content/communications выровнены по active brand.
+- **Результат:** P0/P1 findings закрыты (account/buy/link identity, payment support, logo fail-open, premium-connect URLs, operator lead banner, brand favicons, email fail-closed); зафиксирован content contract; P2 JS/cookie names приняты как non-blocking debt.
+- **Критерий завершения:** выполнен — FC UI/email/Telegram не показывают VFF identity; cross-brand content fallback в runtime-критичных путях отсутствует.
 
 ### M8 — Attribution and analytics
 
@@ -421,25 +467,14 @@ Callback, idempotency, зачисление и активация услуги �
 - для каждого бренда работают config validation, deploy, rollback и smoke;
 - отсутствуют неявные VFF defaults в runtime-критичных путях.
 
-M5 и M6 закрыты; общий мультибрендинг ещё не завершён — остаются M7–M9.
+M5–M7 закрыты; общий мультибрендинг ещё не завершён — остаются M8–M9.
 
 ---
 
 ## 12. Следующий шаг
 
-Основной следующий шаг: **M7 — Brand-specific content cleanup**.
-
-Охват M7:
-
-- logo и static assets;
-- Telegram-тексты;
-- support/news links;
-- favicon и page titles;
-- тексты ошибок;
-- VFF-oriented defaults;
-- `defaultLogoURL` в `internal/app/bot/service.go`.
+Основной следующий шаг: **M8 — Attribution and analytics**.
 
 Затем:
 
-- **M8 — Attribution and analytics**;
 - **M9 — Third-brand onboarding validation**.

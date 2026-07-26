@@ -1,6 +1,7 @@
 package email
 
 import (
+	"errors"
 	"net/smtp"
 	"strings"
 	"testing"
@@ -55,6 +56,16 @@ func captureSendMail(t *testing.T) *string {
 	return &captured
 }
 
+func forbidSendMail(t *testing.T) {
+	t.Helper()
+	prev := SendMail
+	SendMail = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		t.Fatal("SendMail must not be called")
+		return nil
+	}
+	t.Cleanup(func() { SendMail = prev })
+}
+
 func TestSendAccountLoginEmail_VFFUnchanged(t *testing.T) {
 	msg := captureSendMail(t)
 	cfg := configuredEmailCfg("VPN for Friends")
@@ -90,6 +101,21 @@ func TestSendAccountLoginEmail_FCBrandAware(t *testing.T) {
 	}
 	if strings.Contains(*msg, "VPN for Friends") {
 		t.Fatalf("must not contain VFF: %s", *msg)
+	}
+}
+
+func TestSendAccountLoginEmail_TrimmedBrandName(t *testing.T) {
+	msg := captureSendMail(t)
+	cfg := configuredEmailCfg(" Friends Connect ")
+	cfg.Brand.ID = "fc"
+	if err := SendAccountLoginEmail(cfg, "user@example.com", "https://example/session?token=x"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(*msg, "Subject: Friends Connect — вход в личный кабинет\r\n") {
+		t.Fatalf("trimmed subject: %s", *msg)
+	}
+	if !strings.Contains(*msg, "\r\n\r\nFriends Connect\r\n") {
+		t.Fatalf("trimmed body: %s", *msg)
 	}
 }
 
@@ -130,27 +156,65 @@ func TestSendAccountLoginEmail_ExplicitFromNamePriority(t *testing.T) {
 	}
 }
 
-func TestSendAccountLoginEmail_EmptyBrandNameFallback(t *testing.T) {
-	msg := captureSendMail(t)
+func TestSendAccountLoginEmail_FailClosedBrandName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  *config.Config
+	}{
+		{name: "nil", cfg: nil},
+		{name: "empty", cfg: configuredEmailCfg("")},
+		{name: "whitespace", cfg: configuredEmailCfg("  \t  ")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			forbidSendMail(t)
+			err := SendAccountLoginEmail(tc.cfg, "user@example.com", "https://example/session?token=x")
+			if !errors.Is(err, ErrBrandNameRequired) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestSendAccountLoginEmail_FromNameDoesNotBypassBrandName(t *testing.T) {
+	forbidSendMail(t)
 	cfg := configuredEmailCfg("")
-	cfg.Brand.ID = ""
-	cfg.Brand.Name = ""
-	if err := SendAccountLoginEmail(cfg, "user@example.com", "https://example/session?token=x"); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(*msg, "Subject: VPN for Friends — вход в личный кабинет\r\n") {
-		t.Fatalf("fallback subject: %s", *msg)
-	}
-	if !strings.Contains(*msg, `From: "VPN for Friends" <noreply@test.example>`) {
-		t.Fatalf("fallback from: %s", *msg)
+	cfg.Email.FromName = "Custom Sender"
+	err := SendAccountLoginEmail(cfg, "user@example.com", "https://example/session?token=x")
+	if !errors.Is(err, ErrBrandNameRequired) {
+		t.Fatalf("err=%v", err)
 	}
 }
 
 func TestBrandDisplayName_StripsCRLF(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Brand.Name = "Friends\r\nConnect"
-	got := brandDisplayName(cfg)
+	got, err := brandDisplayName(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got != "FriendsConnect" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestBrandDisplayName_FailClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  *config.Config
+	}{
+		{name: "nil", cfg: nil},
+		{name: "empty", cfg: &config.Config{}},
+		{name: "whitespace", cfg: func() *config.Config {
+			c := &config.Config{}
+			c.Brand.Name = " \t "
+			return c
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := brandDisplayName(tc.cfg)
+			if !errors.Is(err, ErrBrandNameRequired) {
+				t.Fatalf("err=%v", err)
+			}
+		})
 	}
 }

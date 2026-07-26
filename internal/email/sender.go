@@ -12,9 +12,10 @@ import (
 // SendMail подменяется в тестах (по умолчанию — net/smtp.SendMail).
 var SendMail = smtp.SendMail
 
-var ErrNotConfigured = errors.New("email not configured")
-
-const legacyBrandDisplayName = "VPN for Friends"
+var (
+	ErrNotConfigured     = errors.New("email not configured")
+	ErrBrandNameRequired = errors.New("brand name is required")
+)
 
 // IsConfigured — включённый SMTP с минимально необходимыми полями (magic-link вход в кабинет и др.).
 func IsConfigured(cfg *config.Config) bool {
@@ -39,28 +40,35 @@ func smtpPort(cfg *config.Config) int {
 	return p
 }
 
-// brandDisplayName — пользовательское название бренда для писем.
-// Пустой/nil config → legacy "VPN for Friends". Удаляет CR/LF перед заголовками.
-func brandDisplayName(cfg *config.Config) string {
-	name := ""
-	if cfg != nil {
-		name = strings.TrimSpace(cfg.EffectiveBrand().Name)
+// brandDisplayName — пользовательское название бренда для писем (fail-closed).
+// Удаляет CR/LF перед использованием в subject/body/headers. Без VFF fallback.
+func brandDisplayName(cfg *config.Config) (string, error) {
+	if cfg == nil {
+		return "", ErrBrandNameRequired
 	}
+	name := strings.TrimSpace(cfg.EffectiveBrand().Name)
 	if name == "" {
-		name = legacyBrandDisplayName
+		return "", ErrBrandNameRequired
 	}
 	name = strings.ReplaceAll(name, "\r", "")
 	name = strings.ReplaceAll(name, "\n", "")
-	return name
+	if name == "" {
+		return "", ErrBrandNameRequired
+	}
+	return name, nil
 }
 
-func formatFrom(cfg *config.Config) string {
+func formatFrom(cfg *config.Config) (string, error) {
 	name := ""
 	if cfg != nil {
 		name = strings.TrimSpace(cfg.Email.FromName)
 	}
 	if name == "" {
-		name = brandDisplayName(cfg)
+		brand, err := brandDisplayName(cfg)
+		if err != nil {
+			return "", err
+		}
+		name = brand
 	}
 	from := ""
 	if cfg != nil {
@@ -71,18 +79,22 @@ func formatFrom(cfg *config.Config) string {
 		name = strings.ReplaceAll(name, "\r", "")
 		name = strings.ReplaceAll(name, "\n", "")
 	}
-	return fmt.Sprintf("%q <%s>", name, from)
+	return fmt.Sprintf("%q <%s>", name, from), nil
 }
 
 func sendPlain(cfg *config.Config, to, subject, body string) error {
 	if !IsConfigured(cfg) {
 		return ErrNotConfigured
 	}
+	fromHeader, err := formatFrom(cfg)
+	if err != nil {
+		return err
+	}
 	host := strings.TrimSpace(cfg.Email.SMTPHost)
 	addr := fmt.Sprintf("%s:%d", host, smtpPort(cfg))
 	auth := smtp.PlainAuth("", strings.TrimSpace(cfg.Email.SMTPUsername), cfg.Email.SMTPPassword, host)
 	envelopeFrom := strings.TrimSpace(cfg.Email.FromEmail)
-	msg := buildRFC822(formatFrom(cfg), to, subject, body)
+	msg := buildRFC822(fromHeader, to, subject, body)
 	return SendMail(addr, auth, envelopeFrom, []string{to}, []byte(msg))
 }
 
@@ -105,7 +117,10 @@ func buildRFC822(fromHeader, to, subject, body string) string {
 
 // SendAccountLoginEmail — magic-link вход в личный кабинет.
 func SendAccountLoginEmail(cfg *config.Config, to, loginURL string) error {
-	brand := brandDisplayName(cfg)
+	brand, err := brandDisplayName(cfg)
+	if err != nil {
+		return err
+	}
 	subject := brand + " — вход в личный кабинет"
 	body := fmt.Sprintf(`%s
 
@@ -119,7 +134,10 @@ func SendAccountLoginEmail(cfg *config.Config, to, loginURL string) error {
 
 // SendAccountLinkConfirmEmail — письмо для завершения привязки Telegram → web после ввода email на /account/link.
 func SendAccountLinkConfirmEmail(cfg *config.Config, to, confirmURL string) error {
-	brand := brandDisplayName(cfg)
+	brand, err := brandDisplayName(cfg)
+	if err != nil {
+		return err
+	}
 	subject := brand + " — подтвердите привязку личного кабинета"
 	body := fmt.Sprintf(`%s
 
