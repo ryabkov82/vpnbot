@@ -43,7 +43,7 @@ func TestServePaymentReturn_PublicNoAuth(t *testing.T) {
 			t.Fatalf("must not claim payment success (%q): %s", banned, body)
 		}
 	}
-	if !strings.Contains(body, `/favicon.ico`) || !strings.Contains(body, `/favicon-32x32.png`) {
+	if !strings.Contains(body, `/favicon.ico?v=2`) || !strings.Contains(body, `/favicon-32x32.png?v=2`) {
 		t.Fatalf("missing favicon links used by account templates: %s", body)
 	}
 }
