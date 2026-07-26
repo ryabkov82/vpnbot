@@ -20,8 +20,6 @@ import (
 	"gopkg.in/telebot.v3"
 )
 
-const defaultLogoURL = "https://vpn-for-friends.com/logobot.jpg"
-
 // Service содержит бизнес-логику обработки команд
 type Service struct {
 	service *service.Service
@@ -48,13 +46,10 @@ func orderServiceCategoryAllowed(cfg *config.Config, svc *models.Service) bool {
 	return models.ServiceCategoryAllowed(cfg.ServiceCategory(), svc.Category)
 }
 
+// logoPhoto uses explicit assets.logo_url (required by Config.Normalize).
 func (s *Service) logoPhoto(caption string) *telebot.Photo {
-	url := s.config.Assets.LogoURL
-	if url == "" {
-		url = defaultLogoURL
-	}
 	return &telebot.Photo{
-		File:    telebot.FromURL(url),
+		File:    telebot.FromURL(s.config.Assets.LogoURL),
 		Caption: caption,
 	}
 }

@@ -398,12 +398,13 @@ func explicitBrandJSON(id, name, host, publicBaseURL, landingURL, category, prof
 		YooKassaPaySystem:  yookassaPS,
 	}
 	b, _ := json.Marshal(brand)
-	return `{"telegram":{"token":"test-token"},"brand":` + string(b) + `}`
+	return `{"telegram":{"token":"test-token"},"assets":{"logo_url":"https://assets.example.test/logo.png"},"brand":` + string(b) + `}`
 }
 
 func validExplicitBrandCfg() *Config {
 	cfg := &Config{}
 	cfg.Telegram.Token = "tok"
+	cfg.Assets.LogoURL = "https://assets.example.test/logo.png"
 	cfg.Brand = BrandConfig{
 		ID:                 "vff",
 		Name:               "VPN for Friends",
@@ -422,6 +423,7 @@ func validExplicitBrandCfg() *Config {
 func validExplicitFCBrandCfg() *Config {
 	cfg := &Config{}
 	cfg.Telegram.Token = "tok"
+	cfg.Assets.LogoURL = "https://assets.example.test/logo.png"
 	cfg.Brand = BrandConfig{
 		ID:                 "fc",
 		Name:               "Friends Connect",

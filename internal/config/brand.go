@@ -196,7 +196,14 @@ func (c *Config) Normalize() error {
 		return err
 	}
 	c.Brand = normalizeBrandFields(c.Brand)
-	return validateExplicitBrand(c.Brand)
+	if err := validateExplicitBrand(c.Brand); err != nil {
+		return err
+	}
+	c.Assets.LogoURL = strings.TrimSpace(c.Assets.LogoURL)
+	if err := validateAbsoluteHTTPURL("assets.logo_url", c.Assets.LogoURL); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validateExplicitBrand(b BrandConfig) error {

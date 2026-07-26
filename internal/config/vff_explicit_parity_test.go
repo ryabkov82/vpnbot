@@ -16,6 +16,7 @@ func TestExplicitVFFBrandGetters(t *testing.T) {
 	explicit.Services.Category = "legacy-category"
 	explicit.WebSales.PublicBaseURL = "https://legacy.example"
 	explicit.Payments.Profile = "legacy_profile"
+	explicit.Assets.LogoURL = "https://assets.example.test/logo.png"
 	explicit.Brand = BrandConfig{
 		ID:                 "vff",
 		Name:               "VPN for Friends",
@@ -127,6 +128,7 @@ func TestConfigcheckBinary_NoSecretsInStdout(t *testing.T) {
 	body := `{
 		"telegram": {"token": "SECRET-TELEGRAM-TOKEN-VALUE"},
 		"api": {"api_login": "secret-api-login", "api_pass": "secret-api-pass"},
+		"assets": {"logo_url": "https://assets.example.test/logo.png"},
 		"brand": {
 			"id": "vff",
 			"name": "VPN for Friends",

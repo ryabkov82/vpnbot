@@ -617,6 +617,7 @@ test_renderer() {
 {
   "telegram": {"token": "SECRET-TOKEN"},
   "api": {"api_pass": "SECRET-PASS"},
+  "assets": {"logo_url": "https://assets.example.test/fc-logo.png"},
   "services": {"category": "vpn-mz-fc", "extra": 1},
   "web_sales": {"public_base_url": "https://connect.friends-connect.club", "order_token_secret": "SECRET-ORDER", "enabled": true},
   "payments": {"profile": "telegram_friends_connect_bot", "keep": true}
@@ -642,6 +643,7 @@ assert c["payments"]["keep"] is True
 assert c["brand"]["web_user_login_prefix"]=="web_fc_"
 assert c["brand"]["web_user_source"]=="vpn-for-friends.com"
 assert c["brand"]["yookassa_pay_system"]=="yookassa"
+assert c["assets"]["logo_url"]=="https://assets.example.test/fc-logo.png"
 print("ok")
 PY
 
@@ -879,7 +881,7 @@ test_renderer_to_configcheck() {
   dir="$(mktemp -d)"
 
   cat >"${dir}/fc-src.json" <<'EOF'
-{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"assets":{"logo_url":"https://assets.example.test/fc-logo.png"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   # Legacy source itself is invalid for runtime (no brand.id).
   rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/fc-src.json" 2>&1)" || rc=$?
@@ -901,7 +903,7 @@ EOF
   fi
 
   cat >"${dir}/vff-src.json" <<'EOF'
-{"telegram":{"token":"t"},"services":{"category":"vpn-mz-test"},"web_sales":{"public_base_url":"https://connect.vpn-for-friends.com"},"payments":{"profile":"telegram_bot"}}
+{"telegram":{"token":"t"},"assets":{"logo_url":"https://assets.example.test/vff-logo.png"},"services":{"category":"vpn-mz-test"},"web_sales":{"public_base_url":"https://connect.vpn-for-friends.com"},"payments":{"profile":"telegram_bot"}}
 EOF
   rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/vff-src.json" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail cc_legacy_vff "legacy source must fail configcheck"; rm -rf "${dir}"; return; fi
