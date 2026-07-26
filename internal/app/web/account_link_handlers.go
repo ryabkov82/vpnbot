@@ -51,7 +51,11 @@ func isWebLinkedTelegramUser(cfg *config.Config, user *models.User) bool {
 	return stored == brandID
 }
 
-func standaloneLinkNoticePage(title string, paragraphs ...string) []byte {
+func standaloneLinkNoticePage(cfg *config.Config, title string, paragraphs ...string) ([]byte, error) {
+	brandName, err := accountLinkBrandName(cfg)
+	if err != nil {
+		return nil, err
+	}
 	var body strings.Builder
 	body.WriteString(`<!doctype html>
 <html lang="ru" data-bs-theme="dark">
@@ -60,7 +64,9 @@ func standaloneLinkNoticePage(title string, paragraphs ...string) []byte {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>`)
 	body.WriteString(html.EscapeString(title))
-	body.WriteString(` — VPN for Friends</title>
+	body.WriteString(` — `)
+	body.WriteString(html.EscapeString(brandName))
+	body.WriteString(`</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <style>[data-bs-theme='dark'] { --bs-body-bg: #282a36; }</style>
 </head>
@@ -81,7 +87,7 @@ func standaloneLinkNoticePage(title string, paragraphs ...string) []byte {
 	body.WriteString(`<p><a href="/account">Страница входа</a></p>
 </div>
 </body></html>`)
-	return []byte(body.String())
+	return []byte(body.String()), nil
 }
 
 func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
@@ -151,23 +157,23 @@ func serveAccountLink(cfg *config.Config, app accountWebApp) http.HandlerFunc {
 			case "email_used_by_other":
 				body, renderErr = renderedAccountLinkStandaloneConflictHTML(cfg)
 			case "already_linked":
-				body = standaloneLinkNoticePage(
+				body, renderErr = standaloneLinkNoticePage(cfg,
 					"Привязка кабинета",
 					"К этому аккаунту уже привязан другой email. Откройте личный кабинет заново из Telegram-бота или напишите в поддержку.")
 			case "telegram_mismatch":
-				body = standaloneLinkNoticePage(
+				body, renderErr = standaloneLinkNoticePage(cfg,
 					"Привязка кабинета",
 					"Данные сессии Telegram не совпали. Откройте новую ссылку из Telegram-бота.")
 			case "bad_user":
-				body = standaloneLinkNoticePage("Привязка кабинета", "Не удалось завершить привязку. Попробуйте заново из Telegram-бота.")
+				body, renderErr = standaloneLinkNoticePage(cfg, "Привязка кабинета", "Не удалось завершить привязку. Попробуйте заново из Telegram-бота.")
 			case "token_failed":
-				body = standaloneLinkNoticePage("Привязка кабинета", "Не удалось выдать сессию. Попробуйте заново через бота или обычный вход на сайте.")
+				body, renderErr = standaloneLinkNoticePage(cfg, "Привязка кабинета", "Не удалось выдать сессию. Попробуйте заново через бота или обычный вход на сайте.")
 			case "shm_login2_not_persisted":
-				body = standaloneLinkNoticePage(
+				body, renderErr = standaloneLinkNoticePage(cfg,
 					"Привязка кабинета",
 					"Не удалось завершить привязку аккаунта в биллинге. Попробуйте еще раз позже или обратитесь в поддержку.")
 			case "link_failed":
-				body = standaloneLinkNoticePage("Привязка кабинета", "Не удалось сохранить привязку. Попробуйте позже или напишите в поддержку.")
+				body, renderErr = standaloneLinkNoticePage(cfg, "Привязка кабинета", "Не удалось сохранить привязку. Попробуйте позже или напишите в поддержку.")
 			case "invalid_confirm_token", "expired_confirm":
 				body, renderErr = renderedAccountLinkInvalidHTML(cfg)
 			default:
