@@ -203,25 +203,68 @@ Production cutover Friends Connect завершён: web identities VFF и FC р
 
 ---
 
-## 6. Платежи — 🟡 Частично
+## 6. Платежи — ✅ Готово
 
-Разные `payment_profile` уже заданы в brand profiles (`telegram_bot` / `telegram_friends_connect_bot`).
+Поддерживаемый vpnbot payment flow изолирован по брендам: разные SHM identities, category gate, Telegram payment profiles и brand-aware YooKassa return routing. Provider callback, зачисление баланса, activation и idempotency выполняются внутри SHM; в vpnbot payment callback handler отсутствует.
 
-Это **не** означает, что весь платёжный контур уже полностью разделён. Требуется end-to-end аудит:
+Исторический статический snapshot lifecycle до последующих исправлений и production verification: `docs/MULTIBRAND_PAYMENT_AUDIT.md`. Операционные детали overlays: `deploy/shm/yookassa/README.md`, `deploy/shm/templates/tg_payments_webapp/README.md`.
 
-- выбор payment profile;
-- создание счёта;
-- категория услуги;
-- metadata/comment платежа;
-- callback/webhook;
-- success URL;
-- fail URL;
-- возврат на домен активного бренда;
-- письма после оплаты;
-- повторная обработка callback;
-- невозможность активировать услугу другого бренда.
+### Архитектурная модель
 
-Статус: профили существуют; полнота изоляции — ещё не подтверждена.
+- vpnbot инициирует заказ услуги и пополнение баланса;
+- дальнейший provider/SHM flow (callback, balance credit, activation, idempotency) — вне vpnbot;
+- payment metadata в текущем YooKassa CGI содержит `user_id`, но не brand/service identity;
+- post-payment email/Telegram notification в vpnbot отсутствуют;
+- YooKassa merchant/pay-system config в SHM остаётся общим; отдельная merchant/callback инфраструктура на бренд не утверждается.
+
+### Brand isolation до платежа
+
+- VFF и FC используют разные SHM users (Telegram/web identity isolation);
+- категории: VFF `vpn-mz-test`, FC `vpn-mz-fc`; создание/изменение услуги проходит category gate активного бренда;
+- Telegram payment profiles: VFF `telegram_bot`, FC `telegram_friends_connect_bot`.
+
+### Brand-aware YooKassa return routing
+
+- обязательный fail-closed `brand.yookassa_pay_system`;
+- vpnbot передаёт в CGI только серверные `ps=yookassa` и `brand_id=vff|fc`; клиент не задаёт `brand_id` / `return_url`;
+- CryptoCloud не изменён и не получает `brand_id`;
+- managed CGI overlay `VPNBOT_BRAND_ROUTING_VERSION=2`: mapping из `deploy/brands/*.json` → публичные `/payment/return` доменов брендов;
+- неизвестный непустой `brand_id` отклоняется; отсутствие `brand_id` сохраняет legacy SHM `return_url`;
+- безопасная диагностика: `vpnbot_route_check` (без создания платежа).
+
+### Telegram routing
+
+- managed SHM template `tg_payments_webapp` (`VPNBOT_TG_PAYMENT_ROUTING_VERSION=1`);
+- launch URL содержит серверные `brand_id` и `yookassa_ps`;
+- шаблон строит `shm_url + amount`, затем через `URL.searchParams` добавляет `brand_id` только при совпадении фактического `ps` с `yookassa_ps`;
+- CryptoCloud и legacy launch без `brand_id` сохраняют прежнее поведение;
+- email кодируется через `searchParams`.
+
+### Managed deployment
+
+Централизованные `check` / `diff` / `deploy` / `rollback` для CGI и Telegram template: backup, валидация candidate, atomic/POST install, probes, автоматический rollback при ошибке. Без ручных one-off правок production.
+
+### Production verification
+
+Подтверждено безопасными probes и public smoke (без реального успешного платежа и без проверки provider callback / post-payment писем):
+
+- route-check VFF/FC → точные brand return URL; invalid/absent → controlled `unknown brand_id`;
+- create probes с неизвестным user → controlled rejection; invalid create brand → `unknown brand_id`;
+- post-deploy check/diff идемпотентны;
+- web и Telegram YooKassa вручную открываются для VFF и FC; CryptoCloud продолжает открываться;
+- admin template совпадает с candidate; public template endpoint HTTP 200.
+
+### Границы ответственности SHM
+
+Callback, idempotency, зачисление и активация услуги — контур SHM/provider. Brand isolation на стороне vpnbot обеспечивается identities, category gate, payment profile и brand-aware return routing, а не отдельными YooKassa merchant credentials на бренд.
+
+### Критерии завершения M6 — выполнены
+
+- платежи поддерживаемого vpnbot flow не пересекают бренды на уровне identity/category/profile/return routing;
+- публичные payment return URL ведут на домен активного бренда;
+- callbacks остаются внутри SHM и привязаны к отдельному SHM user;
+- CryptoCloud и legacy без `brand_id` не сломаны;
+- overlays управляются из репозитория с безопасной verification.
 
 ---
 
@@ -316,7 +359,7 @@ Production cutover Friends Connect завершён: web identities VFF и FC р
 | M3 | ✅ | service category isolation |
 | M4 | ✅ | Telegram identity isolation |
 | M5 | ✅ | Web identity audit and isolation |
-| M6 | ⬜ | Payment end-to-end audit |
+| M6 | ✅ | Payment end-to-end audit and routing isolation |
 | M7 | 🟡 | Brand-specific content cleanup |
 | M8 | ⬜ | Attribution and analytics |
 | M9 | ⬜ | Third-brand onboarding validation |
@@ -328,12 +371,14 @@ Production cutover Friends Connect завершён: web identities VFF и FC р
 - **Результат:** VFF `web_<hash(email)>`, FC `web_fc_<hash(email)>`; brand-bound tokens и membership; migration существующей FC web-привязки; production rollout и smoke успешны.
 - **Критерий завершения:** выполнен — независимые keyspaces; session/magic link/OAuth/linking ограничены брендом; услуги другого бренда недоступны.
 
-### M6 — Payment end-to-end audit
+### M6 — Payment end-to-end audit and routing isolation
 
-- **Цель:** подтвердить, что платёжный контур не пересекает бренды.
-- **Основные риски:** callback активирует услугу чужой category; success/fail URL уводят на чужой домен; письма/profile смешивают бренды.
-- **Ожидаемый результат:** чеклист e2e по созданию счёта, callback, URL, письмам и активации услуг.
-- **Критерий завершения:** платежи и активации строго ограничены активным брендом и его category/profile.
+- **Статус:** ✅ готово.
+- **Цель:** выполнена — подтверждена изоляция поддерживаемого vpnbot payment flow и brand-aware YooKassa return routing без пересечения брендов.
+- **Результат:** статический аудит (`docs/MULTIBRAND_PAYMENT_AUDIT.md` как исторический snapshot); managed YooKassa CGI `VPNBOT_BRAND_ROUTING_VERSION=2` и Telegram template `VPNBOT_TG_PAYMENT_ROUTING_VERSION=1`; серверные `brand_id` / `yookassa_ps`; CryptoCloud без `brand_id`; централизованные check/diff/deploy/rollback.
+- **Production verification:** безопасные route-check/create probes, public smoke, идемпотентные check/diff; ручное открытие YooKassa в web и Telegram для VFF/FC.
+- **Граница:** callback/idempotency/activation выполняются SHM; реальный успешный платёж и replay callback в рамках закрытия M6 не проводились; общая YooKassa merchant config в SHM сохраняется.
+- **Критерий завершения:** выполнен для поддерживаемого vpnbot payment flow — brand isolation identities/category/profile/return routing; публичные return URL на домен активного бренда; callbacks остаются в SHM у отдельного SHM user.
 
 ### M7 — Brand-specific content cleanup
 
@@ -368,32 +413,33 @@ Production cutover Friends Connect завершён: web identities VFF и FC р
   (этот пункт обеспечен завершённой web identity isolation M5);
 - пользователь не видит услуги другого бренда;
 - платежи не пересекают бренды;
-- callback не активирует услугу другого бренда;
+- публичные payment return URL ведут на домен активного бренда;
+- callbacks остаются внутри SHM и привязаны к отдельному SHM user;
 - публичные ссылки ведут на правильный домен;
 - письма и Telegram UI используют правильный бренд;
 - добавление тестового третьего бренда не требует изменения бизнес-логики;
 - для каждого бренда работают config validation, deploy, rollback и smoke;
 - отсутствуют неявные VFF defaults в runtime-критичных путях.
 
-M5 закрыт; общий мультибрендинг ещё не завершён — остаются M6–M9.
+M5 и M6 закрыты; общий мультибрендинг ещё не завершён — остаются M7–M9.
 
 ---
 
 ## 12. Следующий шаг
 
-Основной следующий шаг: **M6 — Payment end-to-end audit**.
+Основной следующий шаг: **M7 — Brand-specific content cleanup**.
 
-Охват M6:
+Охват M7:
 
-- выбор `payment_profile` активного бренда;
-- создание счёта;
-- service category;
-- payment metadata/comment;
-- callback/webhook;
-- идемпотентная повторная обработка callback;
-- success/fail URL;
-- возврат на домен активного бренда;
-- письма после оплаты;
-- невозможность активировать услугу другого бренда.
+- logo и static assets;
+- Telegram-тексты;
+- support/news links;
+- favicon и page titles;
+- тексты ошибок;
+- VFF-oriented defaults;
+- `defaultLogoURL` в `internal/app/bot/service.go`.
 
-Параллельно **M7** остаётся частично завершённым и требует общего content cleanup.
+Затем:
+
+- **M8 — Attribution and analytics**;
+- **M9 — Third-brand onboarding validation**.
