@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,13 +43,30 @@ func resolveLeadNotificationChatID(cfg *config.Config) int64 {
 	return cfg.Telegram.SupportChatID
 }
 
-func buildLeadTelegramMessage(lead publicLead, serviceName, ip string) string {
+func leadNotificationBrandName(cfg *config.Config) (string, error) {
+	if cfg == nil {
+		return "", errors.New("lead notification brand name is required")
+	}
+	name := strings.TrimSpace(cfg.EffectiveBrand().Name)
+	if name == "" {
+		return "", errors.New("lead notification brand name is required")
+	}
+	return name, nil
+}
+
+func buildLeadTelegramMessage(cfg *config.Config, lead publicLead, serviceName, ip string) (string, error) {
+	brandName, err := leadNotificationBrandName(cfg)
+	if err != nil {
+		return "", err
+	}
 	contact := strings.TrimSpace(lead.Contact)
 	if contact == "" {
 		contact = "—"
 	}
 	var b strings.Builder
-	b.WriteString("🆕 Заявка с сайта VPN for Friends\n\n")
+	b.WriteString("🆕 Заявка с сайта ")
+	b.WriteString(brandName)
+	b.WriteString("\n\n")
 	b.WriteString("Тариф: ")
 	b.WriteString(serviceName)
 	b.WriteString("\nservice_id: ")
@@ -59,7 +77,7 @@ func buildLeadTelegramMessage(lead publicLead, serviceName, ip string) string {
 	b.WriteString(contact)
 	b.WriteString("\nIP: ")
 	b.WriteString(ip)
-	return b.String()
+	return b.String(), nil
 }
 
 // postTelegramPlainTextMessage шлёт plain text в Telegram Bot API (без parse_mode).
@@ -130,6 +148,10 @@ func postTelegramPlainTextMessage(cfg *config.Config, text string, logPrefix str
 // sendLeadTelegramNotification шлёт уведомление в Telegram через Bot API.
 // Ошибки не пробрасываются наружу; токен в логи не пишется.
 func sendLeadTelegramNotification(cfg *config.Config, lead publicLead, serviceName, ip string) {
-	text := buildLeadTelegramMessage(lead, serviceName, ip)
+	text, err := buildLeadTelegramMessage(cfg, lead, serviceName, ip)
+	if err != nil {
+		slog.Warn("lead telegram: skip, invalid brand identity", "err", err)
+		return
+	}
 	postTelegramPlainTextMessage(cfg, text, "lead telegram")
 }

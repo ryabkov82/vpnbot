@@ -68,6 +68,41 @@ func TestServePublicLead_POST_OK(t *testing.T) {
 	}
 }
 
+func TestServePublicLead_EmptyBrandStillAcceptedWithoutTelegram(t *testing.T) {
+	old := leadTelegramHTTPPost
+	leadTelegramHTTPPost = func(req *http.Request) (*http.Response, error) {
+		t.Fatal("telegram HTTP must not run when brand.name is empty")
+		return nil, nil
+	}
+	t.Cleanup(func() { leadTelegramHTTPPost = old })
+
+	cfg := &config.Config{}
+	cfg.Brand.Name = ""
+	cfg.Telegram.Token = "test-token"
+	cfg.Telegram.LeadsChatID = 999
+	app := &stubPublicLeadApp{
+		services: []models.Service{
+			{ServiceID: 10, Name: "VPN 1 мес.", Cost: 199, Period: 1},
+		},
+	}
+	h := servePublicLeadWithLimiter(cfg, app, newLeadRateLimiter(50, time.Hour, 50, time.Hour))
+	body := `{"service_id":10,"email":"user@example.com","contact":"@tg","website":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/lead", strings.NewReader(body))
+	req.RemoteAddr = "192.0.2.10:1234"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var out publicLeadAcceptedJSON
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != "accepted" {
+		t.Fatalf("body %#v", out)
+	}
+}
+
 func TestServePublicLead_InvalidEmail(t *testing.T) {
 	cfg := &config.Config{}
 	app := &stubPublicLeadApp{
