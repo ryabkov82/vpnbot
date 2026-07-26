@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
@@ -54,6 +55,25 @@ func findUserByWebLoginKeys(reg webUserRegistrar, normalizedEmail, loginPrefix, 
 }
 
 func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource, brandID string) (*models.User, bool, error) {
+	return findOrCreateWebUserCore(reg, email, loginPrefix, webSource, brandID, nil)
+}
+
+func findOrCreateWebUserWithAttribution(
+	reg webUserRegistrar,
+	email, loginPrefix, webSource, brandID string,
+	record attribution.Record,
+) (*models.User, bool, error) {
+	if !record.Valid() {
+		return nil, false, ErrAttributionRequired
+	}
+	return findOrCreateWebUserCore(reg, email, loginPrefix, webSource, brandID, &record)
+}
+
+func findOrCreateWebUserCore(
+	reg webUserRegistrar,
+	email, loginPrefix, webSource, brandID string,
+	record *attribution.Record,
+) (*models.User, bool, error) {
 	normalizedEmail, err := webuser.NormalizeEmail(email)
 	if err != nil {
 		return nil, false, err
@@ -87,17 +107,23 @@ func findOrCreateWebUser(reg webUserRegistrar, email, loginPrefix, webSource, br
 		return nil, false, err
 	}
 
+	settings := models.UserSettings{
+		BrandID: brandID,
+		Web: models.WebInfo{
+			Email:  normalizedEmail,
+			Source: webSource,
+		},
+	}
+	if record != nil {
+		cp := *record
+		settings.Attribution = &cp
+	}
+
 	regReq := models.UserRegistrationRequest{
 		Login:    login,
 		Password: password,
 		FullName: normalizedEmail,
-		Settings: models.UserSettings{
-			BrandID: brandID,
-			Web: models.WebInfo{
-				Email:  normalizedEmail,
-				Source: webSource,
-			},
-		},
+		Settings: settings,
 	}
 
 	if err := reg.RegisterUser(regReq); err != nil {
@@ -128,8 +154,24 @@ func randomWebUserPassword() (string, error) {
 //
 // При записи другого бренда на том же web login возвращает ErrUserIdentityMismatch
 // (не not found): новый user не создаётся.
+//
+// Без attribution (legacy Google OAuth path until a later M8 commit).
 func (s *Service) FindOrCreateWebUser(email string) (*models.User, bool, error) {
 	return findOrCreateWebUser(s.apiClient, email, s.webLoginPrefix(), s.webUserSource(), s.activeBrandID())
+}
+
+// FindOrCreateWebUserWithAttribution is the magic-link signup path: new users get
+// settings.attribution from the signed signup-token record. Existing users are
+// returned unchanged (created=false); attribution is never updated or backfilled.
+func (s *Service) FindOrCreateWebUserWithAttribution(email string, record attribution.Record) (*models.User, bool, error) {
+	return findOrCreateWebUserWithAttribution(
+		s.apiClient,
+		email,
+		s.webLoginPrefix(),
+		s.webUserSource(),
+		s.activeBrandID(),
+		record,
+	)
 }
 
 // FindUserByWebEmail находит shm user только по связке login/login2 = <prefix><hash(email)>

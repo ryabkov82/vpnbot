@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
@@ -88,7 +89,7 @@ func TestSignupToken_UsesEffectiveWebLoginPrefix(t *testing.T) {
 	if want == legacy {
 		t.Fatal("prefix must change login")
 	}
-	tok, err := CreateAccountSignupToken(cfg.WebSales.OrderTokenSecret, "fc", em, want, time.Hour)
+	tok, err := CreateAccountSignupToken(cfg.WebSales.OrderTokenSecret, "fc", em, want, mustMagicLinkAttribution(t, "connect.friends-connect.club", attribution.MarketingInput{}), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

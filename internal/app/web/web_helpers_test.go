@@ -3,10 +3,29 @@ package web
 import (
 	"net/smtp"
 	"testing"
+	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/email"
 )
+
+// mustMagicLinkAttribution builds a Valid web_magic_link Record for token/handler tests.
+func mustMagicLinkAttribution(t *testing.T, domain string, marketing attribution.MarketingInput) attribution.Record {
+	t.Helper()
+	if domain == "" {
+		domain = "shop.example"
+	}
+	rec, err := attribution.NewFirstTouch(attribution.ServerContext{
+		RegistrationChannel: attribution.RegistrationChannelWebMagicLink,
+		RegistrationDomain:  domain,
+		CapturedAt:          time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC),
+	}, marketing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
 
 func orderStartTestCfg() *config.Config {
 	cfg := &config.Config{}

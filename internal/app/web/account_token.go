@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 )
 
@@ -30,12 +31,15 @@ type AccountTokenClaims struct {
 }
 
 // AccountSignupTokenClaims — одноразовый magic-link до создания shm user (нет user_id).
+// Attribution is required for newly issued tokens; nil is accepted only for legacy
+// magic-links issued before M8 capture (unknown first-touch).
 type AccountSignupTokenClaims struct {
-	Typ     string `json:"typ"`
-	BrandID string `json:"brand_id"`
-	Email   string `json:"email"`
-	Login   string `json:"login"`
-	Exp     int64  `json:"exp"`
+	Typ         string              `json:"typ"`
+	BrandID     string              `json:"brand_id"`
+	Email       string              `json:"email"`
+	Login       string              `json:"login"`
+	Attribution *attribution.Record `json:"attribution,omitempty"`
+	Exp         int64               `json:"exp"`
 }
 
 // AccountTelegramLinkClaims — короткий токен из бота до привязки web-email.
@@ -159,7 +163,8 @@ func CreateAccountToken(secret, brandID, email string, userID int, login string,
 }
 
 // CreateAccountSignupToken — onboarding magic-link перед созданием web user в SHM.
-func CreateAccountSignupToken(secret, brandID, email, login string, ttl time.Duration) (string, error) {
+// record must be Valid(); new production signup tokens always carry attribution.
+func CreateAccountSignupToken(secret, brandID, email, login string, record attribution.Record, ttl time.Duration) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", ErrAccountTokenEmptySecret
 	}
@@ -173,12 +178,17 @@ func CreateAccountSignupToken(secret, brandID, email, login string, ttl time.Dur
 	if strings.TrimSpace(email) == "" || strings.TrimSpace(login) == "" {
 		return "", errors.New("invalid signup token fields")
 	}
+	if !record.Valid() {
+		return "", errors.New("invalid signup attribution record")
+	}
+	recCopy := record
 	payload := AccountSignupTokenClaims{
-		Typ:     accountTokenTypSignup,
-		BrandID: brandID,
-		Email:   strings.TrimSpace(email),
-		Login:   strings.TrimSpace(login),
-		Exp:     time.Now().Add(ttl).Unix(),
+		Typ:         accountTokenTypSignup,
+		BrandID:     brandID,
+		Email:       strings.TrimSpace(email),
+		Login:       strings.TrimSpace(login),
+		Attribution: &recCopy,
+		Exp:         time.Now().Add(ttl).Unix(),
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -352,6 +362,9 @@ func ParseAndVerifyAccountSignupToken(secret, expectedBrandID, token string) (*A
 		return nil, ErrAccountTokenExpired
 	}
 	if strings.TrimSpace(claims.Email) == "" || strings.TrimSpace(claims.Login) == "" {
+		return nil, ErrAccountTokenMalformed
+	}
+	if claims.Attribution != nil && !claims.Attribution.Valid() {
 		return nil, ErrAccountTokenMalformed
 	}
 	return &claims, nil

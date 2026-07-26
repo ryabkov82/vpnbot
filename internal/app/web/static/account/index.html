@@ -67,7 +67,18 @@
 		}
 		window.t = t;
 		window.apiErrorText = apiErrorText;
-		var params = new URLSearchParams(window.location.search);
+
+		// Capture attribution inputs once before any history.replaceState may strip UTM query.
+		var attrParams = new URLSearchParams(window.location.search);
+		var attrLandingPath = window.location.pathname || '';
+		var attrReferrer = document.referrer || '';
+		var attrUTMSource = attrParams.get('utm_source') || '';
+		var attrUTMMedium = attrParams.get('utm_medium') || '';
+		var attrUTMCampaign = attrParams.get('utm_campaign') || '';
+		var attrUTMContent = attrParams.get('utm_content') || '';
+		var attrUTMTerm = attrParams.get('utm_term') || '';
+
+		var params = attrParams;
 		if (params.get('logged_out') === '1') {
 			var lo = document.getElementById('logged-out-msg');
 			if (lo) lo.classList.remove('d-none');
@@ -81,10 +92,7 @@
 			}
 			try { window.history.replaceState({}, document.title, {{.ErrorReplaceJSON}}); } catch (e2) {}
 		}
-	})();
-	</script>
-	<script>
-	(function () {
+
 		var form = document.getElementById('login-form');
 		function hideAll() {
 			['ok-msg', 'rate-msg', 'err-msg', 'logged-out-msg'].forEach(function (id) {
@@ -102,7 +110,18 @@
 			fetch('/api/account/login/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: email, website: website, lang: lang })
+				body: JSON.stringify({
+					email: email,
+					website: website,
+					lang: lang,
+					landing_path: attrLandingPath,
+					referrer: attrReferrer,
+					utm_source: attrUTMSource,
+					utm_medium: attrUTMMedium,
+					utm_campaign: attrUTMCampaign,
+					utm_content: attrUTMContent,
+					utm_term: attrUTMTerm
+				})
 			}).then(function (r) {
 				return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
 			}).then(function (x) {

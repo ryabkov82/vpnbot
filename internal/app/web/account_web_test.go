@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	appService "github.com/ryabkov82/vpnbot/internal/service"
@@ -55,6 +56,9 @@ type stubAccountWeb struct {
 	findOrCreateErr     error
 	findOrCreateCalls   int
 	findOrCreateCreated bool
+
+	findOrCreateWithAttrCalls int
+	findOrCreateLastAttr      *attribution.Record
 
 	findUserByWebEmailRet   *models.User
 	findUserByWebEmailErr   error
@@ -149,6 +153,16 @@ func (s *stubAccountWeb) GetUserByLogin(login string) (*models.User, error) {
 
 func (s *stubAccountWeb) FindOrCreateWebUser(email string) (*models.User, bool, error) {
 	s.findOrCreateCalls++
+	if s.findOrCreateErr != nil {
+		return nil, false, s.findOrCreateErr
+	}
+	return s.findOrCreateRet, s.findOrCreateCreated, nil
+}
+
+func (s *stubAccountWeb) FindOrCreateWebUserWithAttribution(email string, record attribution.Record) (*models.User, bool, error) {
+	s.findOrCreateWithAttrCalls++
+	cp := record
+	s.findOrCreateLastAttr = &cp
 	if s.findOrCreateErr != nil {
 		return nil, false, s.findOrCreateErr
 	}
@@ -293,6 +307,7 @@ func TestServeAccountLoginStart_UnknownEmailSendsSignupTokenMail_NoWebUserYet(t 
 		return nil
 	})
 	cfg := orderStartTestCfg()
+	cfg.Brand.PublicBaseURL = "https://connect.vpn-for-friends.com"
 	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
 	st := &stubAccountWeb{}
 	h := serveAccountLoginStart(cfg, st, rl)
@@ -301,14 +316,28 @@ func TestServeAccountLoginStart_UnknownEmailSendsSignupTokenMail_NoWebUserYet(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+rawEmail+`","website":""}`))
+	body := `{
+		"email":"` + rawEmail + `",
+		"website":"",
+		"landing_path":"/account?ignored=x",
+		"referrer":"https://vpn-for-friends.com/post?id=1",
+		"utm_source":"telegram",
+		"utm_medium":"post",
+		"utm_campaign":"summer",
+		"utm_content":"",
+		"utm_term":""
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(body))
+	req.Host = "evil-host.example"
+	req.Header.Set("X-Forwarded-Host", "spoofed.example")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || smtpN != 1 {
 		t.Fatalf("code=%d smtp=%d body=%s", rec.Code, smtpN, rec.Body.String())
 	}
-	if st.findOrCreateCalls != 0 {
-		t.Fatalf("FindOrCreateWebUser must not run at login/start, got %d calls", st.findOrCreateCalls)
+	if st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("FindOrCreate must not run at login/start, plain=%d attr=%d",
+			st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
 	}
 	var out accountLoginStartOKJSON
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil || out.Status != "email_sent" {
@@ -325,6 +354,28 @@ func TestServeAccountLoginStart_UnknownEmailSendsSignupTokenMail_NoWebUserYet(t 
 	wantLogin := webuser.WebLoginFromEmail(normEmail)
 	if sc.Login != wantLogin {
 		t.Fatalf("login claim %q vs %q", sc.Login, wantLogin)
+	}
+	if sc.Attribution == nil || !sc.Attribution.Valid() {
+		t.Fatalf("signup token must carry valid attribution, got %#v", sc.Attribution)
+	}
+	ft := sc.Attribution.FirstTouch
+	if ft.RegistrationChannel != attribution.RegistrationChannelWebMagicLink {
+		t.Fatalf("channel %q", ft.RegistrationChannel)
+	}
+	if ft.RegistrationDomain != "connect.vpn-for-friends.com" {
+		t.Fatalf("domain from Host must not win; got %q", ft.RegistrationDomain)
+	}
+	if ft.LandingPath != "/account" || ft.ReferrerHost != "vpn-for-friends.com" {
+		t.Fatalf("landing/referrer %#v", ft)
+	}
+	if ft.UTMSource != "telegram" || ft.UTMMedium != "post" || ft.UTMCampaign != "summer" {
+		t.Fatalf("utm %#v", ft)
+	}
+	if ft.CapturedAt == "" {
+		t.Fatal("captured_at must be set")
+	}
+	if _, err := time.Parse(time.RFC3339, ft.CapturedAt); err != nil {
+		t.Fatalf("captured_at %q: %v", ft.CapturedAt, err)
 	}
 }
 
@@ -346,7 +397,16 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	u := &models.User{ID: 511, Login: wantLogin}
 	st := &stubAccountWeb{findUserByWebEmailRet: u}
 	h := serveAccountLoginStart(cfg, st, rl)
-	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(`{"email":"`+em+`","website":""}`))
+	body := `{
+		"email":"` + em + `",
+		"website":"",
+		"landing_path":"/account",
+		"referrer":"https://example.com/",
+		"utm_source":"telegram",
+		"utm_medium":"post",
+		"utm_campaign":"summer"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(body))
 	req.Host = "localhost:9090"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -361,6 +421,13 @@ func TestServeAccountLoginStart_KnownEmailSendsMail(t *testing.T) {
 	ac, err := ParseAndVerifyAccountToken(cfg.WebSales.OrderTokenSecret, "vff", rawTok)
 	if err != nil || ac.UserID != 511 || ac.Email != wantNorm || ac.Login != u.Login {
 		t.Fatalf("account claims %+v err=%v", ac, err)
+	}
+	if _, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, "vff", rawTok); err == nil {
+		t.Fatal("account token must not parse as signup")
+	}
+	rawJSON, _ := json.Marshal(ac)
+	if strings.Contains(string(rawJSON), "attribution") || strings.Contains(string(rawJSON), "utm_source") {
+		t.Fatalf("account token must not carry attribution: %s", rawJSON)
 	}
 }
 
@@ -500,8 +567,8 @@ func TestServeAccountSessionStart_AccountTokenReturnsSame(t *testing.T) {
 	if out.Status != "ok" || out.AccountToken != rawTok || out.IsNewUser {
 		t.Fatalf("%+v", out)
 	}
-	if st.findOrCreateCalls != 0 {
-		t.Fatalf("unexpected FindOrCreateWebUser calls: %d", st.findOrCreateCalls)
+	if st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("unexpected create calls: plain=%d attr=%d", st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
 	}
 	if telegramNotifyCalls != 0 {
 		t.Fatalf("telegram notifier must not run for plain account token, got %d", telegramNotifyCalls)
@@ -521,7 +588,10 @@ func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
+	attr := mustMagicLinkAttribution(t, "shop.example", attribution.MarketingInput{
+		UTMSource: "telegram", UTMMedium: "post", UTMCampaign: "summer",
+	})
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, attr, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,8 +611,12 @@ func TestServeAccountSessionStart_SignupTokenCreatesWebUser(t *testing.T) {
 	if !out.IsNewUser || out.Status != "ok" || out.AccountToken == "" || out.AccountToken == signupTok {
 		t.Fatalf("%+v", out)
 	}
-	if st.findOrCreateCalls != 1 {
-		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
+	if st.findOrCreateWithAttrCalls != 1 || st.findOrCreateCalls != 0 {
+		t.Fatalf("want attribution-aware create only: attr=%d plain=%d",
+			st.findOrCreateWithAttrCalls, st.findOrCreateCalls)
+	}
+	if st.findOrCreateLastAttr == nil || !attribution.Equal(*st.findOrCreateLastAttr, attr) {
+		t.Fatalf("passed record %#v want %#v", st.findOrCreateLastAttr, attr)
 	}
 	ac, err := ParseAndVerifyAccountToken(sec, "vff", out.AccountToken)
 	if err != nil || ac.UserID != 6600 || ac.Login != login || ac.Email != norm {
@@ -563,7 +637,8 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	em := "signup-old@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
+	attr := mustMagicLinkAttribution(t, "shop.example", attribution.MarketingInput{UTMSource: "second"})
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, attr, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,8 +661,9 @@ func TestServeAccountSessionStart_SignupTokenExistingUser_NoDuplicate(t *testing
 	if out.IsNewUser {
 		t.Fatalf("expected existing user %+v", out)
 	}
-	if st.findOrCreateCalls != 1 {
-		t.Fatalf("want 1 FindOrCreateWebUser, got %d", st.findOrCreateCalls)
+	if st.findOrCreateWithAttrCalls != 1 || st.findOrCreateCalls != 0 {
+		t.Fatalf("want attribution-aware lookup only: attr=%d plain=%d",
+			st.findOrCreateWithAttrCalls, st.findOrCreateCalls)
 	}
 	ac, err := ParseAndVerifyAccountToken(sec, "vff", out.AccountToken)
 	if err != nil || ac.UserID != 6611 {
@@ -621,7 +697,7 @@ func TestServeAccountSessionStart_SignupNewUserTelegramAPIErrorStill200(t *testi
 	em := "tg-error@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
+	signupTok, err := CreateAccountSignupToken(sec, "vff", norm, login, mustMagicLinkAttribution(t, "", attribution.MarketingInput{}), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +723,7 @@ func TestServeAccountSessionStart_SignupNewUserNotifierGetsFirstXFFIP(t *testing
 	em := "xff@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
+	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, mustMagicLinkAttribution(t, "", attribution.MarketingInput{}), time.Hour)
 	want := &models.User{ID: 8801, Login: login}
 	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
 
@@ -669,7 +745,7 @@ func TestServeAccountSessionStart_SignupTokenWebUserFails(t *testing.T) {
 	em := "fail-create@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
 	login := webuser.WebLoginFromEmail(norm)
-	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, time.Hour)
+	signupTok, _ := CreateAccountSignupToken(sec, "vff", norm, login, mustMagicLinkAttribution(t, "", attribution.MarketingInput{}), time.Hour)
 	st := &stubAccountWeb{findOrCreateErr: errors.New("register failed")}
 	h := serveAccountSessionStart(cfg, st)
 	rec := httptest.NewRecorder()
@@ -686,7 +762,7 @@ func TestServeAccountSessionStart_SignupTokenLoginMismatch(t *testing.T) {
 	sec := cfg.WebSales.OrderTokenSecret
 	em := "mis@test.com"
 	norm, _ := webuser.NormalizeEmail(em)
-	tok, err := CreateAccountSignupToken(sec, "vff", norm, "not_the_derived_login", time.Hour)
+	tok, err := CreateAccountSignupToken(sec, "vff", norm, "not_the_derived_login", mustMagicLinkAttribution(t, "", attribution.MarketingInput{}), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,6 +774,154 @@ func TestServeAccountSessionStart_SignupTokenLoginMismatch(t *testing.T) {
 		t.Fatalf("want 400 got %d", rec.Code)
 	}
 	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+}
+
+func TestServeAccountSessionStart_LegacySignupToken_NoAttribution(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "legacy@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	legacy := AccountSignupTokenClaims{
+		Typ: accountTokenTypSignup, BrandID: "vff", Email: norm, Login: login,
+		Exp: time.Now().Add(time.Hour).Unix(),
+	}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := signAndEncodeAccountPayload(sec, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &models.User{ID: 9001, Login: login}
+	st := &stubAccountWeb{findOrCreateRet: want, findOrCreateCreated: true}
+	rec := httptest.NewRecorder()
+	serveAccountSessionStart(cfg, st).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, tok))))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if st.findOrCreateCalls != 1 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("legacy path must use plain FindOrCreateWebUser: plain=%d attr=%d",
+			st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
+	}
+}
+
+func TestServeAccountSessionStart_MalformedAttributionInToken(t *testing.T) {
+	cfg := orderStartTestCfg()
+	sec := cfg.WebSales.OrderTokenSecret
+	em := "bad-attr@test.com"
+	norm, _ := webuser.NormalizeEmail(em)
+	login := webuser.WebLoginFromEmail(norm)
+	bad := &attribution.Record{Version: 1} // invalid
+	payload := AccountSignupTokenClaims{
+		Typ: accountTokenTypSignup, BrandID: "vff", Email: norm, Login: login,
+		Attribution: bad, Exp: time.Now().Add(time.Hour).Unix(),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := signAndEncodeAccountPayload(sec, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &stubAccountWeb{findOrCreateRet: &models.User{ID: 1, Login: login}, findOrCreateCreated: true}
+	rec := httptest.NewRecorder()
+	serveAccountSessionStart(cfg, st).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/session/start", strings.NewReader(accountSessionStartPostBody(t, tok))))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 got %d %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "invalid_token")
+	if st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("create must not run: plain=%d attr=%d", st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
+	}
+}
+
+func TestServeAccountLoginStart_OrganicAttribution(t *testing.T) {
+	var gotMail []byte
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		gotMail = append([]byte(nil), msg...)
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+	body := `{"email":"organic@test.com","website":"","landing_path":"","referrer":"","utm_source":"","utm_medium":"","utm_campaign":"","utm_content":"","utm_term":""}`
+	rec := httptest.NewRecorder()
+	serveAccountLoginStart(cfg, &stubAccountWeb{}, rl).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	tok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
+	sc, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, "vff", tok)
+	if err != nil || sc.Attribution == nil || !sc.Attribution.Valid() || !sc.Attribution.IsOrganic() {
+		t.Fatalf("want valid organic attribution: %#v err=%v", sc, err)
+	}
+}
+
+func TestServeAccountLoginStart_MalformedOptionalMarketingStillOK(t *testing.T) {
+	var gotMail []byte
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		gotMail = append([]byte(nil), msg...)
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+	payload := map[string]string{
+		"email":        "malformed@test.com",
+		"website":      "",
+		"landing_path": "https://evil.example/path",
+		"referrer":     "not a url",
+		"utm_source":   "a" + strings.Repeat("x", 300),
+		"utm_medium":   "ok",
+		"utm_campaign": "camp\u0000bad",
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
+	rec := httptest.NewRecorder()
+	serveAccountLoginStart(cfg, &stubAccountWeb{}, rl).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/api/account/login/start", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("optional marketing must not block: %d %s body_in=%s", rec.Code, rec.Body.String(), body[:min(200, len(body))])
+	}
+	tok := extractMagicLinkTokenFromSMTPMsg(t, gotMail)
+	sc, err := ParseAndVerifyAccountSignupToken(cfg.WebSales.OrderTokenSecret, "vff", tok)
+	if err != nil || sc.Attribution == nil || !sc.Attribution.Valid() {
+		t.Fatalf("want cleaned valid record: %#v err=%v", sc, err)
+	}
+}
+
+func TestServeAccountLoginStart_InvalidPublicBaseURL_NoSMTP(t *testing.T) {
+	var smtpN int
+	patchSMTP(t, func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		smtpN++
+		return nil
+	})
+	cfg := orderStartTestCfg()
+	cfg.Brand.PublicBaseURL = ""
+	rl := newLeadRateLimiter(50, time.Hour, 50, time.Hour)
+	st := &stubAccountWeb{}
+	req := httptest.NewRequest(http.MethodPost, "/api/account/login/start",
+		strings.NewReader(`{"email":"new@test.com","website":""}`))
+	req.Host = "evil.example"
+	rec := httptest.NewRecorder()
+	serveAccountLoginStart(cfg, st, rl).ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 got %d %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorField(t, rec.Body.String(), "internal_error")
+	if smtpN != 0 {
+		t.Fatalf("smtp must not run, got %d", smtpN)
+	}
+	if st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("create must not run")
+	}
 }
 
 func TestServeAccountServices_InvalidToken(t *testing.T) {

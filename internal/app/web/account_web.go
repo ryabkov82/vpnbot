@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/email"
 	"github.com/ryabkov82/vpnbot/internal/models"
@@ -32,6 +33,7 @@ type accountWebApp interface {
 	GetUserByLogin(login string) (*models.User, error)
 	FindUserByWebEmail(email string) (*models.User, error)
 	FindOrCreateWebUser(email string) (*models.User, bool, error)
+	FindOrCreateWebUserWithAttribution(email string, record attribution.Record) (*models.User, bool, error)
 	ValidateWebAccountUser(userID int, tokenLogin, tokenEmail string) (*models.User, error)
 	LinkWebEmailForTelegramUser(userID int, telegramChatID int64, email string, source string) (*models.User, error)
 	GetUserServicesByUserID(userID int) ([]models.UserService, error)
@@ -45,9 +47,16 @@ type accountWebApp interface {
 }
 
 type accountLoginStartRequestJSON struct {
-	Email   string `json:"email"`
-	Website string `json:"website"`
-	Lang    string `json:"lang"`
+	Email       string `json:"email"`
+	Website     string `json:"website"`
+	Lang        string `json:"lang"`
+	LandingPath string `json:"landing_path"`
+	Referrer    string `json:"referrer"`
+	UTMSource   string `json:"utm_source"`
+	UTMMedium   string `json:"utm_medium"`
+	UTMCampaign string `json:"utm_campaign"`
+	UTMContent  string `json:"utm_content"`
+	UTMTerm     string `json:"utm_term"`
 }
 
 type accountLoginStartOKJSON struct {
@@ -136,7 +145,13 @@ func serveAccountLoginStart(cfg *config.Config, app accountWebApp, rl *leadRateL
 		if linkByEmail != nil {
 			magicTok, err = CreateAccountToken(secret, brandID, normEmail, linkByEmail.ID, linkByEmail.Login, accountTokenTTL(cfg))
 		} else {
-			magicTok, err = CreateAccountSignupToken(secret, brandID, normEmail, login, accountTokenTTL(cfg))
+			attrRec, aerr := buildWebMagicLinkAttribution(cfg, req, time.Now())
+			if aerr != nil {
+				slog.Error("account login start: attribution", "err", aerr)
+				writeJSONError(w, http.StatusInternalServerError, "internal_error")
+				return
+			}
+			magicTok, err = CreateAccountSignupToken(secret, brandID, normEmail, login, attrRec, accountTokenTTL(cfg))
 		}
 		if err != nil {
 			slog.Error("account login start: magic token", "err", err)
@@ -237,10 +252,23 @@ func serveAccountSessionStart(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		u2, created, ferr := app.FindOrCreateWebUser(normEmail)
+		var (
+			u2      *models.User
+			created bool
+			ferr    error
+		)
+		if signup.Attribution != nil {
+			u2, created, ferr = app.FindOrCreateWebUserWithAttribution(normEmail, *signup.Attribution)
+		} else {
+			u2, created, ferr = app.FindOrCreateWebUser(normEmail)
+		}
 		if ferr != nil || u2 == nil {
 			if errors.Is(ferr, appService.ErrUserIdentityMismatch) {
 				slog.Warn("account session start: identity mismatch")
+				writeJSONError(w, http.StatusBadRequest, "invalid_token")
+				return
+			}
+			if errors.Is(ferr, appService.ErrAttributionRequired) {
 				writeJSONError(w, http.StatusBadRequest, "invalid_token")
 				return
 			}
