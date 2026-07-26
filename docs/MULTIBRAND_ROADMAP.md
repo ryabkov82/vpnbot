@@ -345,27 +345,31 @@ P0/P1 runtime findings из content audit закрыты и развёрнуты
 
 ---
 
-## 8. Атрибуция и аналитика — ⬜ Не начато
+## 8. Атрибуция и аналитика — 🟡 Частично
 
-Предполагаемый набор данных (схема хранения **не утверждена**):
+### Статус
 
-- `brand_id`
-- `registration_domain`
-- `landing_page`
-- `referrer`
-- `utm_source`
-- `utm_medium`
-- `utm_campaign`
-- `utm_content`
-- `utm_term`
+Architecture / data-flow audit **completed**; implementation и production rollout **не начаты**.
 
-Цели:
+Артефакт аудита: [`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`](MULTIBRAND_ATTRIBUTION_AUDIT.md)
+(snapshot `587353875d20a51c185086c0a3947084d2ece568`).
+
+### Краткий вывод аудита (не замена audit doc)
+
+- Acquisition **first-touch** отделён от brand identity и от operational `settings.web.source`.
+- `settings.web.source` / `web_user_source` **недостаточны** (shared VFF/FC value; overwrite при linking).
+- MVP storage recommendation: immutable `settings.attribution.first_touch` в SHM + signed transport
+  (signup-token / OAuth state) + read-only export CLI.
+- Public lead и admin test APIs исключены из registration first-touch analytics.
+- SHM nested filter/query capability и полная persistence unknown settings — **open**, требуют
+  staging read-only probes до закрытия implementation.
+
+Цели M8 (без изменения):
 
 - определять источник регистрации;
 - разделять аналитику брендов;
 - сохранять первоначальный acquisition source;
-- не смешивать identity и маркетинговую атрибуцию;
-- определить место хранения только после анализа возможностей SHM и требований к отчётности.
+- не смешивать identity и маркетинговую атрибуцию.
 
 ---
 
@@ -408,7 +412,7 @@ P0/P1 runtime findings из content audit закрыты и развёрнуты
 | M5 | ✅ | Web identity audit and isolation |
 | M6 | ✅ | Payment end-to-end audit and routing isolation |
 | M7 | ✅ | Brand-specific content cleanup |
-| M8 | ⬜ | Attribution and analytics |
+| M8 | 🟡 | Attribution and analytics |
 | M9 | ⬜ | Third-brand onboarding validation |
 
 ### M5 — Web identity audit and isolation
@@ -436,10 +440,11 @@ P0/P1 runtime findings из content audit закрыты и развёрнуты
 
 ### M8 — Attribution and analytics
 
+- **Статус:** 🟡 частично — architecture/data-flow audit completed (`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`); implementation not started.
 - **Цель:** разделить acquisition analytics по брендам без смешения с identity.
-- **Основные риски:** преждевременная схема хранения в SHM; смешение marketing fields с auth fields.
-- **Ожидаемый результат:** утверждённый минимальный набор атрибуции и место хранения после анализа.
-- **Критерий завершения:** можно определить источник регистрации по бренду без влияния на login/session.
+- **Основные риски:** преждевременная схема хранения в SHM; смешение marketing fields с auth fields; in-memory Telegram start payload; email hop без signed claims.
+- **Ожидаемый результат аудита:** рекомендуемый MVP — immutable `settings.attribution.first_touch` + signed web/Google transport + export CLI; `web.source` не использовать как first-touch.
+- **Критерий завершения (implementation):** new registrations получают first-touch; repeat login/linking не перезаписывают; VFF/FC изолированы; read-only reporting; auth/session/payment без изменений.
 
 ### M9 — Third-brand onboarding validation
 
@@ -473,7 +478,9 @@ M5–M7 закрыты; общий мультибрендинг ещё не за
 
 ## 12. Следующий шаг
 
-Основной следующий шаг: **M8 — Attribution and analytics**.
+Основной следующий шаг: **M8 implementation according to the approved attribution storage model**
+в [`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`](MULTIBRAND_ATTRIBUTION_AUDIT.md)
+(после staging read-only SHM probes из раздела open questions).
 
 Затем:
 
