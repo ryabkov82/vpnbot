@@ -26,6 +26,7 @@ test:
 	bash scripts/test/vff_ops_test.sh
 	bash scripts/test/brand_ops_test.sh
 	bash scripts/test/brand_profiles_test.sh
+	bash scripts/test/smoke_brand_test.sh
 	@if [ -f scripts/test/brand_rollout_test.sh ]; then bash scripts/test/brand_rollout_test.sh; fi
 
 build:

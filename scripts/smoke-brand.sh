@@ -56,6 +56,70 @@ fi
 
 SMOKE_BASE_URL="${SMOKE_BASE_URL%/}"
 
+SMOKE_TMP="$(mktemp -d)"
+trap 'rm -rf "${SMOKE_TMP}"' EXIT
+
+# Body-aware check: status-only public URL loop cannot detect a foreign HTML page
+# that still returns HTTP 200 (e.g. SHM Admin SPA fallback).
+smoke_happ_redirect() {
+  local valid_url invalid_url
+  local valid_body invalid_body
+  local code curl_rc=0
+
+  valid_url="${SMOKE_BASE_URL}/redirect.html?url=happ%3A%2F%2Fsmoke"
+  invalid_url="${SMOKE_BASE_URL}/redirect.html?url=https%3A%2F%2Fexample.com"
+  valid_body="${SMOKE_TMP}/happ-redirect-valid.body"
+  invalid_body="${SMOKE_TMP}/happ-redirect-invalid.body"
+
+  code=""
+  curl_rc=0
+  set +e
+  code="$(curl -sS -o "${valid_body}" -w '%{http_code}' "${valid_url}")"
+  curl_rc=$?
+  set -e
+  if [[ "${curl_rc}" -ne 0 ]]; then
+    echo "smoke-${BRAND_LABEL}: transport error for ${valid_url}" >&2
+    return 1
+  fi
+  if [[ "${code}" != "200" ]]; then
+    echo "smoke-${BRAND_LABEL}: Happ redirect route returned HTTP ${code}" >&2
+    return 1
+  fi
+  if grep -Fq '<title>SHM Admin</title>' "${valid_body}"; then
+    echo "smoke-${BRAND_LABEL}: unexpected SHM Admin page from Happ redirect route" >&2
+    return 1
+  fi
+  if ! grep -Fq '<title>Открытие Happ</title>' "${valid_body}"; then
+    echo "smoke-${BRAND_LABEL}: Happ redirect marker missing" >&2
+    return 1
+  fi
+  if ! grep -Fq 'URLSearchParams' "${valid_body}" || ! grep -Fq 'happ://' "${valid_body}"; then
+    echo "smoke-${BRAND_LABEL}: Happ redirect marker missing" >&2
+    return 1
+  fi
+  echo "${valid_url} -> 200 (Happ redirect OK)"
+
+  code=""
+  curl_rc=0
+  set +e
+  code="$(curl -sS -o "${invalid_body}" -w '%{http_code}' "${invalid_url}")"
+  curl_rc=$?
+  set -e
+  if [[ "${curl_rc}" -ne 0 ]]; then
+    echo "smoke-${BRAND_LABEL}: transport error for ${invalid_url}" >&2
+    return 1
+  fi
+  if [[ "${code}" != "400" ]]; then
+    echo "smoke-${BRAND_LABEL}: Happ redirect invalid scheme returned HTTP ${code}" >&2
+    return 1
+  fi
+  if ! grep -Fq 'Invalid Happ URL' "${invalid_body}"; then
+    echo "smoke-${BRAND_LABEL}: Happ redirect invalid scheme body missing 'Invalid Happ URL'" >&2
+    return 1
+  fi
+  echo "${invalid_url} -> 400 (invalid scheme rejected)"
+}
+
 URLS=(
   "${SMOKE_BASE_URL}/api/public/services"
   "${SMOKE_BASE_URL}/account"
@@ -81,6 +145,8 @@ for u in "${URLS[@]}"; do
       ;;
   esac
 done
+
+smoke_happ_redirect || exit 1
 
 # Controlled YooKassa CGI probe against SHM/API base (.api.base_url), not brand web.
 # Invoked from coordinated rollout before finalize so failures trigger rollback.
