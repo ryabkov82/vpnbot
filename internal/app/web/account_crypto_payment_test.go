@@ -51,8 +51,6 @@ func TestRenderedAccountSessionPageIncludesCryptoPaymentMethod(t *testing.T) {
 		`Криптовалюта`,
 		`Оплата через Trybit: USDT, TON и другие доступные валюты`,
 		`При частичной оплате доступ может не активироваться автоматически. Если платеж не зачислился, обратитесь в поддержку.`,
-		`Telegram @friends_connect_support`,
-		`support@vpn-for-friends.com`,
 		`function selectedTopupBalanceURL()`,
 		`/api/account/balance/topup/cryptocloud`,
 		`var topupEndpoint = selectedTopupBalanceURL()`,

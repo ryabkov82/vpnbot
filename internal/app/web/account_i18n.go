@@ -111,13 +111,14 @@ type accountI18n struct {
 	TopUpCurrencyNote      string
 
 	// Payment methods (server-rendered block)
-	PaymentMethodHeading    string
-	PaymentMethodCard       string
-	PaymentMethodCardDesc   string
-	PaymentMethodCrypto     string
-	PaymentMethodCryptoDesc string
-	PaymentMethodTrybitWarn string
-	PaymentMethodSupport    string
+	PaymentMethodHeading         string
+	PaymentMethodCard            string
+	PaymentMethodCardDesc        string
+	PaymentMethodCrypto          string
+	PaymentMethodCryptoDesc      string
+	PaymentMethodTrybitWarn      string
+	PaymentMethodSupportLabel    string
+	PaymentMethodSupportTelegram string
 }
 
 // accountBrandIdentity returns explicit active-brand display name and landing URL.
@@ -339,13 +340,14 @@ func accountI18nRU(brandName string) accountI18n {
 		TopUpSubmitBtn:         "Перейти к оплате",
 		TopUpCurrencyNote:      "",
 
-		PaymentMethodHeading:    "Способ оплаты",
-		PaymentMethodCard:       "Банковская карта",
-		PaymentMethodCardDesc:   "Оплата картой через текущий платежный шлюз",
-		PaymentMethodCrypto:     "Криптовалюта",
-		PaymentMethodCryptoDesc: "Оплата через Trybit: USDT, TON и другие доступные валюты",
-		PaymentMethodTrybitWarn: "При частичной оплате доступ может не активироваться автоматически. Если платеж не зачислился, обратитесь в поддержку.",
-		PaymentMethodSupport:    `Поддержка: <a href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer">Telegram @friends_connect_support</a> · <a href="mailto:support@vpn-for-friends.com">support@vpn-for-friends.com</a>`,
+		PaymentMethodHeading:         "Способ оплаты",
+		PaymentMethodCard:            "Банковская карта",
+		PaymentMethodCardDesc:        "Оплата картой через текущий платежный шлюз",
+		PaymentMethodCrypto:          "Криптовалюта",
+		PaymentMethodCryptoDesc:      "Оплата через Trybit: USDT, TON и другие доступные валюты",
+		PaymentMethodTrybitWarn:      "При частичной оплате доступ может не активироваться автоматически. Если платеж не зачислился, обратитесь в поддержку.",
+		PaymentMethodSupportLabel:    "Поддержка:",
+		PaymentMethodSupportTelegram: "Telegram",
 	}
 }
 
@@ -428,13 +430,14 @@ func accountI18nEN(brandName string) accountI18n {
 		TopUpSubmitBtn:         "Go to payment",
 		TopUpCurrencyNote:      "Prices are shown in USD for convenience. Your internal balance is RUB-based. The crypto invoice will show the final equivalent amount on the payment provider page.",
 
-		PaymentMethodHeading:    "Payment method",
-		PaymentMethodCard:       "Bank card",
-		PaymentMethodCardDesc:   "Card payment via the current payment gateway",
-		PaymentMethodCrypto:     "Cryptocurrency",
-		PaymentMethodCryptoDesc: "Payment via Trybit: USDT, TON and other available currencies",
-		PaymentMethodTrybitWarn: "If the payment is partial, access may not activate automatically. If the payment is not credited, contact support.",
-		PaymentMethodSupport:    `Support: <a href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer">Telegram @friends_connect_support</a> · <a href="mailto:support@vpn-for-friends.com">support@vpn-for-friends.com</a>`,
+		PaymentMethodHeading:         "Payment method",
+		PaymentMethodCard:            "Bank card",
+		PaymentMethodCardDesc:        "Card payment via the current payment gateway",
+		PaymentMethodCrypto:          "Cryptocurrency",
+		PaymentMethodCryptoDesc:      "Payment via Trybit: USDT, TON and other available currencies",
+		PaymentMethodTrybitWarn:      "If the payment is partial, access may not activate automatically. If the payment is not credited, contact support.",
+		PaymentMethodSupportLabel:    "Support:",
+		PaymentMethodSupportTelegram: "Telegram",
 	}
 }
 
@@ -608,10 +611,18 @@ type accountSessionPageData struct {
 	SiteURL                 string
 }
 
-func buildAccountTopupPaymentMethodsHTML(i accountI18n, locale accountLocale) template.HTML {
+func buildAccountTopupPaymentMethodsHTML(cfg *config.Config, i accountI18n, locale accountLocale) template.HTML {
 	note := ""
 	if strings.TrimSpace(i.TopUpCurrencyNote) != "" {
 		note = fmt.Sprintf(`<div class="small text-secondary mt-2 mb-0">%s</div>`, template.HTMLEscapeString(i.TopUpCurrencyNote))
+	}
+	supportHTML := ""
+	if supportURL := WebCabinetResolvedSupportURL(cfg); supportURL != "" {
+		supportHTML = fmt.Sprintf(`<div class="small text-secondary">%s <a href="%s" target="_blank" rel="noopener noreferrer">%s</a></div>`,
+			template.HTMLEscapeString(i.PaymentMethodSupportLabel),
+			template.HTMLEscapeString(supportURL),
+			template.HTMLEscapeString(i.PaymentMethodSupportTelegram),
+		)
 	}
 	cryptoOnly := locale == accountLocaleEN
 	cryptoChecked := ""
@@ -653,14 +664,14 @@ func buildAccountTopupPaymentMethodsHTML(i accountI18n, locale accountLocale) te
 								%s
 							</div>
 							<div class="alert alert-warning py-2 small mt-3 mb-2">%s</div>
-							<div class="small text-secondary">%s</div>
+							%s
 							%s
 						</div>`,
 		template.HTMLEscapeString(i.PaymentMethodHeading),
 		template.HTMLEscapeString(i.PaymentMethodHeading),
 		methodCols,
 		template.HTMLEscapeString(i.PaymentMethodTrybitWarn),
-		i.PaymentMethodSupport,
+		supportHTML,
 		note,
 	)
 	return template.HTML(block)

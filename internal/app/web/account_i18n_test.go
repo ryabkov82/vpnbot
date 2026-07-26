@@ -159,7 +159,7 @@ func TestRenderedAccountIdentity_FriendsConnect(t *testing.T) {
 
 	assertIdentityNoVFF := func(t *testing.T, html string) {
 		t.Helper()
-		// Identity surfaces only (title/H1/footer). PaymentMethodSupport email is out of this commit.
+		// Identity surfaces only (title/H1/footer).
 		if strings.Contains(html, "VPN for Friends") {
 			t.Fatal("FC identity must not show VPN for Friends")
 		}
