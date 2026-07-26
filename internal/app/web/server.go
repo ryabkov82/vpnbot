@@ -1,10 +1,8 @@
 package web
 
 import (
-	_ "embed"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,42 +11,15 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/service"
 )
 
-//go:embed static/premium-connect/index.html
-var premiumConnectHTML []byte
-
-func servePremiumConnect(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	switch path {
-	case "/premium-connect", "/premium-connect/",
-		"/premium-connect-test", "/premium-connect-test/":
-	default:
-		http.NotFound(w, r)
-		return
-	}
-
-	log.Printf("premium-connect: %s %s", r.Method, r.URL.Path)
-
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Length", strconv.Itoa(len(premiumConnectHTML)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(premiumConnectHTML)
-}
-
 // Start runs a minimal HTTP server for static premium onboarding (does not block).
 func Start(cfg *config.Config, app *service.Service, rw *remnawave.Client) {
 	mux := http.NewServeMux()
-	h := servePremiumConnect
-	mux.HandleFunc("/premium-connect", h)
-	mux.HandleFunc("/premium-connect/", h)
-	mux.HandleFunc("/premium-connect-test", h)
-	mux.HandleFunc("/premium-connect-test/", h)
+	premiumH := servePremiumConnect(cfg)
+	mux.HandleFunc("/premium-connect", premiumH)
+	mux.HandleFunc("/premium-connect/", premiumH)
+	mux.HandleFunc("/premium-connect-test", premiumH)
+	mux.HandleFunc("/premium-connect-test/", premiumH)
+	mux.HandleFunc("/redirect.html", serveHappRedirect)
 	buyH := serveBuy(cfg)
 	mux.HandleFunc("/buy", buyH)
 	mux.HandleFunc("/buy/", buyH)

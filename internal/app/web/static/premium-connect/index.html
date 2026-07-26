@@ -177,10 +177,12 @@
 			</p>
 		</div>
 
+		{{if .SupportURL}}
 		<div class="my-block mb-4">
 			<div class="fw-semibold mb-2">Поддержка</div>
-			<a class="btn my-btn w-100" href="https://t.me/friends_connect_support" target="_blank" rel="noopener noreferrer"><i class="bi bi-telegram me-2"></i>Написать в поддержку</a>
+			<a class="btn my-btn w-100" href="{{.SupportURL}}" target="_blank" rel="noopener noreferrer"><i class="bi bi-telegram me-2"></i>Написать в поддержку</a>
 		</div>
+		{{end}}
 
 		<p class="diag-footer mb-0 text-center" id="service-id-footer"></p>
 	</div>
@@ -290,7 +292,7 @@
 		var sidTrim = sid.trim();
 		var tokenTrim = accessToken.trim();
 
-		const redirectBase = 'https://vpn-for-friends.com/redirect.html';
+		const redirectBase = '/redirect.html';
 
 		function copyTextToClipboard(text) {
 			if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
