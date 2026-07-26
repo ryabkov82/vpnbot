@@ -469,3 +469,146 @@ func TestMergeSettingsJSONToMap_PreservesUnknown(t *testing.T) {
 		t.Fatalf("%#v", m)
 	}
 }
+
+func TestLinkWebEmail_PreservesAttributionAndUnknownFields(t *testing.T) {
+	em := `link.attr@example.test`
+	normEM, err := webuser.NormalizeEmail(em)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		userID = 77
+		chatID = int64(123)
+		login  = "@fc_123"
+	)
+	wLogin, err := webuser.WebLoginFromEmailWithPrefix(normEM, "web_fc_")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settingsRaw := `{
+		"brand_id": "fc",
+		"telegram": {"chat_id": 123},
+		"attribution": {
+			"version": 1,
+			"first_touch": {
+				"registration_channel": "telegram",
+				"registration_domain": "connect.friends-connect.club",
+				"telegram_start_param": "summer",
+				"captured_at": "2026-07-26T18:00:00Z"
+			}
+		},
+		"custom_unknown_field": {"keep": true}
+	}`
+	rowJSON := []byte(`{"data":[{"user_id":77,"login":"@fc_123","login2":"","balance":0,"settings":` + settingsRaw + `}]}`)
+
+	var postedSettings map[string]interface{}
+	var postCount atomic.Int64
+	var login2Polls atomic.Int64
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/shm/v1/admin/user" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			postCount.Add(1)
+			raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+			var body map[string]interface{}
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Fatalf("post body: %v", err)
+			}
+			stObj, ok := body["settings"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("settings %#v", body["settings"])
+			}
+			postedSettings = stObj
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		f := decodeFilter(t, r.URL.Query().Get("filter"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		switch {
+		case f["user_id"] != nil:
+			_, _ = w.Write(rowJSON)
+		case f["login"] != nil && f["login"] == wLogin:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case f["login2"] != nil && f["login2"] == wLogin:
+			n := login2Polls.Add(1)
+			if n == 1 {
+				_, _ = w.Write([]byte(`{"data":[]}`))
+				return
+			}
+			b, _ := json.Marshal(map[string]interface{}{
+				"data": []map[string]interface{}{{
+					"user_id": userID,
+					"login":   login,
+					"login2":  wLogin,
+					"balance": 0,
+					"settings": map[string]interface{}{
+						"brand_id": "fc",
+						"telegram": map[string]interface{}{"chat_id": chatID},
+						"web": map[string]interface{}{
+							"email":  normEM,
+							"source": "telegram_link",
+						},
+						"attribution": map[string]interface{}{
+							"version": 1,
+							"first_touch": map[string]interface{}{
+								"registration_channel": "telegram",
+								"registration_domain":  "connect.friends-connect.club",
+								"telegram_start_param": "summer",
+								"captured_at":          "2026-07-26T18:00:00Z",
+							},
+						},
+						"custom_unknown_field": map[string]interface{}{"keep": true},
+					},
+				}},
+			})
+			_, _ = w.Write(b)
+		default:
+			t.Fatalf("unexpected filter %#v", f)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	brand := brandCfg("fc")
+	brand.WebUserLoginPrefix = "web_fc_"
+	svc := NewService(&api.APIClient{ServerURL: srv.URL, HTTPClient: srv.Client()}, brand)
+	got, ferr := svc.LinkWebEmailForTelegramUser(userID, chatID, em, "telegram_link")
+	if ferr != nil {
+		t.Fatal(ferr)
+	}
+	if got == nil || got.Settings.Web.Email != normEM {
+		t.Fatalf("%#v", got)
+	}
+	if postCount.Load() != 1 {
+		t.Fatalf("POST count=%d", postCount.Load())
+	}
+	if postedSettings == nil {
+		t.Fatal("posted settings missing")
+	}
+	if postedSettings["brand_id"] != "fc" {
+		t.Fatalf("brand_id=%v", postedSettings["brand_id"])
+	}
+	webBlk, ok := postedSettings["web"].(map[string]interface{})
+	if !ok || webBlk["email"] != normEM || webBlk["source"] != "telegram_link" {
+		t.Fatalf("web=%#v", postedSettings["web"])
+	}
+	custom, ok := postedSettings["custom_unknown_field"].(map[string]interface{})
+	if !ok || custom["keep"] != true {
+		t.Fatalf("custom_unknown_field=%#v", postedSettings["custom_unknown_field"])
+	}
+	attr, err := attributionRecordFromAny(postedSettings["attribution"])
+	if err != nil || !attr.Valid() {
+		t.Fatalf("attribution invalid: %+v err=%v", postedSettings["attribution"], err)
+	}
+	if attr.FirstTouch.RegistrationChannel != "telegram" ||
+		attr.FirstTouch.RegistrationDomain != "connect.friends-connect.club" ||
+		attr.FirstTouch.TelegramStartParam != "summer" ||
+		attr.FirstTouch.CapturedAt != "2026-07-26T18:00:00Z" {
+		t.Fatalf("attribution mutated: %+v", attr)
+	}
+}

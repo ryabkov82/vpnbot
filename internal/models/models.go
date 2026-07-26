@@ -1,6 +1,10 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/ryabkov82/vpnbot/internal/attribution"
+)
 
 type User struct {
 	ID       int          `json:"user_id"`
@@ -38,9 +42,10 @@ type UserRegistrationRequest struct {
 }
 
 type UserSettings struct {
-	BrandID  string       `json:"brand_id,omitempty"`
-	Telegram TelegramInfo `json:"telegram"`
-	Web      WebInfo      `json:"web,omitempty"`
+	BrandID     string              `json:"brand_id,omitempty"`
+	Telegram    TelegramInfo        `json:"telegram"`
+	Web         WebInfo             `json:"web,omitempty"`
+	Attribution *attribution.Record `json:"attribution,omitempty"`
 }
 
 // WebInfo — метаданные web-пользователя (SHM settings.web).
