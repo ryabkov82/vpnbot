@@ -13,10 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
+	"github.com/ryabkov82/vpnbot/internal/models"
 	appService "github.com/ryabkov82/vpnbot/internal/service"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
+
+const googleOAuthStartMaxBodyBytes = 32 << 10
 
 const (
 	googleOAuthAuthURL    = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -292,8 +296,10 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
+		switch r.Method {
+		case http.MethodGet, http.MethodPost:
+		default:
+			w.Header().Set("Allow", "GET, POST")
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed")
 			return
 		}
@@ -305,26 +311,83 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 			writeJSONError(w, http.StatusNotFound, "google_auth_unavailable")
 			return
 		}
-		state, err := newGoogleOAuthState()
-		if err != nil {
-			slog.Error("google oauth start: random state", "err", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal_error")
-			return
-		}
+
 		sec := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		linkQS := strings.TrimSpace(r.URL.Query().Get("link_token"))
-		if linkQS != "" {
-			if _, err := VerifyAccountTelegramLinkToken(sec, cfgBrandID(cfg), linkQS); err != nil {
-				writeJSONError(w, http.StatusBadRequest, "invalid_link_token")
+		brandID := cfgBrandID(cfg)
+		capturedAt := time.Now()
+		var (
+			state string
+			err   error
+		)
+
+		switch r.Method {
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, googleOAuthStartMaxBodyBytes)
+			if err := r.ParseForm(); err != nil {
+				var maxErr *http.MaxBytesError
+				if errors.As(err, &maxErr) {
+					writeJSONError(w, http.StatusRequestEntityTooLarge, "bad_request")
+					return
+				}
+				writeJSONError(w, http.StatusBadRequest, "bad_request")
 				return
 			}
-			setGoogleOAuthLinkTokenCookie(w, r, linkQS)
-		} else {
+			if strings.TrimSpace(r.Form.Get("link_token")) != "" {
+				writeJSONError(w, http.StatusBadRequest, "bad_request")
+				return
+			}
 			clearGoogleOAuthLinkTokenCookie(w, r)
+			if lang := strings.TrimSpace(r.Form.Get("lang")); lang != "" {
+				setAccountLangCookie(w, r, normalizeAccountLocale(lang))
+			}
+			marketing := attribution.MarketingInput{
+				LandingPath: r.Form.Get("landing_path"),
+				Referrer:    r.Form.Get("referrer"),
+				UTMSource:   r.Form.Get("utm_source"),
+				UTMMedium:   r.Form.Get("utm_medium"),
+				UTMCampaign: r.Form.Get("utm_campaign"),
+				UTMContent:  r.Form.Get("utm_content"),
+				UTMTerm:     r.Form.Get("utm_term"),
+			}
+			state, _, err = createGoogleOAuthLoginStateForStart(cfg, marketing, capturedAt)
+			if err != nil {
+				slog.Error("google oauth start: login state", "err", err)
+				writeJSONError(w, http.StatusInternalServerError, "internal_error")
+				return
+			}
+
+		case http.MethodGet:
+			linkQS := strings.TrimSpace(r.URL.Query().Get("link_token"))
+			if linkQS != "" {
+				if _, verr := VerifyAccountTelegramLinkToken(sec, brandID, linkQS); verr != nil {
+					writeJSONError(w, http.StatusBadRequest, "invalid_link_token")
+					return
+				}
+				setGoogleOAuthLinkTokenCookie(w, r, linkQS)
+				state, err = createGoogleOAuthLinkState(sec, brandID, googleOAuthStateTTL())
+				if err != nil {
+					slog.Error("google oauth start: link state", "err", err)
+					writeJSONError(w, http.StatusInternalServerError, "internal_error")
+					return
+				}
+			} else {
+				clearGoogleOAuthLinkTokenCookie(w, r)
+				marketing := attribution.MarketingInput{
+					LandingPath: "/account",
+					Referrer:    strings.TrimSpace(r.Referer()),
+				}
+				state, _, err = createGoogleOAuthLoginStateForStart(cfg, marketing, capturedAt)
+				if err != nil {
+					slog.Error("google oauth start: login state", "err", err)
+					writeJSONError(w, http.StatusInternalServerError, "internal_error")
+					return
+				}
+			}
+			if qLang := strings.TrimSpace(r.URL.Query().Get("lang")); qLang != "" {
+				setAccountLangCookie(w, r, normalizeAccountLocale(qLang))
+			}
 		}
-		if qLang := strings.TrimSpace(r.URL.Query().Get("lang")); qLang != "" {
-			setAccountLangCookie(w, r, normalizeAccountLocale(qLang))
-		}
+
 		loc, err := buildGoogleOAuthURL(cfg, state)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
@@ -371,6 +434,40 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			writeJSONError(w, http.StatusBadRequest, "invalid_state")
 			return
 		}
+
+		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
+		brandID := cfgBrandID(cfg)
+		var (
+			signedClaims *googleOAuthStateClaims
+			legacyState  bool
+		)
+		if strings.HasPrefix(stateQS, googleOAuthStatePrefix) {
+			claims, serr := parseAndVerifyGoogleOAuthState(secret, brandID, stateQS)
+			if serr != nil {
+				writeJSONError(w, http.StatusBadRequest, "invalid_state")
+				return
+			}
+			signedClaims = claims
+		} else if isLegacyGoogleOAuthState(stateQS) {
+			legacyState = true
+		} else {
+			writeJSONError(w, http.StatusBadRequest, "invalid_state")
+			return
+		}
+
+		hasLinkCookie := strings.TrimSpace(linkCookie) != ""
+		if hasLinkCookie {
+			if signedClaims != nil && (signedClaims.Mode != googleOAuthModeLink || signedClaims.Attribution != nil) {
+				writeJSONError(w, http.StatusBadRequest, "invalid_state")
+				return
+			}
+		} else {
+			if signedClaims != nil && (signedClaims.Mode != googleOAuthModeLogin || signedClaims.Attribution == nil) {
+				writeJSONError(w, http.StatusBadRequest, "invalid_state")
+				return
+			}
+		}
+
 		if code == "" {
 			writeJSONError(w, http.StatusBadRequest, "google_auth_failed")
 			return
@@ -400,9 +497,8 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		secret := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
-		if strings.TrimSpace(linkCookie) != "" {
-			linkClaims, lerr := VerifyAccountTelegramLinkToken(secret, cfgBrandID(cfg), linkCookie)
+		if hasLinkCookie {
+			linkClaims, lerr := VerifyAccountTelegramLinkToken(secret, brandID, linkCookie)
 			if lerr != nil {
 				errCode := "invalid_confirm_token"
 				if errors.Is(lerr, ErrAccountTokenExpired) {
@@ -467,19 +563,29 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 				return
 			}
 			linkDoneMs := time.Since(linkStarted).Milliseconds()
-			rawSessionTok, err := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+			rawSessionTok, err := CreateAccountToken(secret, brandID, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 			if err != nil {
 				slog.Error("google oauth link", "stage", "create_session_token", "user_id", user.ID, "err", err)
 				http.Redirect(w, r, "/account/link?"+url.Values{"err": []string{"token_failed"}}.Encode(), http.StatusFound)
 				return
 			}
-			slog.Info("google oauth link: linked and redirecting", "user_id", user.ID, "duration_ms", linkDoneMs)
+			slog.Info("google oauth link: linked and redirecting",
+				"user_id", user.ID, "mode", googleOAuthModeLink, "duration_ms", linkDoneMs)
 			sessionURL := appendAccountLangQuery("/account/session?token="+url.QueryEscape(rawSessionTok), resolveAccountLocale(r))
 			http.Redirect(w, r, sessionURL, http.StatusFound)
 			return
 		}
 
-		user, created, ferr := app.FindOrCreateWebUser(normEmail)
+		var (
+			user    *models.User
+			created bool
+			ferr    error
+		)
+		if signedClaims != nil {
+			user, created, ferr = app.FindOrCreateWebUserWithAttribution(normEmail, *signedClaims.Attribution)
+		} else {
+			user, created, ferr = app.FindOrCreateWebUser(normEmail)
+		}
 		if ferr != nil || user == nil {
 			if errors.Is(ferr, appService.ErrUserIdentityMismatch) {
 				slog.Warn("google oauth callback: identity mismatch")
@@ -491,7 +597,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 			return
 		}
 
-		rawSessionTok, err := CreateAccountToken(secret, cfgBrandID(cfg), normEmail, user.ID, user.Login, accountTokenTTL(cfg))
+		rawSessionTok, err := CreateAccountToken(secret, brandID, normEmail, user.ID, user.Login, accountTokenTTL(cfg))
 		if err != nil {
 			slog.Error("google oauth callback", "stage", "create_session_token", "user_id", user.ID, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
@@ -501,6 +607,15 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 		if created {
 			sendAccountUserRegisteredTelegramNotification(cfg, normEmail, user.ID, user.Login, ClientIPFromRequest(r))
 		}
+
+		mode := googleOAuthModeLogin
+		if signedClaims != nil {
+			mode = signedClaims.Mode
+		} else if legacyState {
+			mode = "legacy"
+		}
+		slog.Info("google oauth callback: session ready",
+			"user_id", user.ID, "created", created, "mode", mode)
 
 		redirect := appendAccountLangQuery("/account/session?token="+url.QueryEscape(rawSessionTok), resolveAccountLocale(r))
 		http.Redirect(w, r, redirect, http.StatusFound)

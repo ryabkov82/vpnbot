@@ -41,6 +41,27 @@ func buildWebMagicLinkAttribution(
 	)
 }
 
+// buildWebGoogleAttribution builds a first-touch Record for Google OAuth registration.
+// registration_domain is always derived from cfg.PublicBaseURL(), never from the request.
+func buildWebGoogleAttribution(
+	cfg *config.Config,
+	marketing attribution.MarketingInput,
+	capturedAt time.Time,
+) (attribution.Record, error) {
+	domain, err := registrationDomainFromConfig(cfg)
+	if err != nil {
+		return attribution.Record{}, err
+	}
+	return attribution.NewFirstTouch(
+		attribution.ServerContext{
+			RegistrationChannel: attribution.RegistrationChannelWebGoogle,
+			RegistrationDomain:  domain,
+			CapturedAt:          capturedAt,
+		},
+		marketing,
+	)
+}
+
 func registrationDomainFromConfig(cfg *config.Config) (string, error) {
 	if cfg == nil {
 		return "", errAttributionPublicBaseURL

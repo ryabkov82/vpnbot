@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
 	appService "github.com/ryabkov82/vpnbot/internal/service"
@@ -21,6 +22,7 @@ func testGoogleOAuthMinimalCfg(secret string, enabled bool, id, redirect, sec st
 	c.Brand.ID = "vff"
 	c.Brand.Name = "VPN for Friends"
 	c.Brand.LandingURL = "https://vpn-for-friends.com"
+	c.Brand.PublicBaseURL = "https://connect.vpn-for-friends.com"
 	c.Brand.WebUserLoginPrefix = "web_"
 	c.Brand.WebUserSource = "vpn-for-friends.com"
 	c.WebSales.OrderTokenSecret = secret
@@ -106,14 +108,14 @@ func TestGoogleOAuthAvailable(t *testing.T) {
 	}
 }
 
-func TestGETGoogleOAuthStart_POSTMethodNotAllowed(t *testing.T) {
+func TestGoogleOAuthStart_MethodNotAllowed(t *testing.T) {
 	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("b", 40), true,
 		"cid", "https://x/c", "secret")
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", nil)
+	req := httptest.NewRequest(http.MethodPut, "/api/account/google/start", nil)
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed ||
-		rec.Header().Get("Allow") != http.MethodGet {
+		rec.Header().Get("Allow") != "GET, POST" {
 		t.Fatalf("code=%d allow=%s", rec.Code, rec.Header().Get("Allow"))
 	}
 }
@@ -186,6 +188,22 @@ func TestGETGoogleOAuthStart_Enabled_RedirectSetsStateCookieAndURL(t *testing.T)
 		oauthCookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie flags %+v", oauthCookie)
 	}
+	if !strings.HasPrefix(state, googleOAuthStatePrefix) {
+		t.Fatalf("want signed state prefix, got %q", state)
+	}
+	claims, err := parseAndVerifyGoogleOAuthState(cfg.WebSales.OrderTokenSecret, "vff", state)
+	if err != nil || claims.Mode != googleOAuthModeLogin || claims.Attribution == nil || !claims.Attribution.Valid() {
+		t.Fatalf("claims=%+v err=%v", claims, err)
+	}
+	if claims.Attribution.FirstTouch.RegistrationChannel != attribution.RegistrationChannelWebGoogle {
+		t.Fatalf("channel %q", claims.Attribution.FirstTouch.RegistrationChannel)
+	}
+	if !claims.Attribution.IsOrganic() {
+		t.Fatal("GET fallback must be organic")
+	}
+	if claims.Attribution.FirstTouch.LandingPath != "/account" {
+		t.Fatalf("landing %q", claims.Attribution.FirstTouch.LandingPath)
+	}
 }
 
 func TestGETGoogleOAuthStart_InvalidLinkToken(t *testing.T) {
@@ -223,6 +241,11 @@ func TestGETGoogleOAuthStart_ValidLinkTokenSetsCookie(t *testing.T) {
 	got := findCookieValue(rec.Header(), googleOAuthCookieLinkToken)
 	if got != linkTok {
 		t.Fatalf("link cookie mismatch got %q", got)
+	}
+	state := findCookieValue(rec.Header(), googleOAuthCookieName)
+	claims, err := parseAndVerifyGoogleOAuthState(sec, "vff", state)
+	if err != nil || claims.Mode != googleOAuthModeLink || claims.Attribution != nil {
+		t.Fatalf("link state claims=%+v err=%v", claims, err)
 	}
 }
 
@@ -322,8 +345,13 @@ func TestGoogleOAuthCallback_HappyCreatesUserAndRedirects(t *testing.T) {
 	if atomic.LoadInt32(&notifyCalls) != 1 {
 		t.Fatalf("want telegram notifier 1 call got %d", notifyCalls)
 	}
-	if st.findOrCreateCalls != 1 {
-		t.Fatalf("FindOrCreateWebUser calls=%d", st.findOrCreateCalls)
+	if st.findOrCreateWithAttrCalls != 1 || st.findOrCreateCalls != 0 {
+		t.Fatalf("want attribution-aware create only: attr=%d plain=%d",
+			st.findOrCreateWithAttrCalls, st.findOrCreateCalls)
+	}
+	if st.findOrCreateLastAttr == nil || !st.findOrCreateLastAttr.Valid() ||
+		st.findOrCreateLastAttr.FirstTouch.RegistrationChannel != attribution.RegistrationChannelWebGoogle {
+		t.Fatalf("passed record %#v", st.findOrCreateLastAttr)
 	}
 }
 
@@ -358,6 +386,10 @@ func TestGoogleOAuthCallback_ExistingUser_NoNotifier(t *testing.T) {
 	}
 	if atomic.LoadInt32(&notifyCalls) != 0 {
 		t.Fatal("notifier must not fire for existing user")
+	}
+	if st.findOrCreateWithAttrCalls != 1 || st.findOrCreateCalls != 0 {
+		t.Fatalf("want attribution-aware path: attr=%d plain=%d",
+			st.findOrCreateWithAttrCalls, st.findOrCreateCalls)
 	}
 }
 
@@ -428,9 +460,24 @@ func TestRenderedAccountLogin_GoogleLinkWhenConfigured(t *testing.T) {
 	}
 	html := string(htmlBytes)
 	if !strings.Contains(html, "Войти с Google") ||
-		!strings.Contains(html, `/api/account/google/start`) ||
+		!strings.Contains(html, `id="google-login-form"`) ||
+		!strings.Contains(html, `method="post"`) ||
+		!strings.Contains(html, `action="/api/account/google/start"`) ||
 		!strings.Contains(html, ">или</p>") {
-		t.Fatal("expected google SSO block missing")
+		t.Fatal("expected google SSO form missing")
+	}
+	for _, name := range []string{"landing_path", "referrer", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "lang"} {
+		if !strings.Contains(html, `name="`+name+`"`) {
+			t.Fatalf("missing hidden input %s", name)
+		}
+	}
+	for _, banned := range []string{"brand_id", "registration_domain", "registration_channel", "captured_at"} {
+		if strings.Contains(html, banned) {
+			t.Fatalf("form must not contain %q", banned)
+		}
+	}
+	if strings.Contains(html, `href="/api/account/google/start`) {
+		t.Fatal("Google login must be POST form, not GET link")
 	}
 	if !strings.Contains(html, "Откройте письмо и перейдите по ссылке") ||
 		!strings.Contains(html, "Введите email — мы отправим ссылку для входа без пароля") {
@@ -638,10 +685,220 @@ func TestGoogleOAuthCallback_LinkFlow_LinkOK_RedirectSession_NoFindOrCreate(t *t
 	if err != nil || claims.Email != normWant || claims.UserID != shmUID || claims.Login != "@telegram_login" {
 		t.Fatalf("claims=%+v err=%v", claims, err)
 	}
-	if st.findOrCreateCalls != 0 {
-		t.Fatalf("FindOrCreateWebUser calls=%d want 0", st.findOrCreateCalls)
+	if st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("create must not run on link: plain=%d attr=%d",
+			st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
 	}
 	if st.linkWebEmailCalls != 1 {
 		t.Fatalf("LinkWebEmailForTelegramUser calls=%d want 1", st.linkWebEmailCalls)
+	}
+}
+
+func TestPOSTGoogleOAuthStart_FCAttribution(t *testing.T) {
+	cfg := friendsConnectAccountTestCfg()
+	cfg.WebAccount.GoogleEnabled = true
+	cfg.WebAccount.GoogleClientID = "fc-cid"
+	cfg.WebAccount.GoogleClientSecret = "fc-secret"
+	cfg.WebAccount.GoogleRedirectURL = "https://connect.friends-connect.club/api/account/google/callback"
+
+	form := url.Values{}
+	form.Set("lang", "ru")
+	form.Set("landing_path", "/account")
+	form.Set("referrer", "https://friends-connect.club/post?id=1")
+	form.Set("utm_source", "telegram")
+	form.Set("utm_medium", "post")
+	form.Set("utm_campaign", "summer")
+	form.Set("utm_content", "google_button")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Host = "evil-host.example"
+	req.Header.Set("X-Forwarded-Host", "spoofed.example")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	serveGoogleOAuthStart(cfg)(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	loc := rec.Header().Get("Location")
+	v, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := v.Query().Get("state")
+	cookieState := findCookieValue(rec.Header(), googleOAuthCookieName)
+	if state == "" || state != cookieState {
+		t.Fatalf("state cookie/query mismatch q=%q c=%q", state, cookieState)
+	}
+	if strings.Contains(loc, "utm_source=") || strings.Contains(loc, "landing_path=") {
+		t.Fatal("marketing must not appear in Google redirect query beyond signed state")
+	}
+	claims, err := parseAndVerifyGoogleOAuthState(cfg.WebSales.OrderTokenSecret, "fc", state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Mode != googleOAuthModeLogin || claims.BrandID != "fc" {
+		t.Fatalf("claims %+v", claims)
+	}
+	ft := claims.Attribution.FirstTouch
+	if ft.RegistrationChannel != attribution.RegistrationChannelWebGoogle {
+		t.Fatalf("channel %q", ft.RegistrationChannel)
+	}
+	if ft.RegistrationDomain != "connect.friends-connect.club" {
+		t.Fatalf("domain %q", ft.RegistrationDomain)
+	}
+	if ft.LandingPath != "/account" || ft.ReferrerHost != "friends-connect.club" {
+		t.Fatalf("landing/referrer %#v", ft)
+	}
+	if ft.UTMSource != "telegram" || ft.UTMMedium != "post" || ft.UTMCampaign != "summer" || ft.UTMContent != "google_button" {
+		t.Fatalf("utm %#v", ft)
+	}
+	if ft.CapturedAt == "" {
+		t.Fatal("captured_at empty")
+	}
+}
+
+func TestPOSTGoogleOAuthStart_OversizedMarketingFallsBackOrganic(t *testing.T) {
+	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("p", 40), true, "cid", "https://cb/x", "sec")
+	prev := googleOAuthMaxStateBytesOverride
+	googleOAuthMaxStateBytesOverride = 500 // between full marketing (~665) and organic (~447)
+	t.Cleanup(func() { googleOAuthMaxStateBytesOverride = prev })
+
+	form := url.Values{}
+	form.Set("landing_path", "/account")
+	form.Set("utm_source", "telegram")
+	form.Set("utm_medium", "post")
+	form.Set("utm_campaign", "summer")
+	req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	serveGoogleOAuthStart(cfg)(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("want redirect, got %d %s", rec.Code, rec.Body.String())
+	}
+	state := findCookieValue(rec.Header(), googleOAuthCookieName)
+	claims, err := parseAndVerifyGoogleOAuthState(cfg.WebSales.OrderTokenSecret, "vff", state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claims.Attribution.IsOrganic() {
+		t.Fatalf("oversized marketing must fall back to organic: %#v", claims.Attribution)
+	}
+	if len(state) > googleOAuthMaxStateBytesOverride {
+		t.Fatalf("state too large: %d", len(state))
+	}
+}
+
+func TestPOSTGoogleOAuthStart_BadRequests(t *testing.T) {
+	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("q", 40), true, "cid", "https://cb/x", "sec")
+
+	t.Run("link_token_rejected", func(t *testing.T) {
+		form := url.Values{"link_token": {"x"}, "landing_path": {"/account"}}
+		req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		serveGoogleOAuthStart(cfg)(rec, req)
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Fatalf("code=%d loc=%s", rec.Code, rec.Header().Get("Location"))
+		}
+	})
+
+	t.Run("oversized_body", func(t *testing.T) {
+		body := strings.Repeat("a", googleOAuthStartMaxBodyBytes+100)
+		req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		serveGoogleOAuthStart(cfg)(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge || rec.Header().Get("Location") != "" {
+			t.Fatalf("code=%d loc=%s body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+		}
+	})
+}
+
+func TestGoogleOAuthCallback_LegacyStateUsesPlainFindOrCreate(t *testing.T) {
+	secret := strings.Repeat("r", 44)
+	validTS := httptest.NewServer(googleOAuthTestMockHandler("legacy@Example.com", true, false))
+	t.Cleanup(validTS.Close)
+	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
+
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "sec")
+	norm, _ := webuser.NormalizeEmail("legacy@example.com")
+	st := stubAccountWeb{
+		findOrCreateRet:     &models.User{ID: 55, Login: webuser.WebLoginFromEmail(norm)},
+		findOrCreateCreated: true,
+	}
+	legacy, err := newGoogleOAuthState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(legacy, googleOAuthStatePrefix) {
+		t.Fatal("legacy helper must not use g1. prefix")
+	}
+
+	rec := httptest.NewRecorder()
+	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(legacy)
+	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: legacy})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if st.findOrCreateCalls != 1 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatalf("legacy must use plain create: plain=%d attr=%d",
+			st.findOrCreateCalls, st.findOrCreateWithAttrCalls)
+	}
+}
+
+func TestGoogleOAuthCallback_InvalidSignedState_NoExchange(t *testing.T) {
+	secret := strings.Repeat("s", 40)
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "sec")
+	var exchangeHit int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&exchangeHit, 1)
+		http.Error(w, "no", http.StatusUnauthorized)
+	}))
+	t.Cleanup(ts.Close)
+	patchGoogleOAuthEndpoints(t, ts.URL+"/token", ts.URL+"/userinfo")
+
+	// tampered signed state: valid prefix + garbage payload
+	bad := googleOAuthStatePrefix + "not.valid.signed"
+	st := stubAccountWeb{findOrCreateRet: &models.User{ID: 1, Login: "x"}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/callback?code=z&state="+url.QueryEscape(bad), nil)
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: bad})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_state") {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if atomic.LoadInt32(&exchangeHit) != 0 || st.findOrCreateCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatal("token exchange/create must not run after invalid signed state")
+	}
+}
+
+func TestGoogleOAuthCallback_ModeMismatch_LinkCookieWithLoginState(t *testing.T) {
+	secret := strings.Repeat("t", 41)
+	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "sec")
+	recStart := httptest.NewRecorder()
+	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	state := findCookieValue(recStart.Header(), googleOAuthCookieName)
+	claims, err := parseAndVerifyGoogleOAuthState(secret, "vff", state)
+	if err != nil || claims.Mode != googleOAuthModeLogin {
+		t.Fatalf("setup claims=%+v err=%v", claims, err)
+	}
+	linkTok, err := CreateAccountTelegramLinkToken(secret, "vff", 1, 2, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := stubAccountWeb{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/callback?code=z&state="+url.QueryEscape(state), nil)
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
+	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkTok})
+	serveGoogleOAuthCallback(cfg, &st)(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_state") {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if st.linkWebEmailCalls != 0 || st.findOrCreateWithAttrCalls != 0 {
+		t.Fatal("mode mismatch must stop before link/create")
 	}
 }

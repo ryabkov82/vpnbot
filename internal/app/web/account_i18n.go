@@ -681,10 +681,23 @@ func buildAccountGoogleLoginHTML(cfg *config.Config, locale accountLocale, i acc
 	if !googleOAuthAvailable(cfg) {
 		return ""
 	}
-	href := appendAccountLangQuery("/api/account/google/start", locale)
+	lang := string(locale)
+	if lang == "" {
+		lang = string(accountLocaleRU)
+	}
 	block := fmt.Sprintf(`		<p class="text-center text-secondary small mt-4 mb-2">%s</p>
-		<a class="btn btn-outline-light w-100 mb-2" href="%s">%s</a>
-`, template.HTMLEscapeString(i.LoginGoogleOr), template.HTMLEscapeString(href), template.HTMLEscapeString(i.LoginGoogleBtn))
+		<form id="google-login-form" method="post" action="/api/account/google/start">
+			<input type="hidden" name="lang" id="google-attr-lang" value="%s">
+			<input type="hidden" name="landing_path" id="google-attr-landing-path" value="">
+			<input type="hidden" name="referrer" id="google-attr-referrer" value="">
+			<input type="hidden" name="utm_source" id="google-attr-utm-source" value="">
+			<input type="hidden" name="utm_medium" id="google-attr-utm-medium" value="">
+			<input type="hidden" name="utm_campaign" id="google-attr-utm-campaign" value="">
+			<input type="hidden" name="utm_content" id="google-attr-utm-content" value="">
+			<input type="hidden" name="utm_term" id="google-attr-utm-term" value="">
+			<button type="submit" class="btn btn-outline-light w-100 mb-2">%s</button>
+		</form>
+`, template.HTMLEscapeString(i.LoginGoogleOr), template.HTMLEscapeString(lang), template.HTMLEscapeString(i.LoginGoogleBtn))
 	return template.HTML(block)
 }
 

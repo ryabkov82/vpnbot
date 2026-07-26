@@ -102,6 +102,33 @@ func TestBuildWebMagicLinkAttribution_MalformedMarketingNormalized(t *testing.T)
 	}
 }
 
+func TestBuildWebGoogleAttribution_ExactAndTrustBoundary(t *testing.T) {
+	cfg := friendsConnectAccountTestCfg()
+	fixed := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	rec, err := buildWebGoogleAttribution(cfg, attribution.MarketingInput{
+		LandingPath: "/account?x=1",
+		Referrer:    "https://friends-connect.club/post?id=1",
+		UTMSource:   "telegram",
+		UTMCampaign: "summer",
+	}, fixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ft := rec.FirstTouch
+	if ft.RegistrationChannel != attribution.RegistrationChannelWebGoogle {
+		t.Fatalf("channel %q", ft.RegistrationChannel)
+	}
+	if ft.RegistrationDomain != "connect.friends-connect.club" {
+		t.Fatalf("domain %q", ft.RegistrationDomain)
+	}
+	if ft.LandingPath != "/account" || ft.ReferrerHost != "friends-connect.club" {
+		t.Fatalf("%#v", ft)
+	}
+	if ft.CapturedAt != "2026-07-27T12:00:00Z" {
+		t.Fatalf("captured_at %q", ft.CapturedAt)
+	}
+}
+
 func TestBuildWebMagicLinkAttribution_InvalidServerContext(t *testing.T) {
 	fixed := time.Now().UTC()
 	req := accountLoginStartRequestJSON{}

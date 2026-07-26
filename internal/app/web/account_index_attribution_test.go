@@ -57,6 +57,30 @@ func TestAccountIndexStatic_CapturesAttributionBeforeReplaceState(t *testing.T) 
 		}
 	}
 
+	fillIdx := strings.Index(s, "function fillGoogleAttrForm()")
+	if fillIdx < 0 {
+		fillIdx = strings.Index(s, "fillGoogleAttrForm")
+	}
+	if fillIdx < 0 || fillIdx < refIdx || fillIdx > replaceIdx {
+		t.Fatal("Google form fill must use snapshot and run before replaceState")
+	}
+	for _, id := range []string{
+		"google-attr-landing-path",
+		"google-attr-referrer",
+		"google-attr-utm-source",
+		"google-attr-utm-medium",
+		"google-attr-utm-campaign",
+		"google-attr-utm-content",
+		"google-attr-utm-term",
+	} {
+		if !strings.Contains(s, id) {
+			t.Fatalf("google form fill missing %q", id)
+		}
+	}
+	if !strings.Contains(s, `getElementById('google-login-form')`) {
+		t.Fatal("JS must target google-login-form")
+	}
+
 	banned := []string{
 		"localStorage",
 		"sessionStorage",
