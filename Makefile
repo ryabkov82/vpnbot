@@ -12,6 +12,7 @@ LOCAL_CONFIGCHECK := ./dist/configcheck-linux-amd64
 	brand-config-activate brand-config-rollback brand-smoke brand-status \
 	brand-logs brand-rollback \
 	shm-yookassa-check shm-yookassa-diff shm-yookassa-deploy shm-yookassa-rollback \
+	shm-tg-payments-check shm-tg-payments-diff shm-tg-payments-deploy shm-tg-payments-rollback \
 	deploy status logs rollback smoke \
 	vff-config-render deploy-vff-config activate-vff-config rollback-vff-config smoke-vff \
 	rollout-vff \
@@ -109,6 +110,21 @@ shm-yookassa-deploy:
 shm-yookassa-rollback:
 	@if [ -z "$(BACKUP)" ]; then echo "BACKUP is required (e.g. make shm-yookassa-rollback BACKUP=/opt/shm/pay_systems/yookassa.cgi.bak.<UTC>)" >&2; exit 1; fi
 	BACKUP="$(BACKUP)" bash scripts/deploy-shm-yookassa.sh rollback
+
+# --- SHM Telegram payments WebApp template brand routing ---
+
+shm-tg-payments-check:
+	bash scripts/deploy-shm-tg-payments-template.sh check
+
+shm-tg-payments-diff:
+	bash scripts/deploy-shm-tg-payments-template.sh diff
+
+shm-tg-payments-deploy:
+	bash scripts/deploy-shm-tg-payments-template.sh deploy
+
+shm-tg-payments-rollback:
+	@if [ -z "$(BACKUP)" ]; then echo "BACKUP is required (e.g. make shm-tg-payments-rollback BACKUP=/opt/shm/template-backups/tg_payments_webapp.<UTC>.html)" >&2; exit 1; fi
+	BACKUP="$(BACKUP)" bash scripts/deploy-shm-tg-payments-template.sh rollback
 
 # --- Backward-compatible aliases (delegate only; no profile values here) ---
 
