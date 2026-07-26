@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -14,12 +15,10 @@ import (
 type accountLocale string
 
 const (
-	accountLocaleRU           accountLocale = "ru"
-	accountLocaleEN           accountLocale = "en"
-	accountLangCookieName                   = "vff_lang"
-	accountLangCookieMaxAge                 = 365 * 24 * 3600
-	accountMarketingSiteURLRU               = "https://vpn-for-friends.com/"
-	accountMarketingSiteURLEN               = "https://vpn-for-friends.com/en/"
+	accountLocaleRU         accountLocale = "ru"
+	accountLocaleEN         accountLocale = "en"
+	accountLangCookieName                 = "vff_lang"
+	accountLangCookieMaxAge               = 365 * 24 * 3600
 )
 
 // accountI18n holds localized UI copy for the web account cabinet.
@@ -121,11 +120,22 @@ type accountI18n struct {
 	PaymentMethodSupport    string
 }
 
-func accountMarketingSiteURL(locale accountLocale) string {
-	if locale == accountLocaleEN {
-		return accountMarketingSiteURLEN
+// accountBrandIdentity returns explicit active-brand display name and landing URL.
+// Fail-closed: nil/partial config must not fall back to VFF defaults.
+func accountBrandIdentity(cfg *config.Config) (name, landingURL string, err error) {
+	if cfg == nil {
+		return "", "", errors.New("account brand name is required")
 	}
-	return accountMarketingSiteURLRU
+	b := cfg.EffectiveBrand()
+	name = strings.TrimSpace(b.Name)
+	if name == "" {
+		return "", "", errors.New("account brand name is required")
+	}
+	landingURL = strings.TrimSpace(b.LandingURL)
+	if landingURL == "" {
+		return "", "", errors.New("account brand landing URL is required")
+	}
+	return name, landingURL, nil
 }
 
 func normalizeAccountLocale(raw string) accountLocale {
@@ -242,22 +252,22 @@ func (v urlValuesCopy) encode() string {
 	return uv.Encode()
 }
 
-func loadAccountI18n(locale accountLocale) accountI18n {
+func loadAccountI18n(locale accountLocale, brandName string) accountI18n {
 	switch locale {
 	case accountLocaleEN:
-		return accountI18nEN()
+		return accountI18nEN(brandName)
 	default:
-		return accountI18nRU()
+		return accountI18nRU(brandName)
 	}
 }
 
-func accountI18nRU() accountI18n {
+func accountI18nRU(brandName string) accountI18n {
 	return accountI18n{
 		HTMLLang: "ru",
 
-		PageTitleLogin:   "Личный кабинет — VPN for Friends",
-		PageTitleSession: "Кабинет — VPN for Friends",
-		FooterBrand:      "VPN for Friends",
+		PageTitleLogin:   "Личный кабинет — " + brandName,
+		PageTitleSession: "Кабинет — " + brandName,
+		FooterBrand:      brandName,
 		FooterTagline:    "Безопасный доступ к вашим VPN-услугам",
 		SupportBtn:       "Поддержка",
 		LogoutBtn:        "Выйти",
@@ -265,7 +275,7 @@ func accountI18nRU() accountI18n {
 		LangSwitcherEN:   "EN",
 		CloseModal:       "Закрыть",
 
-		LoginH1:           "Личный кабинет VPN for Friends",
+		LoginH1:           "Личный кабинет " + brandName,
 		LoginIntro:        "Введите email — мы отправим ссылку для входа без пароля.",
 		LoginTelegramHint: "Если вы уже пользуетесь Telegram-ботом, откройте в боте команду «Личный кабинет». Так ваши текущие услуги и баланс будут доступны в web-кабинете.",
 		LoginLoggedOut:    "Вы вышли из личного кабинета.",
@@ -339,13 +349,13 @@ func accountI18nRU() accountI18n {
 	}
 }
 
-func accountI18nEN() accountI18n {
+func accountI18nEN(brandName string) accountI18n {
 	return accountI18n{
 		HTMLLang: "en",
 
-		PageTitleLogin:   "Account — VPN for Friends",
-		PageTitleSession: "Account — VPN for Friends",
-		FooterBrand:      "VPN for Friends",
+		PageTitleLogin:   "Account — " + brandName,
+		PageTitleSession: "Account — " + brandName,
+		FooterBrand:      brandName,
 		FooterTagline:    "Secure access to your VPN services",
 		SupportBtn:       "Support",
 		LogoutBtn:        "Sign out",
@@ -353,7 +363,7 @@ func accountI18nEN() accountI18n {
 		LangSwitcherEN:   "EN",
 		CloseModal:       "Close",
 
-		LoginH1:           "VPN for Friends account",
+		LoginH1:           brandName + " account",
 		LoginIntro:        "Enter your email — we will send a password-free sign-in link.",
 		LoginTelegramHint: "If you already use the Telegram bot, open the “Account” command in the bot. This keeps your current services and balance available in the web account.",
 		LoginLoggedOut:    "You have signed out.",
@@ -656,11 +666,10 @@ func buildAccountTopupPaymentMethodsHTML(i accountI18n, locale accountLocale) te
 	return template.HTML(block)
 }
 
-func buildAccountGoogleLoginHTML(cfg *config.Config, locale accountLocale) template.HTML {
+func buildAccountGoogleLoginHTML(cfg *config.Config, locale accountLocale, i accountI18n) template.HTML {
 	if !googleOAuthAvailable(cfg) {
 		return ""
 	}
-	i := loadAccountI18n(locale)
 	href := appendAccountLangQuery("/api/account/google/start", locale)
 	block := fmt.Sprintf(`		<p class="text-center text-secondary small mt-4 mb-2">%s</p>
 		<a class="btn btn-outline-light w-100 mb-2" href="%s">%s</a>

@@ -12,7 +12,9 @@ func orderStartTestCfg() *config.Config {
 	cfg := &config.Config{}
 	cfg.WebSales.OrderTokenSecret = "order-token-secret-order-token-sec"
 	cfg.Brand.ID = "vff"
+	cfg.Brand.Name = "VPN for Friends"
 	cfg.Brand.PublicBaseURL = "https://shop.example"
+	cfg.Brand.LandingURL = "https://vpn-for-friends.com"
 	cfg.Brand.WebUserLoginPrefix = "web_"
 	cfg.Brand.WebUserSource = "vpn-for-friends.com"
 	cfg.Brand.YooKassaPaySystem = "yookassa"
@@ -22,6 +24,19 @@ func orderStartTestCfg() *config.Config {
 	cfg.Email.SMTPUsername = "u"
 	cfg.Email.SMTPPassword = "pw"
 	cfg.Email.FromEmail = "noreply@test"
+	return cfg
+}
+
+func friendsConnectAccountTestCfg() *config.Config {
+	cfg := orderStartTestCfg()
+	cfg.Brand.ID = "fc"
+	cfg.Brand.Name = "Friends Connect"
+	cfg.Brand.AllowedHosts = []string{"connect.friends-connect.club"}
+	cfg.Brand.PublicBaseURL = "https://connect.friends-connect.club"
+	cfg.Brand.LandingURL = "https://friends-connect.club"
+	cfg.Brand.ServiceCategory = "vpn-mz-fc"
+	cfg.Brand.WebUserLoginPrefix = "web_fc_"
+	cfg.Brand.PaymentProfile = "telegram_friends_connect_bot"
 	return cfg
 }
 

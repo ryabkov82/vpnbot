@@ -58,48 +58,166 @@ func TestResolveAccountLocale(t *testing.T) {
 	}
 }
 
-func TestAccountMarketingSiteURL(t *testing.T) {
-	if got := accountMarketingSiteURL(accountLocaleRU); got != accountMarketingSiteURLRU {
-		t.Fatalf("ru: got %q", got)
+func TestAccountBrandIdentity_FailClosed(t *testing.T) {
+	if _, _, err := accountBrandIdentity(nil); err == nil || !strings.Contains(err.Error(), "account brand name is required") {
+		t.Fatalf("nil cfg: err=%v", err)
 	}
-	if got := accountMarketingSiteURL(accountLocaleEN); got != accountMarketingSiteURLEN {
-		t.Fatalf("en: got %q", got)
+	cfg := orderStartTestCfg()
+	cfg.Brand.Name = ""
+	if _, _, err := accountBrandIdentity(cfg); err == nil || !strings.Contains(err.Error(), "account brand name is required") {
+		t.Fatalf("empty name: err=%v", err)
+	}
+	cfg = orderStartTestCfg()
+	cfg.Brand.LandingURL = ""
+	if _, _, err := accountBrandIdentity(cfg); err == nil || !strings.Contains(err.Error(), "account brand landing URL is required") {
+		t.Fatalf("empty landing: err=%v", err)
 	}
 }
 
-func TestRenderedAccountMarketingSiteLink(t *testing.T) {
+func TestRenderedAccountLoginSession_FailClosed(t *testing.T) {
+	if _, err := renderedAccountLoginPageHTML(nil, accountLocaleRU); err == nil {
+		t.Fatal("nil cfg login must fail")
+	}
 	cfg := orderStartTestCfg()
+	cfg.Brand.Name = ""
+	if _, err := renderedAccountLoginPageHTML(cfg, accountLocaleRU); err == nil {
+		t.Fatal("empty name login must fail")
+	}
+	cfg = orderStartTestCfg()
+	cfg.Brand.LandingURL = ""
+	if _, err := renderedAccountSessionPageHTML(cfg, accountLocaleEN, nil); err == nil {
+		t.Fatal("empty landing session must fail")
+	}
+}
+
+func TestRenderedAccountIdentity_VFF(t *testing.T) {
+	cfg := orderStartTestCfg()
+	const landing = "https://vpn-for-friends.com"
+
 	ruLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleRU)
-	if !strings.Contains(ruLogin, `href="https://vpn-for-friends.com/"`) ||
-		!strings.Contains(ruLogin, `>VPN for Friends</a>`) {
-		t.Fatal("RU login footer brand must link to marketing site")
+	for _, needle := range []string{
+		"<title>Личный кабинет — VPN for Friends</title>",
+		"<h1 class=\"h4 fw-bold mb-3\">Личный кабинет VPN for Friends</h1>",
+		`href="` + landing + `"`,
+		`>VPN for Friends</a>`,
+		"Введите email — мы отправим ссылку для входа без пароля.",
+	} {
+		if !strings.Contains(ruLogin, needle) {
+			t.Fatalf("VFF RU login missing %q", needle)
+		}
 	}
 	if strings.Contains(ruLogin, ">На сайт</a>") || strings.Contains(ruLogin, ">Website</a>") {
 		t.Fatal("marketing link must use footer brand, not header site link")
 	}
 
 	enLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleEN)
-	if !strings.Contains(enLogin, `href="https://vpn-for-friends.com/en/"`) ||
-		!strings.Contains(enLogin, `>VPN for Friends</a>`) {
-		t.Fatal("EN login footer brand must link to marketing site")
+	for _, needle := range []string{
+		"<title>Account — VPN for Friends</title>",
+		"<h1 class=\"h4 fw-bold mb-3\">VPN for Friends account</h1>",
+		`href="` + landing + `"`,
+		`>VPN for Friends</a>`,
+		`/account?lang=en`,
+	} {
+		if !strings.Contains(enLogin, needle) {
+			t.Fatalf("VFF EN login missing %q", needle)
+		}
 	}
-	if !strings.Contains(enLogin, `/account?lang=en`) {
-		t.Fatal("EN login must keep lang switcher")
+	if strings.Contains(enLogin, "vpn-for-friends.com/en/") {
+		t.Fatal("EN footer must use canonical landing_url without /en/")
 	}
 
 	ruSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleRU)
-	if !strings.Contains(ruSession, `href="https://vpn-for-friends.com/"`) ||
-		!strings.Contains(ruSession, `account-footer`) {
-		t.Fatal("RU session footer brand must link to marketing site")
+	for _, needle := range []string{
+		"<title>Кабинет — VPN for Friends</title>",
+		`href="` + landing + `"`,
+		`>VPN for Friends</a>`,
+		`account-footer`,
+	} {
+		if !strings.Contains(ruSession, needle) {
+			t.Fatalf("VFF RU session missing %q", needle)
+		}
 	}
 
 	enSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleEN)
-	if !strings.Contains(enSession, `href="https://vpn-for-friends.com/en/"`) {
-		t.Fatal("EN session footer brand must link to marketing site")
+	for _, needle := range []string{
+		"<title>Account — VPN for Friends</title>",
+		`href="` + landing + `"`,
+		`/account/session?lang=en`,
+	} {
+		if !strings.Contains(enSession, needle) {
+			t.Fatalf("VFF EN session missing %q", needle)
+		}
 	}
-	if !strings.Contains(enSession, `/account/session?lang=en`) {
-		t.Fatal("EN session must keep lang switcher with lang=en")
+	if strings.Contains(enSession, "vpn-for-friends.com/en/") {
+		t.Fatal("EN session footer must use canonical landing_url without /en/")
 	}
+}
+
+func TestRenderedAccountIdentity_FriendsConnect(t *testing.T) {
+	cfg := friendsConnectAccountTestCfg()
+	const landing = "https://friends-connect.club"
+
+	assertIdentityNoVFF := func(t *testing.T, html string) {
+		t.Helper()
+		// Identity surfaces only (title/H1/footer). PaymentMethodSupport email is out of this commit.
+		if strings.Contains(html, "VPN for Friends") {
+			t.Fatal("FC identity must not show VPN for Friends")
+		}
+		if strings.Contains(html, `href="https://vpn-for-friends.com`) {
+			t.Fatal("FC footer must not link to vpn-for-friends.com landing")
+		}
+	}
+
+	ruLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleRU)
+	for _, needle := range []string{
+		"<title>Личный кабинет — Friends Connect</title>",
+		"<h1 class=\"h4 fw-bold mb-3\">Личный кабинет Friends Connect</h1>",
+		`href="` + landing + `"`,
+		`>Friends Connect</a>`,
+		"Введите email — мы отправим ссылку для входа без пароля.",
+	} {
+		if !strings.Contains(ruLogin, needle) {
+			t.Fatalf("FC RU login missing %q", needle)
+		}
+	}
+	assertIdentityNoVFF(t, ruLogin)
+
+	enLogin := mustRenderAccountLoginHTML(t, cfg, accountLocaleEN)
+	for _, needle := range []string{
+		"<title>Account — Friends Connect</title>",
+		"<h1 class=\"h4 fw-bold mb-3\">Friends Connect account</h1>",
+		`href="` + landing + `"`,
+		`>Friends Connect</a>`,
+	} {
+		if !strings.Contains(enLogin, needle) {
+			t.Fatalf("FC EN login missing %q", needle)
+		}
+	}
+	assertIdentityNoVFF(t, enLogin)
+
+	ruSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleRU)
+	for _, needle := range []string{
+		"<title>Кабинет — Friends Connect</title>",
+		`href="` + landing + `"`,
+		`>Friends Connect</a>`,
+	} {
+		if !strings.Contains(ruSession, needle) {
+			t.Fatalf("FC RU session missing %q", needle)
+		}
+	}
+	assertIdentityNoVFF(t, ruSession)
+
+	enSession := mustRenderAccountSessionHTML(t, cfg, accountLocaleEN)
+	for _, needle := range []string{
+		"<title>Account — Friends Connect</title>",
+		`href="` + landing + `"`,
+		`>Friends Connect</a>`,
+	} {
+		if !strings.Contains(enSession, needle) {
+			t.Fatalf("FC EN session missing %q", needle)
+		}
+	}
+	assertIdentityNoVFF(t, enSession)
 }
 
 func TestRenderedAccountSessionInvalidLinkI18n(t *testing.T) {

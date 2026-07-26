@@ -9,6 +9,8 @@ import (
 
 func cfgWithSupport(chat string) *config.Config {
 	c := &config.Config{}
+	c.Brand.Name = "VPN for Friends"
+	c.Brand.LandingURL = "https://vpn-for-friends.com"
 	c.Telegram.SupportChat = chat
 	return c
 }

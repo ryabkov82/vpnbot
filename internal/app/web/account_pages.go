@@ -61,11 +61,15 @@ const accountTopupPaymentEndpointJS = `		function selectedTopupBalanceURL() {
 		}`
 
 func renderedAccountLoginPageHTML(cfg *config.Config, locale accountLocale) ([]byte, error) {
+	brandName, landingURL, err := accountBrandIdentity(cfg)
+	if err != nil {
+		return nil, err
+	}
 	tmpl, err := accountLoginPageTemplate()
 	if err != nil {
 		return nil, err
 	}
-	i18n := loadAccountI18n(locale)
+	i18n := loadAccountI18n(locale, brandName)
 	ruURL, enURL := accountLangSwitchURLs("/account", nil, "")
 	data := accountLoginPageData{
 		I18n:                 i18n,
@@ -74,14 +78,14 @@ func renderedAccountLoginPageHTML(cfg *config.Config, locale accountLocale) ([]b
 		LangSwitchEN:         enURL,
 		LangRUActive:         locale == accountLocaleRU,
 		LangENActive:         locale == accountLocaleEN,
-		GoogleLoginHTML:      buildAccountGoogleLoginHTML(cfg, locale),
+		GoogleLoginHTML:      buildAccountGoogleLoginHTML(cfg, locale, i18n),
 		AccountConfigJSON:    marshalAccountJSConfig(locale),
 		I18nJSON:             marshalAccountI18nJS(i18n),
 		LoggedOutReplaceJSON: template.JS(strconv.Quote(accountLoginLoggedOutReplacePath(locale))),
 		ErrorReplaceJSON:     template.JS(strconv.Quote(accountLoginLoggedOutReplacePath(locale))),
 		LoginEmailLinkedJSON: template.JS(strconv.Quote(i18n.LoginEmailLinked)),
 		CurrentLang:          string(locale),
-		SiteURL:              accountMarketingSiteURL(locale),
+		SiteURL:              landingURL,
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -91,11 +95,15 @@ func renderedAccountLoginPageHTML(cfg *config.Config, locale accountLocale) ([]b
 }
 
 func renderedAccountSessionPageHTML(cfg *config.Config, locale accountLocale, r *http.Request) ([]byte, error) {
+	brandName, landingURL, err := accountBrandIdentity(cfg)
+	if err != nil {
+		return nil, err
+	}
 	tmpl, err := accountSessionPageTemplate()
 	if err != nil {
 		return nil, err
 	}
-	i18n := loadAccountI18n(locale)
+	i18n := loadAccountI18n(locale, brandName)
 	token := ""
 	if r != nil {
 		token = r.URL.Query().Get("token")
@@ -114,7 +122,7 @@ func renderedAccountSessionPageHTML(cfg *config.Config, locale accountLocale, r 
 		AccountConfigJSON:       marshalAccountJSConfig(locale),
 		I18nJSON:                marshalAccountI18nJS(i18n),
 		BalanceCurrency:         accountCurrencyDisplay(locale),
-		SiteURL:                 accountMarketingSiteURL(locale),
+		SiteURL:                 landingURL,
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {

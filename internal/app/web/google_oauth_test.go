@@ -19,6 +19,8 @@ import (
 func testGoogleOAuthMinimalCfg(secret string, enabled bool, id, redirect, sec string) *config.Config {
 	c := &config.Config{}
 	c.Brand.ID = "vff"
+	c.Brand.Name = "VPN for Friends"
+	c.Brand.LandingURL = "https://vpn-for-friends.com"
 	c.Brand.WebUserLoginPrefix = "web_"
 	c.Brand.WebUserSource = "vpn-for-friends.com"
 	c.WebSales.OrderTokenSecret = secret
