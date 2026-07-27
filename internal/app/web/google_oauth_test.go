@@ -30,7 +30,39 @@ func testGoogleOAuthMinimalCfg(secret string, enabled bool, id, redirect, sec st
 	c.WebAccount.GoogleClientID = id
 	c.WebAccount.GoogleClientSecret = sec
 	c.WebAccount.GoogleRedirectURL = redirect
+	hosts := []string{"connect.vpn-for-friends.com", "vff.portalbase.link"}
+	if u, err := url.Parse(redirect); err == nil {
+		if h := strings.ToLower(strings.TrimSpace(u.Hostname())); h != "" {
+			seen := map[string]struct{}{h: {}}
+			hosts = []string{h}
+			for _, extra := range []string{"connect.vpn-for-friends.com", "vff.portalbase.link"} {
+				if _, ok := seen[extra]; ok {
+					continue
+				}
+				seen[extra] = struct{}{}
+				hosts = append(hosts, extra)
+			}
+		}
+	}
+	c.Brand.AllowedHosts = hosts
 	return c
+}
+
+// attachGoogleOAuthTestHost sets req.Host from GoogleRedirectURL hostname so OAuth
+// host allowlist checks succeed in tests. Does not set Domain on cookies.
+func attachGoogleOAuthTestHost(req *http.Request, cfg *config.Config) {
+	if req == nil || cfg == nil {
+		return
+	}
+	if u, err := url.Parse(cfg.WebAccount.GoogleRedirectURL); err == nil {
+		if h := u.Hostname(); h != "" {
+			req.Host = h
+			return
+		}
+	}
+	if len(cfg.Brand.AllowedHosts) > 0 {
+		req.Host = cfg.Brand.AllowedHosts[0]
+	}
 }
 
 func patchGoogleOAuthEndpoints(t *testing.T, tok, userinfo string) {
@@ -113,6 +145,7 @@ func TestGoogleOAuthStart_MethodNotAllowed(t *testing.T) {
 		"cid", "https://x/c", "secret")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed ||
 		rec.Header().Get("Allow") != "GET, POST" {
@@ -123,7 +156,9 @@ func TestGoogleOAuthStart_MethodNotAllowed(t *testing.T) {
 func TestGETGoogleOAuthStart_Disabled_Returns404(t *testing.T) {
 	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("b", 40), false, "cid", "https://x/c", "secret")
 	rec := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(rec, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -132,7 +167,9 @@ func TestGETGoogleOAuthStart_Disabled_Returns404(t *testing.T) {
 func TestGETGoogleOAuthStart_MissingSalesSecret_Returns404(t *testing.T) {
 	cfg := testGoogleOAuthMinimalCfg("", true, "cid", "https://x/c", "secret")
 	rec := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(rec, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_found") {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -145,6 +182,7 @@ func TestGETGoogleOAuthStart_Enabled_RedirectSetsStateCookieAndURL(t *testing.T)
 		"client-secret-val")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusFound {
@@ -214,6 +252,7 @@ func TestGETGoogleOAuthStart_InvalidLinkToken(t *testing.T) {
 		"client-secret-val")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start?link_token=bad", nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_link_token") {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
@@ -233,6 +272,7 @@ func TestGETGoogleOAuthStart_ValidLinkTokenSetsCookie(t *testing.T) {
 	rec := httptest.NewRecorder()
 	rawPath := "/api/account/google/start?link_token=" + url.QueryEscape(linkTok)
 	req := httptest.NewRequest(http.MethodGet, rawPath, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusFound {
@@ -256,6 +296,7 @@ func TestGoogleOAuthCallback_MissingStateCookie(t *testing.T) {
 	rec := httptest.NewRecorder()
 	u, _ := url.Parse("/api/account/google/callback?code=ccc&state=sss")
 	req := httptest.NewRequest(http.MethodGet, u.String(), nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_state") {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
@@ -267,11 +308,14 @@ func TestGoogleOAuthCallback_WrongState(t *testing.T) {
 		"https://callback/x", "shh")
 	st := stubAccountWeb{findOrCreateRet: &models.User{ID: 1, Login: "web_1"}}
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	realState := findCookieValue(recStart.Header(), googleOAuthCookieName)
 	cbURL := "/api/account/google/callback?code=z&state=wrong"
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, cbURL, nil)
+	req = httptest.NewRequest(http.MethodGet, cbURL, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: realState})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_state") {
@@ -285,6 +329,7 @@ func TestGoogleOAuthCallback_QueryError(t *testing.T) {
 	st := stubAccountWeb{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/account/google/callback?error=access_denied", nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "google_auth_failed") {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
@@ -317,12 +362,15 @@ func TestGoogleOAuthCallback_HappyCreatesUserAndRedirects(t *testing.T) {
 	})
 
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	realState := findCookieValue(recStart.Header(), googleOAuthCookieName)
 
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=test-auth-code-placeholder&state=" + url.QueryEscape(realState)
-	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req = httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: realState})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 
@@ -373,12 +421,15 @@ func TestGoogleOAuthCallback_ExistingUser_NoNotifier(t *testing.T) {
 	})
 
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	realState := findCookieValue(recStart.Header(), googleOAuthCookieName)
 
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(realState)
-	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req = httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: realState})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusFound {
@@ -402,13 +453,16 @@ func TestGoogleOAuthCallback_TokenExchangeFails(t *testing.T) {
 
 	cfg := testGoogleOAuthMinimalCfg(strings.Repeat("i", 42), true, "cid", "https://cb/x", "sec")
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	realState := findCookieValue(recStart.Header(), googleOAuthCookieName)
 
 	rec := httptest.NewRecorder()
 	st := stubAccountWeb{}
 	u := "/api/account/google/callback?code=z&state=" + url.QueryEscape(realState)
-	req := httptest.NewRequest(http.MethodGet, u, nil)
+	req = httptest.NewRequest(http.MethodGet, u, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: realState})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "google_auth_failed") {
@@ -423,12 +477,15 @@ func TestGoogleOAuthCallback_EmailNotVerified(t *testing.T) {
 	patchGoogleOAuthEndpoints(t, validTS.URL+"/token", validTS.URL+"/userinfo")
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "sec")
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	realState := findCookieValue(recStart.Header(), googleOAuthCookieName)
 
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(realState)
-	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	req = httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: realState})
 	serveGoogleOAuthCallback(cfg, &stubAccountWeb{})(rec, req)
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "google_email_not_verified") {
@@ -490,6 +547,7 @@ func startGoogleOAuthForLinkFlow(t *testing.T, cfg *config.Config, linkTok strin
 	rec := httptest.NewRecorder()
 	rawPath := "/api/account/google/start?link_token=" + url.QueryEscape(linkTok)
 	req := httptest.NewRequest(http.MethodGet, rawPath, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	serveGoogleOAuthStart(cfg)(rec, req)
 	if rec.Code != http.StatusFound {
@@ -531,6 +589,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheckRedirects(t *
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
@@ -574,6 +633,7 @@ func TestGoogleOAuthCallback_LinkFlow_EmailHeldByOtherUser_PreCheck_RedirectWith
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
@@ -613,6 +673,7 @@ func TestGoogleOAuthCallback_LinkFlow_LinkReturnsErrUsedByOther_RedirectWithToke
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
@@ -665,6 +726,7 @@ func TestGoogleOAuthCallback_LinkFlow_LinkOK_RedirectSession_NoFindOrCreate(t *t
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(state)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkCk})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
@@ -712,7 +774,7 @@ func TestPOSTGoogleOAuthStart_FCAttribution(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Host = "evil-host.example"
+	req.Host = "connect.friends-connect.club"
 	req.Header.Set("X-Forwarded-Host", "spoofed.example")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
@@ -724,6 +786,9 @@ func TestPOSTGoogleOAuthStart_FCAttribution(t *testing.T) {
 	v, err := url.Parse(loc)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if v.Query().Get("redirect_uri") != "https://connect.friends-connect.club/api/account/google/callback" {
+		t.Fatalf("redirect_uri=%q", v.Query().Get("redirect_uri"))
 	}
 	state := v.Query().Get("state")
 	cookieState := findCookieValue(rec.Header(), googleOAuthCookieName)
@@ -770,6 +835,7 @@ func TestPOSTGoogleOAuthStart_OversizedMarketingFallsBackOrganic(t *testing.T) {
 	form.Set("utm_medium", "post")
 	form.Set("utm_campaign", "summer")
 	req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
+	attachGoogleOAuthTestHost(req, cfg)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	serveGoogleOAuthStart(cfg)(rec, req)
@@ -795,6 +861,7 @@ func TestPOSTGoogleOAuthStart_BadRequests(t *testing.T) {
 	t.Run("link_token_rejected", func(t *testing.T) {
 		form := url.Values{"link_token": {"x"}, "landing_path": {"/account"}}
 		req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(form.Encode()))
+		attachGoogleOAuthTestHost(req, cfg)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		serveGoogleOAuthStart(cfg)(rec, req)
@@ -806,6 +873,7 @@ func TestPOSTGoogleOAuthStart_BadRequests(t *testing.T) {
 	t.Run("oversized_body", func(t *testing.T) {
 		body := strings.Repeat("a", googleOAuthStartMaxBodyBytes+100)
 		req := httptest.NewRequest(http.MethodPost, "/api/account/google/start", strings.NewReader(body))
+		attachGoogleOAuthTestHost(req, cfg)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		serveGoogleOAuthStart(cfg)(rec, req)
@@ -838,6 +906,7 @@ func TestGoogleOAuthCallback_LegacyStateUsesPlainFindOrCreate(t *testing.T) {
 	rec := httptest.NewRecorder()
 	cb := "/api/account/google/callback?code=z&state=" + url.QueryEscape(legacy)
 	req := httptest.NewRequest(http.MethodGet, cb, nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: legacy})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusFound {
@@ -865,6 +934,7 @@ func TestGoogleOAuthCallback_InvalidSignedState_NoExchange(t *testing.T) {
 	st := stubAccountWeb{findOrCreateRet: &models.User{ID: 1, Login: "x"}}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/account/google/callback?code=z&state="+url.QueryEscape(bad), nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: bad})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_state") {
@@ -879,7 +949,9 @@ func TestGoogleOAuthCallback_ModeMismatch_LinkCookieWithLoginState(t *testing.T)
 	secret := strings.Repeat("t", 41)
 	cfg := testGoogleOAuthMinimalCfg(secret, true, "cid", "https://cb/x", "sec")
 	recStart := httptest.NewRecorder()
-	serveGoogleOAuthStart(cfg)(recStart, httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/account/google/start", nil)
+	attachGoogleOAuthTestHost(req, cfg)
+	serveGoogleOAuthStart(cfg)(recStart, req)
 	state := findCookieValue(recStart.Header(), googleOAuthCookieName)
 	claims, err := parseAndVerifyGoogleOAuthState(secret, "vff", state)
 	if err != nil || claims.Mode != googleOAuthModeLogin {
@@ -891,7 +963,8 @@ func TestGoogleOAuthCallback_ModeMismatch_LinkCookieWithLoginState(t *testing.T)
 	}
 	st := stubAccountWeb{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/account/google/callback?code=z&state="+url.QueryEscape(state), nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/account/google/callback?code=z&state="+url.QueryEscape(state), nil)
+	attachGoogleOAuthTestHost(req, cfg)
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieName, Value: state})
 	req.AddCookie(&http.Cookie{Name: googleOAuthCookieLinkToken, Value: linkTok})
 	serveGoogleOAuthCallback(cfg, &st)(rec, req)

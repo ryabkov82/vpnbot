@@ -90,7 +90,7 @@ trap cleanup EXIT
 if ! jq -e \
   --arg brand_id "${BRAND_ID}" \
   --arg brand_name "${BRAND_NAME}" \
-  --arg allowed_host "${ALLOWED_HOST}" \
+  --argjson allowed_hosts "${ALLOWED_HOSTS_JSON}" \
   --arg landing_url "${LANDING_URL}" \
   --arg web_prefix "${WEB_LOGIN_PREFIX}" \
   --arg web_source "${WEB_USER_SOURCE}" \
@@ -121,11 +121,14 @@ if ! jq -e \
   | (assert_eq("web_sales.public_base_url"; $pbu0; $expect_pbu)) as $pbu
   | (assert_eq("services.category"; $cat0; $expect_cat)) as $cat
   | (assert_eq("payments.profile"; $prof0; $expect_prof)) as $prof
+  | if ($allowed_hosts | type) != "array" or ($allowed_hosts | length) == 0 then
+      error("brand.allowed_hosts must be a non-empty array")
+    else . end
   | $root
   | .brand = {
       "id": $brand_id,
       "name": $brand_name,
-      "allowed_hosts": [$allowed_host],
+      "allowed_hosts": $allowed_hosts,
       "public_base_url": $pbu,
       "landing_url": $landing_url,
       "service_category": $cat,

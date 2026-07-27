@@ -157,12 +157,45 @@ func clearGoogleOAuthLinkTokenCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func buildGoogleOAuthURL(cfg *config.Config, state string) (string, error) {
+// resolveGoogleOAuthRedirectURL строит redirect_uri для Google OAuth по текущему request Host.
+// GoogleRedirectURL используется как шаблон (scheme + path); host заменяется на разрешённый
+// hostname из r.Host. X-Forwarded-Host не учитывается. Неизвестный Host — ошибка без fallback.
+func resolveGoogleOAuthRedirectURL(cfg *config.Config, r *http.Request) (string, error) {
+	if cfg == nil || r == nil {
+		return "", errGoogleOAuthInvalidHost{}
+	}
+	template := strings.TrimSpace(cfg.WebAccount.GoogleRedirectURL)
+	if template == "" {
+		return "", errGoogleOAuthMisconfigured{}
+	}
+	host, ok := cfg.EffectiveBrand().MatchAllowedHost(r.Host)
+	if !ok {
+		return "", errGoogleOAuthInvalidHost{}
+	}
+	u, err := url.Parse(template)
+	if err != nil {
+		return "", errGoogleOAuthMisconfigured{}
+	}
+	if u.Scheme == "" || strings.TrimSpace(u.Host) == "" {
+		return "", errGoogleOAuthMisconfigured{}
+	}
+	if strings.TrimSpace(u.Path) == "" || u.Path == "/" {
+		return "", errGoogleOAuthMisconfigured{}
+	}
+	out := &url.URL{
+		Scheme: u.Scheme,
+		Host:   host,
+		Path:   u.Path,
+	}
+	return out.String(), nil
+}
+
+func buildGoogleOAuthURL(cfg *config.Config, state, redirectURL string) (string, error) {
 	if cfg == nil {
 		return "", errGoogleOAuthMisconfigured{}
 	}
 	cid := strings.TrimSpace(cfg.WebAccount.GoogleClientID)
-	redirect := strings.TrimSpace(cfg.WebAccount.GoogleRedirectURL)
+	redirect := strings.TrimSpace(redirectURL)
 	if cid == "" || redirect == "" || strings.TrimSpace(state) == "" {
 		return "", errGoogleOAuthMisconfigured{}
 	}
@@ -187,22 +220,32 @@ func (errGoogleOAuthMisconfigured) Error() string {
 	return "google oauth misconfigured"
 }
 
+type errGoogleOAuthInvalidHost struct{}
+
+func (errGoogleOAuthInvalidHost) Error() string {
+	return "google oauth invalid host"
+}
+
 type googleOAuthTokenJSON struct {
 	AccessToken string `json:"access_token"`
 }
 
-func exchangeGoogleOAuthCode(ctx context.Context, hc *http.Client, cfg *config.Config, code string) (accessToken string, err error) {
+func exchangeGoogleOAuthCode(ctx context.Context, hc *http.Client, cfg *config.Config, code, redirectURL string) (accessToken string, err error) {
 	if hc == nil {
 		hc = googleOAuthHTTPClient()
 	}
 	if cfg == nil {
 		return "", errGoogleOAuthMisconfigured{}
 	}
+	redirect := strings.TrimSpace(redirectURL)
+	if redirect == "" {
+		return "", errGoogleOAuthMisconfigured{}
+	}
 	form := url.Values{}
 	form.Set("code", strings.TrimSpace(code))
 	form.Set("client_id", strings.TrimSpace(cfg.WebAccount.GoogleClientID))
 	form.Set("client_secret", strings.TrimSpace(cfg.WebAccount.GoogleClientSecret))
-	form.Set("redirect_uri", strings.TrimSpace(cfg.WebAccount.GoogleRedirectURL))
+	form.Set("redirect_uri", redirect)
 	form.Set("grant_type", "authorization_code")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolvedGoogleOAuthTokenURL(), strings.NewReader(form.Encode()))
 	if err != nil {
@@ -311,14 +354,21 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 			writeJSONError(w, http.StatusNotFound, "google_auth_unavailable")
 			return
 		}
+		redirectURL, err := resolveGoogleOAuthRedirectURL(cfg, r)
+		if err != nil {
+			var inv errGoogleOAuthInvalidHost
+			if errors.As(err, &inv) {
+				writeJSONError(w, http.StatusBadRequest, "invalid_host")
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
 
 		sec := strings.TrimSpace(cfg.WebSales.OrderTokenSecret)
 		brandID := cfgBrandID(cfg)
 		capturedAt := time.Now()
-		var (
-			state string
-			err   error
-		)
+		var state string
 
 		switch r.Method {
 		case http.MethodPost:
@@ -388,7 +438,7 @@ func serveGoogleOAuthStart(cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
-		loc, err := buildGoogleOAuthURL(cfg, state)
+		loc, err := buildGoogleOAuthURL(cfg, state, redirectURL)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
@@ -413,6 +463,16 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 		}
 		if !webSalesTokenFlowAvailable(cfg) || !googleOAuthAvailable(cfg) {
 			writeJSONError(w, http.StatusNotFound, "google_auth_unavailable")
+			return
+		}
+		redirectURL, err := resolveGoogleOAuthRedirectURL(cfg, r)
+		if err != nil {
+			var inv errGoogleOAuthInvalidHost
+			if errors.As(err, &inv) {
+				writeJSONError(w, http.StatusBadRequest, "invalid_host")
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "internal_error")
 			return
 		}
 
@@ -475,7 +535,7 @@ func serveGoogleOAuthCallback(cfg *config.Config, app accountWebApp) http.Handle
 
 		ctx := r.Context()
 		hc := googleOAuthHTTPClient()
-		acTok, err := exchangeGoogleOAuthCode(ctx, hc, cfg, code)
+		acTok, err := exchangeGoogleOAuthCode(ctx, hc, cfg, code, redirectURL)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "google_auth_failed")
 			return

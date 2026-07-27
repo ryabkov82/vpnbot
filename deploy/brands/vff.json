@@ -15,7 +15,10 @@
     "dropin": "/etc/systemd/system/bot.service.d/10-vpnbot-config.conf"
   },
   "brand": {
-    "allowed_host": "connect.vpn-for-friends.com",
+    "allowed_hosts": [
+      "connect.vpn-for-friends.com",
+      "vff.portalbase.link"
+    ],
     "public_base_url": "https://connect.vpn-for-friends.com",
     "landing_url": "https://vpn-for-friends.com",
     "service_category": "vpn-mz-test",

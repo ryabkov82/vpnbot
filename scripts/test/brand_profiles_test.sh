@@ -65,7 +65,8 @@ test_each_profile() {
     for v in SERVER_USER SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_BINARY \
       REMOTE_LEGACY_CONFIG REMOTE_EXPLICIT_CONFIG DROPIN_FILE EXPECTED_BRAND_ID \
       BRAND_LABEL SMOKE_BASE_URL EXPECT_PUBLIC_BASE_URL EXPECT_SERVICE_CATEGORY \
-      EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
+      EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST \
+      ALLOWED_HOSTS_JSON LANDING_URL WEB_LOGIN_PREFIX \
       WEB_USER_SOURCE REMOTE_CONFIG_VFF REMOTE_CONFIG_LEGACY; do
       if [[ -z "${!v:-}" ]]; then fail "profile:${id}" "unset ${v}"; ok=0; fi
     done
@@ -95,6 +96,17 @@ test_each_profile() {
     if [[ "${EXPECT_PUBLIC_BASE_URL}" != https://* ]]; then fail "profile:${id}" "public url not https"; continue; fi
     if [[ "${ALLOWED_HOST}" == *"://"* || "${ALLOWED_HOST}" == *:* || "${ALLOWED_HOST}" == */* ]]; then
       fail "profile:${id}" "allowed_host not bare"; continue
+    fi
+    if ! jq -e 'type == "array" and length > 0' <<<"${ALLOWED_HOSTS_JSON}" >/dev/null; then
+      fail "profile:${id}" "ALLOWED_HOSTS_JSON not a non-empty array"; continue
+    fi
+    if [[ "$(jq -r '.[0]' <<<"${ALLOWED_HOSTS_JSON}")" != "${ALLOWED_HOST}" ]]; then
+      fail "profile:${id}" "ALLOWED_HOST must equal first allowed_hosts entry"; continue
+    fi
+    if [[ "${id}" == "vff" ]]; then
+      if [[ "${ALLOWED_HOSTS_JSON}" != '["connect.vpn-for-friends.com","vff.portalbase.link"]' ]]; then
+        fail "profile:${id}" "unexpected allowed_hosts: ${ALLOWED_HOSTS_JSON}"; continue
+      fi
     fi
 
     # SMOKE_BASE_URL sourced from profile public base url
@@ -225,6 +237,9 @@ test_negative_matrix() {
   neg_file invalid_server_host demo '.server.host = "bad host"'
   neg_file allowed_host_scheme demo '.brand.allowed_host = "https://demo.example.com"'
   neg_file allowed_host_port demo '.brand.allowed_host = "demo.example.com:8090"'
+  neg_file allowed_hosts_empty demo 'del(.brand.allowed_host) | .brand.allowed_hosts = []'
+  neg_file allowed_hosts_and_host demo '.brand.allowed_hosts = ["demo.example.com"]'
+  neg_file allowed_hosts_scheme demo 'del(.brand.allowed_host) | .brand.allowed_hosts = ["https://demo.example.com"]'
   neg_file invalid_url demo '.brand.public_base_url = "ftp://demo.example.com"'
   neg_file https_without_host demo '.brand.public_base_url = "https://"'
   neg_file url_userinfo demo '.brand.public_base_url = "https://user@demo.example.com"'
@@ -240,6 +255,82 @@ test_negative_matrix() {
   neg_file token_key demo '.brand.token = "x"'
   neg_file password_key demo '.server.password = "x"'
   neg_file malformed_json demo 'RAW:{ this is not json'
+}
+
+# ---------------------------------------------------------------------------
+# allowed_hosts array support + allowed_host backward compatibility for renderer.
+# ---------------------------------------------------------------------------
+test_allowed_hosts_render() {
+  local d src out
+  d="$(mktemp -d)"
+  src="${d}/src.json"
+  out="${d}/out.json"
+
+  cat >"${src}" <<'EOF'
+{
+  "telegram": {"token": "t"},
+  "assets": {"logo_url": "https://assets.example.test/logo.png"},
+  "services": {"category": "vpn-mz-test"},
+  "web_sales": {"public_base_url": "https://connect.vpn-for-friends.com"},
+  "payments": {"profile": "telegram_bot"}
+}
+EOF
+
+  # Production VFF profile uses allowed_hosts array.
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" vff --source "${src}" --output "${out}" >/dev/null; then
+    fail allowed_hosts_render "vff render failed"; rm -rf "${d}"; return
+  fi
+  if ! jq -e '
+    .brand.allowed_hosts == ["connect.vpn-for-friends.com","vff.portalbase.link"]
+    and .brand.public_base_url == "https://connect.vpn-for-friends.com"
+  ' "${out}" >/dev/null; then
+    fail allowed_hosts_render "vff allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
+    rm -rf "${d}"; return
+  fi
+  pass allowed_hosts_render_vff
+
+  # Singular allowed_host remains compatible (fc / demo-style profiles).
+  cat >"${src}" <<'EOF'
+{
+  "telegram": {"token": "t"},
+  "assets": {"logo_url": "https://assets.example.test/fc-logo.png"},
+  "services": {"category": "vpn-mz-fc"},
+  "web_sales": {"public_base_url": "https://connect.friends-connect.club"},
+  "payments": {"profile": "telegram_friends_connect_bot"}
+}
+EOF
+  if ! bash "${ROOT}/scripts/render-brand-config.sh" fc --source "${src}" --output "${out}" >/dev/null; then
+    fail allowed_host_compat "fc render failed"; rm -rf "${d}"; return
+  fi
+  if ! jq -e '.brand.allowed_hosts == ["connect.friends-connect.club"]' "${out}" >/dev/null; then
+    fail allowed_host_compat "fc allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
+    rm -rf "${d}"; return
+  fi
+  pass allowed_host_compat_fc
+
+  # Fixture profile with allowed_hosts array (not in production dir).
+  base_json | jq 'del(.brand.allowed_host) | .brand.allowed_hosts = ["demo.example.com","demo-alt.example.com"]' \
+    >"${d}/demo.json"
+  chmod 0644 "${d}/demo.json"
+  cat >"${src}" <<'EOF'
+{
+  "telegram": {"token": "t"},
+  "assets": {"logo_url": "https://assets.example.test/demo-logo.png"},
+  "services": {"category": "vpn-demo"},
+  "web_sales": {"public_base_url": "https://demo.example.com"},
+  "payments": {"profile": "telegram_demo_bot"}
+}
+EOF
+  if ! BRAND_PROFILES_DIR="${d}" bash "${ROOT}/scripts/render-brand-config.sh" demo \
+    --source "${src}" --output "${out}" >/dev/null; then
+    fail allowed_hosts_render_demo "demo render failed"; rm -rf "${d}"; return
+  fi
+  if ! jq -e '.brand.allowed_hosts == ["demo.example.com","demo-alt.example.com"]' "${out}" >/dev/null; then
+    fail allowed_hosts_render_demo "demo hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
+    rm -rf "${d}"; return
+  fi
+  pass allowed_hosts_render_demo
+  rm -rf "${d}"
 }
 
 # ---------------------------------------------------------------------------
@@ -316,6 +407,7 @@ test_each_profile
 test_global_uniqueness
 test_third_brand_no_code_change
 test_negative_matrix
+test_allowed_hosts_render
 test_make_dryrun_matrix
 test_makefile_has_no_brand_params
 

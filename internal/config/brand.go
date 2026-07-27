@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -284,4 +285,28 @@ func validateExplicitBrandRawHosts(hosts []string) error {
 		}
 	}
 	return nil
+}
+
+// MatchAllowedHost нормализует значение Host-заголовка (без X-Forwarded-Host)
+// и возвращает канонический hostname, если он есть в AllowedHosts.
+// Optional port снимается; одна trailing DNS-точка обрабатывается; регистр игнорируется.
+// Неизвестный или невалидный host → ok=false без fallback на канонический домен.
+func (b BrandConfig) MatchAllowedHost(requestHost string) (canonical string, ok bool) {
+	host := strings.TrimSpace(requestHost)
+	if host == "" {
+		return "", false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	normalized, ok := normalizeHostEntry(host)
+	if !ok {
+		return "", false
+	}
+	for _, allowed := range normalizeAllowedHosts(b.AllowedHosts) {
+		if allowed == normalized {
+			return normalized, true
+		}
+	}
+	return "", false
 }

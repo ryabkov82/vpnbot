@@ -54,9 +54,29 @@ if type != "object" then error("profile: must be a JSON object") else . end
 | abspath($p.runtime.dropin; "runtime.dropin") as $dropin
 | (if ($dropin|startswith("/etc/systemd/system/" + $svc + ".d/")|not)
      then error("runtime.dropin: must be under /etc/systemd/system/" + $svc + ".d/") else . end)
-| (s($p.brand.allowed_host; "brand.allowed_host")
-   | if (test("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$")|not)
-       then error("brand.allowed_host: must be a bare DNS hostname (no scheme/port/path)") else . end)
+| (
+    def bare_host($v;$n):
+      (s($v;$n)) as $h
+      | if ($h|test("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$")|not)
+          then error($n + ": must be a bare DNS hostname (no scheme/port/path)")
+        else $h end;
+    if ($p.brand | has("allowed_hosts")) then
+      if ($p.brand | has("allowed_host")) then
+        error("brand: use either allowed_host or allowed_hosts, not both")
+      elif ($p.brand.allowed_hosts | type) != "array" then
+        error("brand.allowed_hosts: must be an array")
+      elif ($p.brand.allowed_hosts | length) == 0 then
+        error("brand.allowed_hosts: must contain at least one host")
+      else
+        ($p.brand.allowed_hosts
+         | to_entries
+         | map(bare_host(.value; "brand.allowed_hosts[" + (.key|tostring) + "]"))
+         | .[0])
+      end
+    else
+      bare_host($p.brand.allowed_host; "brand.allowed_host")
+    end
+  )
 | s($p.brand.public_base_url; "brand.public_base_url")
 | s($p.brand.landing_url; "brand.landing_url")
 | s($p.brand.service_category; "brand.service_category")
@@ -180,7 +200,8 @@ brand_profile_validate_loaded() {
   for v in SERVER_USER SERVER_HOST SERVICE_NAME REMOTE_DIR REMOTE_BINARY \
     REMOTE_LEGACY_CONFIG REMOTE_EXPLICIT_CONFIG DROPIN_FILE EXPECTED_BRAND_ID \
     BRAND_LABEL SMOKE_BASE_URL EXPECT_PUBLIC_BASE_URL EXPECT_SERVICE_CATEGORY \
-    EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST LANDING_URL WEB_LOGIN_PREFIX \
+    EXPECT_PAYMENT_PROFILE EXPECT_YOOKASSA_PAY_SYSTEM BRAND_NAME ALLOWED_HOST \
+    ALLOWED_HOSTS_JSON LANDING_URL WEB_LOGIN_PREFIX \
     WEB_USER_SOURCE REMOTE_CONFIG_VFF REMOTE_CONFIG_LEGACY; do
     if [[ -z "${!v:-}" ]]; then
       missing+=("${v}")
@@ -230,20 +251,23 @@ brand_profile_load() {
 
   # Read validated values as a newline-delimited stream (no eval; values are
   # already validated to be free of control characters incl. newlines).
+  # ALLOWED_HOSTS_JSON is compact JSON on one line (@json).
   local vals=()
   if ! mapfile -t vals < <(jq -er '
     .id, .label, .name,
     .server.user, .server.host,
     .runtime.service, .runtime.directory, .runtime.binary,
     .runtime.legacy_config, .runtime.explicit_config, .runtime.dropin,
-    .brand.allowed_host, .brand.public_base_url, .brand.landing_url,
+    (if (.brand | has("allowed_hosts")) then .brand.allowed_hosts[0] else .brand.allowed_host end),
+    (if (.brand | has("allowed_hosts")) then (.brand.allowed_hosts | @json) else ([.brand.allowed_host] | @json) end),
+    .brand.public_base_url, .brand.landing_url,
     .brand.service_category, .brand.payment_profile, .brand.yookassa_pay_system,
     .brand.web_login_prefix, .brand.web_user_source
   ' "${file}"); then
     echo "brand_profile_load: failed to read profile '${id}'" >&2
     return 1
   fi
-  if [[ "${#vals[@]}" -ne 19 ]]; then
+  if [[ "${#vals[@]}" -ne 20 ]]; then
     echo "brand_profile_load: unexpected field count for '${id}'" >&2
     return 1
   fi
@@ -260,14 +284,15 @@ brand_profile_load() {
   export REMOTE_EXPLICIT_CONFIG="${vals[9]}"
   export DROPIN_FILE="${vals[10]}"
   export ALLOWED_HOST="${vals[11]}"
-  export EXPECT_PUBLIC_BASE_URL="${vals[12]}"
-  export SMOKE_BASE_URL="${vals[12]}"
-  export LANDING_URL="${vals[13]}"
-  export EXPECT_SERVICE_CATEGORY="${vals[14]}"
-  export EXPECT_PAYMENT_PROFILE="${vals[15]}"
-  export EXPECT_YOOKASSA_PAY_SYSTEM="${vals[16]}"
-  export WEB_LOGIN_PREFIX="${vals[17]}"
-  export WEB_USER_SOURCE="${vals[18]}"
+  export ALLOWED_HOSTS_JSON="${vals[12]}"
+  export EXPECT_PUBLIC_BASE_URL="${vals[13]}"
+  export SMOKE_BASE_URL="${vals[13]}"
+  export LANDING_URL="${vals[14]}"
+  export EXPECT_SERVICE_CATEGORY="${vals[15]}"
+  export EXPECT_PAYMENT_PROFILE="${vals[16]}"
+  export EXPECT_YOOKASSA_PAY_SYSTEM="${vals[17]}"
+  export WEB_LOGIN_PREFIX="${vals[18]}"
+  export WEB_USER_SOURCE="${vals[19]}"
 
   # Compatibility aliases for older VFF scripts/tests.
   export REMOTE_CONFIG_VFF="${REMOTE_EXPLICIT_CONFIG}"

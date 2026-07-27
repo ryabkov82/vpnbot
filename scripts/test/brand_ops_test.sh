@@ -684,6 +684,8 @@ assert c.get("web_sales", {}).get("enabled") is True
 assert "public_base_url" not in c.get("web_sales", {})
 assert "payments" not in c or "profile" not in c.get("payments", {})
 assert c["brand"]["yookassa_pay_system"]=="yookassa"
+assert c["brand"]["allowed_hosts"]==["connect.vpn-for-friends.com","vff.portalbase.link"]
+assert c["brand"]["public_base_url"]=="https://connect.vpn-for-friends.com"
 print("ok")
 PY
   pass renderer_vff

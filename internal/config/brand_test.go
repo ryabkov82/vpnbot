@@ -314,6 +314,32 @@ func TestNormalize_ExplicitRejectsEmptyHostElement(t *testing.T) {
 	}
 }
 
+func TestMatchAllowedHost(t *testing.T) {
+	b := BrandConfig{AllowedHosts: []string{
+		"connect.vpn-for-friends.com",
+		"vff.portalbase.link",
+	}}
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"connect.vpn-for-friends.com", "connect.vpn-for-friends.com", true},
+		{"vff.portalbase.link", "vff.portalbase.link", true},
+		{"VFF.PortalBase.Link:443", "vff.portalbase.link", true},
+		{"connect.vpn-for-friends.com.", "connect.vpn-for-friends.com", true},
+		{"evil.example", "", false},
+		{"", "", false},
+		{"connect.vpn-for-friends.com:8443", "connect.vpn-for-friends.com", true},
+	}
+	for _, tc := range cases {
+		got, ok := b.MatchAllowedHost(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("MatchAllowedHost(%q)=(%q,%v) want (%q,%v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 // 12 — file loading: legacy fails, explicit VFF/FC succeed.
 func TestLoadFromFile_LegacyFails(t *testing.T) {
 	dir := t.TempDir()
