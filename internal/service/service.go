@@ -13,6 +13,7 @@ import (
 
 	"github.com/skip2/go-qrcode"
 
+	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/api"
 	"github.com/ryabkov82/vpnbot/internal/models"
@@ -22,6 +23,8 @@ var (
 	ErrUserNotFound = errors.New("user not found")
 	// ErrServiceCategoryDenied — заказ услуги запрещён из‑за category / identity brand boundary.
 	ErrServiceCategoryDenied = errors.New("service category denied")
+	// ErrAttributionWrongChannel — RegisterUserWithAttribution принимает только telegram channel.
+	ErrAttributionWrongChannel = errors.New("attribution registration channel must be telegram")
 )
 
 // ServiceCategoryDeniedError — внутренняя ошибка fail-closed category guard перед ServiceOrder.
@@ -141,6 +144,22 @@ func (s *Service) GetUserByID(userID int) (*models.User, error) {
 }
 
 func (s *Service) RegisterUser(user models.UserRegistrationRequest) error {
+	return s.registerUserCore(user, nil)
+}
+
+// RegisterUserWithAttribution registers a Telegram user with immutable first-touch attribution.
+// record must be Valid and use RegistrationChannelTelegram. Existing users are not updated here.
+func (s *Service) RegisterUserWithAttribution(user models.UserRegistrationRequest, record attribution.Record) error {
+	if !record.Valid() {
+		return ErrAttributionRequired
+	}
+	if record.FirstTouch.RegistrationChannel != attribution.RegistrationChannelTelegram {
+		return ErrAttributionWrongChannel
+	}
+	return s.registerUserCore(user, &record)
+}
+
+func (s *Service) registerUserCore(user models.UserRegistrationRequest, record *attribution.Record) error {
 	brandID := s.activeBrandID()
 	if brandID == "" {
 		return errors.New("active brand id is required")
@@ -152,6 +171,10 @@ func (s *Service) RegisterUser(user models.UserRegistrationRequest) error {
 	// Канонические login и brand_id всегда задаёт service layer активного процесса.
 	user.Login = telegramSHMLogin(brandID, chatID)
 	user.Settings.BrandID = brandID
+	if record != nil {
+		cp := *record
+		user.Settings.Attribution = &cp
+	}
 	return s.apiClient.RegisterUser(user)
 }
 

@@ -27,13 +27,17 @@ type Service struct {
 
 	serviceBuyMu       sync.Mutex
 	serviceBuyInFlight map[string]struct{}
+
+	telegramAttributionMu      sync.Mutex
+	telegramAttributionPending map[int64]pendingTelegramAttribution
 }
 
 func NewService(service *service.Service, cfg *config.Config) *Service {
 	return &Service{
-		service:            service,
-		config:             cfg,
-		serviceBuyInFlight: make(map[string]struct{}),
+		service:                    service,
+		config:                     cfg,
+		serviceBuyInFlight:         make(map[string]struct{}),
+		telegramAttributionPending: make(map[int64]pendingTelegramAttribution),
 	}
 }
 
@@ -55,6 +59,8 @@ func (s *Service) logoPhoto(caption string) *telebot.Photo {
 }
 
 func (s *Service) handleStart(c telebot.Context) error {
+	capturedAt := time.Now()
+
 	// 1) Сначала читаем payload из /start <payload> и выдаём "допуск", если он валиден
 	payload := ""
 	if c.Message() != nil {
@@ -86,13 +92,20 @@ func (s *Service) handleStart(c telebot.Context) error {
 		log.Println("Ошибка проверки пользователя:", err)
 		return c.Send("Ошибка системы, попробуйте позже")
 	}
-	if user == nil {
-		// регистрация; после неё при показе меню eligibility уже будет учтён
-		return s.showRegistrationMenu(c)
+	if user != nil {
+		// Existing user: no attribution update/backfill; drop stale pending.
+		s.clearTelegramAttribution(c.Chat().ID)
+		return s.showMainMenu(c)
 	}
 
-	// 3) Показываем главное меню
-	return s.showMainMenu(c)
+	// Unknown user: capture first-touch attribution (any payload; independent of trial allowlist).
+	rec, aerr := buildTelegramRegistrationAttribution(s.config, payload, capturedAt)
+	if aerr != nil {
+		log.Println("Ошибка attribution при /start:", aerr)
+		return c.Send("Ошибка системы, попробуйте позже")
+	}
+	s.rememberTelegramAttribution(c.Chat().ID, rec, capturedAt)
+	return s.showRegistrationMenu(c)
 }
 
 func (s *Service) handleMenu(c telebot.Context) error {
@@ -945,6 +958,28 @@ func (s *Service) handleDeleteConfirmed(c telebot.Context, serviceID string) err
 }
 
 func (s *Service) handleRegister(c telebot.Context) error {
+	chatID := c.Chat().ID
+	now := time.Now()
+
+	existing, err := s.service.GetUser(chatID)
+	if err != nil {
+		log.Println("Ошибка проверки пользователя при регистрации:", err)
+		return c.Send("⚠️ Ошибка регистрации. Пожалуйста, попробуйте позже.")
+	}
+	if existing != nil {
+		s.clearTelegramAttribution(chatID)
+		return s.showMainMenu(c)
+	}
+
+	rec, ok := s.peekTelegramAttribution(chatID, now)
+	if !ok {
+		organic, aerr := buildTelegramRegistrationAttribution(s.config, "", now)
+		if aerr != nil {
+			log.Println("Ошибка attribution при /register:", aerr)
+			return c.Send("⚠️ Ошибка регистрации. Пожалуйста, попробуйте позже.")
+		}
+		rec = organic
+	}
 
 	user := c.Sender()
 	userID := fmt.Sprintf("%d", user.ID)
@@ -971,14 +1006,14 @@ func (s *Service) handleRegister(c telebot.Context) error {
 		},
 	}
 
-	err := s.service.RegisterUser(regData)
+	err = s.service.RegisterUserWithAttribution(regData, rec)
 	if err != nil {
 		log.Println("Ошибка регистрации:", err)
 		return c.Send("⚠️ Ошибка регистрации. Пожалуйста, попробуйте позже.")
 	}
 
+	s.clearTelegramAttribution(chatID)
 	return s.showMainMenu(c)
-
 }
 
 func (s *Service) handleHelp(c telebot.Context) error {
