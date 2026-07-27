@@ -345,24 +345,28 @@ P0/P1 runtime findings из content audit закрыты и развёрнуты
 
 ---
 
-## 8. Атрибуция и аналитика — 🟡 Частично
+## 8. Атрибуция и аналитика — 🟡 Атрибуция реализована; отчётность отложена
 
 ### Статус
 
-Architecture / data-flow audit **completed**; implementation и production rollout **не начаты**.
+Core attribution implementation **завершена**; FC и VFF **развёрнуты и проверены в production**.
+Read-only JSON/CSV export и отчётность **сознательно отложены**.
 
 Артефакт аудита: [`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`](MULTIBRAND_ATTRIBUTION_AUDIT.md)
-(snapshot `587353875d20a51c185086c0a3947084d2ece568`).
+(snapshot `587353875d20a51c185086c0a3947084d2ece568`) — исторический architecture snapshot.
 
-### Краткий вывод аудита (не замена audit doc)
+### Реализовано
 
-- Acquisition **first-touch** отделён от brand identity и от operational `settings.web.source`.
-- `settings.web.source` / `web_user_source` **недостаточны** (shared VFF/FC value; overwrite при linking).
-- MVP storage recommendation: immutable `settings.attribution.first_touch` в SHM + signed transport
-  (signup-token / OAuth state) + read-only export CLI.
-- Public lead и admin test APIs исключены из registration first-touch analytics.
-- SHM nested filter/query capability и полная persistence unknown settings — **open**, требуют
-  staging read-only probes до закрытия implementation.
+- immutable `settings.attribution.first_touch`;
+- каналы `telegram`, `web_magic_link`, `web_google`;
+- magic-link и Google — signed transport;
+- Telegram — pending first-touch до `/register`;
+- existing login и linking не перезаписывают attribution;
+- единое событие `user_registered`.
+
+### Отложено
+
+Read-only attribution export/reporting остаётся отложенной задачей M8 и может быть реализован позже.
 
 Цели M8 (без изменения):
 
@@ -412,7 +416,7 @@ Architecture / data-flow audit **completed**; implementation и production rollo
 | M5 | ✅ | Web identity audit and isolation |
 | M6 | ✅ | Payment end-to-end audit and routing isolation |
 | M7 | ✅ | Brand-specific content cleanup |
-| M8 | 🟡 | Attribution and analytics |
+| M8 | 🟡 | Attribution and analytics — атрибуция реализована; отчётность отложена |
 | M9 | ⬜ | Third-brand onboarding validation |
 
 ### M5 — Web identity audit and isolation
@@ -440,14 +444,15 @@ Architecture / data-flow audit **completed**; implementation и production rollo
 
 ### M8 — Attribution and analytics
 
-- **Статус:** 🟡 частично — architecture/data-flow audit completed (`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`); implementation not started.
+- **Статус:** 🟡 Атрибуция реализована; отчётность отложена.
 - **Цель:** разделить acquisition analytics по брендам без смешения с identity.
-- **Основные риски:** преждевременная схема хранения в SHM; смешение marketing fields с auth fields; in-memory Telegram start payload; email hop без signed claims.
-- **Ожидаемый результат аудита:** рекомендуемый MVP — immutable `settings.attribution.first_touch` + signed web/Google transport + export CLI; `web.source` не использовать как first-touch.
-- **Критерий завершения (implementation):** new registrations получают first-touch; repeat login/linking не перезаписывают; VFF/FC изолированы; read-only reporting; auth/session/payment без изменений.
+- **Результат:** immutable `settings.attribution.first_touch`; каналы `telegram`, `web_magic_link`, `web_google`; signed transport для magic-link/Google; pending first-touch для Telegram до `/register`; existing login/linking не перезаписывают attribution; единое событие `user_registered`; FC и VFF развёрнуты и проверены в production.
+- **Отложено:** read-only JSON/CSV export и отчётность — сознательно отложены; остаются отложенной задачей M8 и могут быть реализованы позже.
+- **Критерий завершения (core attribution):** выполнен — new registrations получают first-touch; repeat login/linking не перезаписывают; VFF/FC изолированы; auth/session/payment без изменений. Read-only reporting не блокирует переход к M9.
 
 ### M9 — Third-brand onboarding validation
 
+- **Статус:** ⬜ Не начато — следующий незавершённый этап.
 - **Цель:** подтвердить, что третий бренд поднимается конфигурацией и ops-потоком.
 - **Основные риски:** скрытые VFF defaults; незакрытые identity/payment gaps из M5–M7.
 - **Ожидаемый результат:** тестовый третий бренд проходит validation/deploy/rollout/smoke и изоляцию.
@@ -472,16 +477,12 @@ Architecture / data-flow audit **completed**; implementation и production rollo
 - для каждого бренда работают config validation, deploy, rollback и smoke;
 - отсутствуют неявные VFF defaults в runtime-критичных путях.
 
-M5–M7 закрыты; общий мультибрендинг ещё не завершён — остаются M8–M9.
+M5–M7 закрыты; core attribution M8 реализована (отчётность отложена); общий мультибрендинг ещё не завершён — остаётся M9.
 
 ---
 
 ## 12. Следующий шаг
 
-Основной следующий шаг: **M8 implementation according to the approved attribution storage model**
-в [`docs/MULTIBRAND_ATTRIBUTION_AUDIT.md`](MULTIBRAND_ATTRIBUTION_AUDIT.md)
-(после staging read-only SHM probes из раздела open questions).
+Основной следующий шаг: M9 — Third-brand onboarding validation.
 
-Затем:
-
-- **M9 — Third-brand onboarding validation**.
+Read-only attribution export/reporting остаётся отложенной задачей M8 и может быть реализован позже.
