@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ryabkov82/vpnbot/internal/attribution"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	"github.com/ryabkov82/vpnbot/internal/registrationevent"
 	"github.com/ryabkov82/vpnbot/internal/webuser"
 )
 
@@ -136,6 +138,15 @@ func findOrCreateWebUserCore(
 	}
 	if u == nil {
 		return nil, false, fmt.Errorf("web user not found after registration (login=%s)", login)
+	}
+	if record != nil {
+		if err := registrationevent.Emit(slog.Default(), brandID, u.ID, *record); err != nil {
+			slog.Warn("registration event skipped",
+				"brand_id", brandID,
+				"registration_channel", string(record.FirstTouch.RegistrationChannel),
+				"reason", "emit_failed",
+			)
+		}
 	}
 	return u, true, nil
 }

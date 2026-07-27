@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/ryabkov82/vpnbot/internal/app/web"
 	"github.com/ryabkov82/vpnbot/internal/config"
 	"github.com/ryabkov82/vpnbot/internal/models"
+	"github.com/ryabkov82/vpnbot/internal/registrationevent"
 	"github.com/ryabkov82/vpnbot/internal/service"
 
 	"gopkg.in/telebot.v3"
@@ -1010,6 +1012,21 @@ func (s *Service) handleRegister(c telebot.Context) error {
 	if err != nil {
 		log.Println("Ошибка регистрации:", err)
 		return c.Send("⚠️ Ошибка регистрации. Пожалуйста, попробуйте позже.")
+	}
+
+	createdUser, lookupErr := s.service.GetUser(chatID)
+	if lookupErr != nil || createdUser == nil {
+		slog.Warn("registration event skipped",
+			"brand_id", s.config.BrandID(),
+			"registration_channel", "telegram",
+			"reason", "post_create_lookup_failed",
+		)
+	} else if err := registrationevent.Emit(slog.Default(), s.config.BrandID(), createdUser.ID, rec); err != nil {
+		slog.Warn("registration event skipped",
+			"brand_id", s.config.BrandID(),
+			"registration_channel", "telegram",
+			"reason", "emit_failed",
+		)
 	}
 
 	s.clearTelegramAttribution(chatID)
