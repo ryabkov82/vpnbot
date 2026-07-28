@@ -19,7 +19,7 @@
       "connect.vpn-for-friends.com",
       "vff.portalbase.link"
     ],
-    "public_base_url": "https://connect.vpn-for-friends.com",
+    "public_base_url": "https://vff.portalbase.link",
     "landing_url": "https://vpn-for-friends.com",
     "service_category": "vpn-mz-test",
     "payment_profile": "telegram_bot",

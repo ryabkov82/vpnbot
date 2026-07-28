@@ -275,7 +275,7 @@ test_allowed_hosts_render() {
   "telegram": {"token": "t"},
   "assets": {"logo_url": "https://assets.example.test/logo.png"},
   "services": {"category": "vpn-mz-test"},
-  "web_sales": {"public_base_url": "https://connect.vpn-for-friends.com"},
+  "web_sales": {"public_base_url": "https://vff.portalbase.link"},
   "payments": {"profile": "telegram_bot"}
 }
 EOF
@@ -286,7 +286,7 @@ EOF
   fi
   if ! jq -e '
     .brand.allowed_hosts == ["connect.vpn-for-friends.com","vff.portalbase.link"]
-    and .brand.public_base_url == "https://connect.vpn-for-friends.com"
+    and .brand.public_base_url == "https://vff.portalbase.link"
   ' "${out}" >/dev/null; then
     fail allowed_hosts_render "vff allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
     rm -rf "${d}"; return
@@ -299,7 +299,7 @@ EOF
   "telegram": {"token": "t"},
   "assets": {"logo_url": "https://assets.example.test/fc-logo.png"},
   "services": {"category": "vpn-mz-fc"},
-  "web_sales": {"public_base_url": "https://connect.friends-connect.club"},
+  "web_sales": {"public_base_url": "https://fc.portalbase.link"},
   "payments": {"profile": "telegram_friends_connect_bot"}
 }
 EOF

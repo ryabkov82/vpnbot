@@ -619,7 +619,7 @@ test_renderer() {
   "api": {"api_pass": "SECRET-PASS"},
   "assets": {"logo_url": "https://assets.example.test/fc-logo.png"},
   "services": {"category": "vpn-mz-fc", "extra": 1},
-  "web_sales": {"public_base_url": "https://connect.friends-connect.club", "order_token_secret": "SECRET-ORDER", "enabled": true},
+  "web_sales": {"public_base_url": "https://fc.portalbase.link", "order_token_secret": "SECRET-ORDER", "enabled": true},
   "payments": {"profile": "telegram_friends_connect_bot", "keep": true}
 }
 EOF
@@ -652,7 +652,7 @@ PY
 {
   "telegram": {"token": "t"},
   "services": {"category": "vpn-mz-test"},
-  "web_sales": {"public_base_url": "https://connect.vpn-for-friends.com"},
+  "web_sales": {"public_base_url": "https://vff.portalbase.link"},
   "payments": {"profile": "telegram_bot"}
 }
 EOF
@@ -667,7 +667,7 @@ EOF
 {
   "telegram": {"token": "t"},
   "services": {"category": "vpn-mz-test"},
-  "web_sales": {"public_base_url": "https://connect.vpn-for-friends.com", "enabled": true},
+  "web_sales": {"public_base_url": "https://vff.portalbase.link", "enabled": true},
   "payments": {"profile": "telegram_bot"}
 }
 EOF
@@ -685,7 +685,7 @@ assert "public_base_url" not in c.get("web_sales", {})
 assert "payments" not in c or "profile" not in c.get("payments", {})
 assert c["brand"]["yookassa_pay_system"]=="yookassa"
 assert c["brand"]["allowed_hosts"]==["connect.vpn-for-friends.com","vff.portalbase.link"]
-assert c["brand"]["public_base_url"]=="https://connect.vpn-for-friends.com"
+assert c["brand"]["public_base_url"]=="https://vff.portalbase.link"
 print("ok")
 PY
   pass renderer_vff
@@ -794,7 +794,7 @@ test_renderer_source_eq_output() {
   dir="$(mktemp -d)"
   src="${dir}/same.json"
   cat >"${src}" <<'EOF'
-{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://fc.portalbase.link"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   local before rc=0
   before="$(cat "${src}")"
@@ -831,7 +831,7 @@ test_renderer_temp_in_outdir_and_mode() {
   src="${dir}/src.json"
   out="${dir}/out.json"
   cat >"${src}" <<'EOF'
-{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"t"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://fc.portalbase.link"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   # Intercept mktemp to record template.
   cat >"${dir}/mktemp" <<EOF
@@ -862,7 +862,7 @@ test_no_secrets_stdout() {
 {
   "telegram": {"token": "SECRET-TELEGRAM-TOKEN-VALUE"},
   "services": {"category": "vpn-mz-fc"},
-  "web_sales": {"public_base_url": "https://connect.friends-connect.club"},
+  "web_sales": {"public_base_url": "https://fc.portalbase.link"},
   "payments": {"profile": "telegram_friends_connect_bot"}
 }
 EOF
@@ -883,7 +883,7 @@ test_renderer_to_configcheck() {
   dir="$(mktemp -d)"
 
   cat >"${dir}/fc-src.json" <<'EOF'
-{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"assets":{"logo_url":"https://assets.example.test/fc-logo.png"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://connect.friends-connect.club"},"payments":{"profile":"telegram_friends_connect_bot"}}
+{"telegram":{"token":"SECRET-TELEGRAM-TOKEN"},"api":{"api_pass":"SECRET-API-PASS"},"assets":{"logo_url":"https://assets.example.test/fc-logo.png"},"services":{"category":"vpn-mz-fc"},"web_sales":{"public_base_url":"https://fc.portalbase.link"},"payments":{"profile":"telegram_friends_connect_bot"}}
 EOF
   # Legacy source itself is invalid for runtime (no brand.id).
   rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/fc-src.json" 2>&1)" || rc=$?
@@ -905,7 +905,7 @@ EOF
   fi
 
   cat >"${dir}/vff-src.json" <<'EOF'
-{"telegram":{"token":"t"},"assets":{"logo_url":"https://assets.example.test/vff-logo.png"},"services":{"category":"vpn-mz-test"},"web_sales":{"public_base_url":"https://connect.vpn-for-friends.com"},"payments":{"profile":"telegram_bot"}}
+{"telegram":{"token":"t"},"assets":{"logo_url":"https://assets.example.test/vff-logo.png"},"services":{"category":"vpn-mz-test"},"web_sales":{"public_base_url":"https://vff.portalbase.link"},"payments":{"profile":"telegram_bot"}}
 EOF
   rc=0; cc="$(cd "${ROOT}" && go run ./cmd/configcheck -config "${dir}/vff-src.json" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then fail cc_legacy_vff "legacy source must fail configcheck"; rm -rf "${dir}"; return; fi

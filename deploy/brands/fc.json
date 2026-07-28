@@ -15,7 +15,7 @@
     "dropin": "/etc/systemd/system/bot-friends-connect.service.d/10-vpnbot-config.conf"
   },
   "brand": {
-    "public_base_url": "https://connect.friends-connect.club",
+    "public_base_url": "https://fc.portalbase.link",
     "landing_url": "https://friends-connect.club",
     "service_category": "vpn-mz-fc",
     "payment_profile": "telegram_friends_connect_bot",

@@ -226,10 +226,10 @@ test_full_suite_ok() {
 test_expected_urls_from_profiles() {
   local v ff
   v="$(vff_url)"; ff="$(fc_url)"
-  [[ "${v}" == https://connect.vpn-for-friends.com/payment/return ]] || {
+  [[ "${v}" == https://vff.portalbase.link/payment/return ]] || {
     fail urls_from_profiles "vff=${v}"; return
   }
-  [[ "${ff}" == https://connect.friends-connect.club/payment/return ]] || {
+  [[ "${ff}" == https://fc.portalbase.link/payment/return ]] || {
     fail urls_from_profiles "fc=${ff}"; return
   }
   pass expected_urls_from_profiles
