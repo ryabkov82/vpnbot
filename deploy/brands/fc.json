@@ -15,13 +15,16 @@
     "dropin": "/etc/systemd/system/bot-friends-connect.service.d/10-vpnbot-config.conf"
   },
   "brand": {
-    "allowed_host": "connect.friends-connect.club",
     "public_base_url": "https://connect.friends-connect.club",
     "landing_url": "https://friends-connect.club",
     "service_category": "vpn-mz-fc",
     "payment_profile": "telegram_friends_connect_bot",
     "yookassa_pay_system": "yookassa",
     "web_login_prefix": "web_fc_",
-    "web_user_source": "vpn-for-friends.com"
+    "web_user_source": "friends-connect.club",
+    "allowed_hosts": [
+      "connect.friends-connect.club",
+      "fc.portalbase.link"
+    ]
   }
 }

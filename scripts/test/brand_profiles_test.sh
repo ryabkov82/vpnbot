@@ -107,6 +107,10 @@ test_each_profile() {
       if [[ "${ALLOWED_HOSTS_JSON}" != '["connect.vpn-for-friends.com","vff.portalbase.link"]' ]]; then
         fail "profile:${id}" "unexpected allowed_hosts: ${ALLOWED_HOSTS_JSON}"; continue
       fi
+    elif [[ "${id}" == "fc" ]]; then
+      if [[ "${ALLOWED_HOSTS_JSON}" != '["connect.friends-connect.club","fc.portalbase.link"]' ]]; then
+        fail "profile:${id}" "unexpected allowed_hosts: ${ALLOWED_HOSTS_JSON}"; continue
+      fi
     fi
 
     # SMOKE_BASE_URL sourced from profile public base url
@@ -289,7 +293,7 @@ EOF
   fi
   pass allowed_hosts_render_vff
 
-  # Singular allowed_host remains compatible (fc / demo-style profiles).
+  # Production FC profile uses allowed_hosts array.
   cat >"${src}" <<'EOF'
 {
   "telegram": {"token": "t"},
@@ -300,13 +304,38 @@ EOF
 }
 EOF
   if ! bash "${ROOT}/scripts/render-brand-config.sh" fc --source "${src}" --output "${out}" >/dev/null; then
-    fail allowed_host_compat "fc render failed"; rm -rf "${d}"; return
+    fail allowed_hosts_render_fc "fc render failed"; rm -rf "${d}"; return
   fi
-  if ! jq -e '.brand.allowed_hosts == ["connect.friends-connect.club"]' "${out}" >/dev/null; then
-    fail allowed_host_compat "fc allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
+  if ! jq -e '
+    .brand.allowed_hosts ==
+      ["connect.friends-connect.club","fc.portalbase.link"]
+  ' "${out}" >/dev/null; then
+    fail allowed_hosts_render_fc "fc allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
     rm -rf "${d}"; return
   fi
-  pass allowed_host_compat_fc
+  pass allowed_hosts_render_fc
+
+  # Singular allowed_host remains backward-compatible for third-party profiles.
+  base_json >"${d}/demo.json"
+  chmod 0644 "${d}/demo.json"
+
+  cat >"${src}" <<'EOF'
+{
+  "telegram": {"token": "t"},
+  "assets": {"logo_url": "https://assets.example.test/demo-logo.png"},
+  "services": {"category": "vpn-demo"},
+  "web_sales": {"public_base_url": "https://demo.example.com"},
+  "payments": {"profile": "telegram_demo_bot"}
+}
+EOF
+  if ! BRAND_PROFILES_DIR="${d}" bash "${ROOT}/scripts/render-brand-config.sh" demo     --source "${src}" --output "${out}" >/dev/null; then
+    fail allowed_host_compat "demo render failed"; rm -rf "${d}"; return
+  fi
+  if ! jq -e '.brand.allowed_hosts == ["demo.example.com"]' "${out}" >/dev/null; then
+    fail allowed_host_compat "demo allowed_hosts mismatch: $(jq -c .brand.allowed_hosts "${out}")"
+    rm -rf "${d}"; return
+  fi
+  pass allowed_host_compat_demo
 
   # Fixture profile with allowed_hosts array (not in production dir).
   base_json | jq 'del(.brand.allowed_host) | .brand.allowed_hosts = ["demo.example.com","demo-alt.example.com"]' \

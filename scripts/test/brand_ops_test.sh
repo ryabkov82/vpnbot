@@ -641,7 +641,7 @@ assert c["web_sales"]["order_token_secret"]=="SECRET-ORDER"
 assert "profile" not in c.get("payments", {})
 assert c["payments"]["keep"] is True
 assert c["brand"]["web_user_login_prefix"]=="web_fc_"
-assert c["brand"]["web_user_source"]=="vpn-for-friends.com"
+assert c["brand"]["web_user_source"]=="friends-connect.club"
 assert c["brand"]["yookassa_pay_system"]=="yookassa"
 assert c["assets"]["logo_url"]=="https://assets.example.test/fc-logo.png"
 print("ok")
