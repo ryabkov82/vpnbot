@@ -5,6 +5,10 @@
 - **`/buy`** — публичная страница с тарифами (данные через `GET /api/public/services`). Она не создаёт заказ и не отправляет magic-link оплаты: пользователь переходит в кабинет и оформляет услугу там.
 - **`/account`** и API под префиксом **`/api/account/*`** — вход по email (magic-link), каталог, заказ услуги, пополнение баланса, **история платежей (`GET /api/account/payments`)**, подключение и отмена неактивной услуги.
 
+### Тема web-кабинета (мультибренд)
+
+Один HTML-набор (`index.html` + `session.html`) обслуживает все бренды. Один общий stylesheet `internal/app/web/static/account/account.css` встраивается в бинарник и отдаётся по **`GET|HEAD /account/assets/account.css`** (без чтения с диска в runtime). Базовые CSS variables — палитра VFF/default; отдельный бренд (например Friends Connect) переопределяет только theme tokens через `html[data-brand="…"]`. Новый бренд не требует копии шаблонов: достаточно валидного `brand.id` в конфиге процесса и при необходимости блока overrides в том же `account.css`. Атрибут `data-brand` заполняется из `cfg.BrandID()` на сервере (не из Host/URL/имени бренда/LandingURL и не на клиенте). Логика услуг, каталога и оплаты общая; названия, описания, цены и сроки по-прежнему приходят из SHM.
+
 Поле `web_sales.enabled` в конфиге оставлено для совместимости со старыми файлами настроек; текущее приложение на него не опирается. Для работы кабинета задаётся `web_sales.order_token_secret` и при необходимости `web_sales.public_base_url` (базовый URL для ссылок в письмах).
 
 Альтернативный вход через Google настраивается секцией **`web_account`** (отдельно от `web_sales` / оплат):
@@ -19,7 +23,7 @@ Premium / AntiBlock в каталоге и в списке услуг отраж
 
 Браузер запрашивает иконки с корня сайта: **`/favicon.ico`**, **`/favicon-32x32.png`**, **`/apple-touch-icon.png`**. Их отдаёт то же Go-приложение, что **`/account`** (см. mux в `internal/app/web/server.go`). За обратным прокси (Nginx) эти пути нужно проксировать на тот же upstream, что и кабинет, иначе вкладка может остаться без иконки. Файлы лежат в `internal/app/web/static/` и вшиты через `embed` в бинарник; пересобрать их можно локально из `logobot.jpg` (например, временным venv + Pillow: кроп по центру до квадрата, размеры 16×16 и 32×32 внутри ICO, PNG 32 и 180).
 
-За reverse proxy нужно пробрасывать те же префиксы, что использует приложение (**`/buy`**, **`/account`**, в том числе **`/account/link`** и **`/account/link/confirm`**, **`/api/public/*`**, **`/api/account/*`**, включая **`/api/account/payments`** и **`/api/account/link/login/start`**), чтобы кабинет и оплата работали через один домен с HTTPS.
+За reverse proxy нужно пробрасывать те же префиксы, что использует приложение (**`/buy`**, **`/account`**, в том числе **`/account/link`**, **`/account/link/confirm`** и **`/account/assets/account.css`**, **`/api/public/*`**, **`/api/account/*`**, включая **`/api/account/payments`** и **`/api/account/link/login/start`**), чтобы кабинет и оплата работали через один домен с HTTPS.
 
 ### Связка Telegram-бота и web-кабинета
 

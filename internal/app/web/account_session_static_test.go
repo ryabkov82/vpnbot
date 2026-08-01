@@ -195,24 +195,25 @@ func TestAccountSessionStaticContainsPremiumHappCopy(t *testing.T) {
 			t.Fatalf("session.html branded footer missing %q", needle)
 		}
 	}
-	if !strings.Contains(s, ".account-footer") || !strings.Contains(s, "safe-area-inset-bottom") {
-		t.Fatal("session footer must include .account-footer CSS with safe-area bottom inset")
+	css := string(accountCSS)
+	if !strings.Contains(css, ".account-footer") || !strings.Contains(css, "safe-area-inset-bottom") {
+		t.Fatal("account.css must include .account-footer CSS with safe-area bottom inset")
 	}
-	if !strings.Contains(s, "flex-wrap: nowrap") {
+	if !strings.Contains(css, "flex-wrap: nowrap") {
 		t.Fatal("account-tabs css should force single-line tabs")
 	}
-	if !strings.Contains(s, "overflow-x: auto") {
+	if !strings.Contains(css, "overflow-x: auto") {
 		t.Fatal("account-tabs css should allow horizontal scroll")
 	}
-	if !strings.Contains(s, "@media (max-width: 420px)") ||
-		!strings.Contains(s, ".account-tabs .nav-link") ||
-		!strings.Contains(s, "padding-left: 0.45rem") ||
-		!strings.Contains(s, "font-size: 0.875rem") ||
-		!strings.Contains(s, "gap: 0.15rem") {
+	if !strings.Contains(css, "@media (max-width: 420px)") ||
+		!strings.Contains(css, ".account-tabs .nav-link") ||
+		!strings.Contains(css, "padding-left: 0.45rem") ||
+		!strings.Contains(css, "font-size: 0.875rem") ||
+		!strings.Contains(css, "gap: 0.15rem") {
 		t.Fatal("account-tabs must include compact mobile css for narrow screens")
 	}
-	if !strings.Contains(s, "scrollbar-gutter: stable") || !strings.Contains(s, "overflow-y: scroll") {
-		t.Fatal("session css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
+	if !strings.Contains(css, "scrollbar-gutter: stable") || !strings.Contains(css, "overflow-y: scroll") {
+		t.Fatal("account.css should reserve vertical scrollbar gutter (scrollbar-gutter + overflow-y fallback)")
 	}
 	if !strings.Contains(s, "t('signedInAs')") {
 		t.Fatal("user-line must show human-friendly email only (Вы вошли как …)")

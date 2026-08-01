@@ -25,8 +25,9 @@ func TestAccountSessionEmbed_BalanceTopupAndHintsNoRenew(t *testing.T) {
 			t.Fatalf("embed session branded footer missing %q", footerNeedle)
 		}
 	}
-	if !strings.Contains(raw, "safe-area-inset-bottom") || !strings.Contains(raw, "calc(1.5rem + env(") {
-		t.Fatal("embed session must include .account-footer safe-area bottom margin")
+	css := string(accountCSS)
+	if !strings.Contains(css, "safe-area-inset-bottom") || !strings.Contains(css, "calc(1.5rem + env(") {
+		t.Fatal("account.css must include .account-footer safe-area bottom margin")
 	}
 	for _, needle := range []string{
 		`function openPaymentWindow`,

@@ -75,6 +75,7 @@ func renderedAccountLoginPageHTML(cfg *config.Config, locale accountLocale) ([]b
 	data := accountLoginPageData{
 		I18n:                 i18n,
 		Locale:               locale,
+		BrandID:              cfg.BrandID(),
 		LangSwitchRU:         ruURL,
 		LangSwitchEN:         enURL,
 		LangRUActive:         locale == accountLocaleRU,
@@ -113,6 +114,7 @@ func renderedAccountSessionPageHTML(cfg *config.Config, locale accountLocale, r 
 	data := accountSessionPageData{
 		I18n:                    i18n,
 		Locale:                  locale,
+		BrandID:                 cfg.BrandID(),
 		LangSwitchRU:            ruURL,
 		LangSwitchEN:            enURL,
 		LangRUActive:            locale == accountLocaleRU,

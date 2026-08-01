@@ -579,6 +579,7 @@ func accountNoTokenLoginURL(locale accountLocale) string {
 type accountLoginPageData struct {
 	I18n                 accountI18n
 	Locale               accountLocale
+	BrandID              string
 	LangSwitchRU         string
 	LangSwitchEN         string
 	LangRUActive         bool
@@ -598,6 +599,7 @@ type accountLoginPageData struct {
 type accountSessionPageData struct {
 	I18n                    accountI18n
 	Locale                  accountLocale
+	BrandID                 string
 	LangSwitchRU            string
 	LangSwitchEN            string
 	LangRUActive            bool
