@@ -153,7 +153,7 @@ func applyRemnawaveUsage(ctx context.Context, rw *remnawave.Client, us *models.U
 		return
 	}
 
-	stats, err := rw.GetUserBandwidthStats(ctx, user.UUID, start, end)
+	stats, err := rw.GetUserBandwidthStats(ctx, *user, start, end)
 	if err != nil {
 		log.Printf("api/premium/service remnawave bandwidth: %v", err)
 		return

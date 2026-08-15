@@ -49,37 +49,71 @@ func TestParseBandwidthUsedFloatTotal(t *testing.T) {
 	}
 }
 
-func TestGetUserBandwidthStatsQueryParams(t *testing.T) {
-	var gotPath string
+func TestGetUserByUsername274(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bandwidth-stats/users/my-uuid" {
-			t.Fatalf("path %q want /api/bandwidth-stats/users/my-uuid", r.URL.Path)
+		if r.URL.Path != "/api/users/by-username/us_42" {
+			t.Fatalf("path %q", r.URL.Path)
 		}
-		gotPath = r.URL.Path + "?" + r.URL.RawQuery
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"response":{"series":[{"total":42}]}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":42,"uuid":"11111111-1111-1111-1111-111111111111","username":"us_42"}}`))
 	}))
 	defer srv.Close()
-
-	c := NewClient(srv.URL, "test-token")
-	if c == nil {
-		t.Fatal("nil client")
-	}
-	start := time.Date(2026, 4, 19, 19, 0, 0, 0, time.UTC)
-	end := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
-	stats, err := c.GetUserBandwidthStats(context.Background(), "my-uuid", start, end)
+	c := NewClient(srv.URL, "tok")
+	user, err := c.GetUserByUsername(context.Background(), "us_42")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.UsedBytes != 42 {
-		t.Fatalf("UsedBytes=%d", stats.UsedBytes)
+	if user.ID != 42 || user.UUID != "11111111-1111-1111-1111-111111111111" || user.Username != "us_42" {
+		t.Fatalf("user=%+v", user)
 	}
-	const prefix = "/api/bandwidth-stats/users/my-uuid?"
-	if !strings.HasPrefix(gotPath, prefix) {
-		t.Fatalf("full URL path+query: %q", gotPath)
+}
+
+func TestGetUserByUsername323(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"response":{"id":42,"username":"us_42"}}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	user, err := c.GetUserByUsername(context.Background(), "us_42")
+	if err != nil {
+		t.Fatal(err)
 	}
-	qv, err := url.ParseQuery(strings.TrimPrefix(gotPath, prefix))
+	if user.ID != 42 || user.UUID != "" || user.Username != "us_42" {
+		t.Fatalf("user=%+v", user)
+	}
+}
+
+func TestGetUserByUsernameInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"missing id", `{"response":{"username":"us_42"}}`},
+		{"id zero", `{"response":{"id":0,"username":"us_42"}}`},
+		{"id negative", `{"response":{"id":-1,"username":"us_42"}}`},
+		{"id fractional", `{"response":{"id":1.5,"username":"us_42"}}`},
+		{"empty username", `{"response":{"id":42,"username":"  "}}`},
+		{"username mismatch", `{"response":{"id":42,"username":"other"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			c := NewClient(srv.URL, "tok")
+			if _, err := c.GetUserByUsername(context.Background(), "us_42"); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func assertBandwidthQuery(t *testing.T, gotPath, pathPrefix string) {
+	t.Helper()
+	if !strings.HasPrefix(gotPath, pathPrefix) {
+		t.Fatalf("full URL path+query: %q want prefix %q", gotPath, pathPrefix)
+	}
+	qv, err := url.ParseQuery(strings.TrimPrefix(gotPath, pathPrefix))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +125,78 @@ func TestGetUserBandwidthStatsQueryParams(t *testing.T) {
 	}
 	if qv.Get("end") != "2026-05-03" {
 		t.Fatalf("end=%q want 2026-05-03", qv.Get("end"))
+	}
+}
+
+func TestGetUserBandwidthStatsUsesUUIDWhenPresent(t *testing.T) {
+	const wantPath = "/api/bandwidth-stats/users/11111111-1111-1111-1111-111111111111"
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantPath {
+			t.Fatalf("path %q want %s", r.URL.Path, wantPath)
+		}
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"series":[{"total":42}]}}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "test-token")
+	start := time.Date(2026, 4, 19, 19, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	stats, err := c.GetUserBandwidthStats(context.Background(), User{
+		ID:   42,
+		UUID: "11111111-1111-1111-1111-111111111111",
+	}, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.UsedBytes != 42 {
+		t.Fatalf("UsedBytes=%d", stats.UsedBytes)
+	}
+	assertBandwidthQuery(t, gotPath, wantPath+"?")
+}
+
+func TestGetUserBandwidthStatsUsesNumericID(t *testing.T) {
+	const wantPath = "/api/bandwidth-stats/users/42"
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantPath {
+			t.Fatalf("path %q want %s", r.URL.Path, wantPath)
+		}
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"series":[{"total":42}]}}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "test-token")
+	start := time.Date(2026, 4, 19, 19, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	stats, err := c.GetUserBandwidthStats(context.Background(), User{ID: 42}, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.UsedBytes != 42 {
+		t.Fatalf("UsedBytes=%d", stats.UsedBytes)
+	}
+	assertBandwidthQuery(t, gotPath, wantPath+"?")
+}
+
+func TestGetUserBandwidthStatsMissingIdentity(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	start := time.Date(2026, 4, 19, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)
+	if _, err := c.GetUserBandwidthStats(context.Background(), User{}, start, end); err == nil {
+		t.Fatal("expected error for missing identity")
+	}
+	if called {
+		t.Fatal("HTTP request must not be sent without identity")
 	}
 }
 

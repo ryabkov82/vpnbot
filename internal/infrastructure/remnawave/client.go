@@ -92,9 +92,20 @@ func (c *Client) doGET(ctx context.Context, path string) ([]byte, int, error) {
 }
 
 // User — минимальные поля пользователя Remnawave.
+// ID — основной идентификатор (3.2.3). UUID опционален и нужен только
+// для bandwidth path на 2.7.4: там endpoint принимает UUID, не numeric id.
 type User struct {
+	ID       int64
 	UUID     string
 	Username string
+}
+
+type getUserByUsernameResponse struct {
+	Response *struct {
+		ID       int64  `json:"id"`
+		UUID     string `json:"uuid"`
+		Username string `json:"username"`
+	} `json:"response"`
 }
 
 // GetUserByUsername выполняет GET /api/users/by-username/{username}.
@@ -108,27 +119,31 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 		return nil, err
 	}
 
-	var root map[string]any
+	var root getUserByUsernameResponse
 	if err := json.Unmarshal(body, &root); err != nil {
 		return nil, fmt.Errorf("remnawave user json: %w", err)
 	}
-
-	respObj, _ := root["response"].(map[string]any)
-	if respObj == nil {
+	if root.Response == nil {
 		return nil, fmt.Errorf("remnawave user: missing response object")
 	}
 
-	uuid := stringField(respObj, "uuid")
-	if uuid == "" {
-		if u, ok := respObj["user"].(map[string]any); ok {
-			uuid = stringField(u, "uuid")
-		}
+	resp := root.Response
+	if resp.ID <= 0 {
+		return nil, fmt.Errorf("remnawave user: invalid id")
 	}
-	if strings.TrimSpace(uuid) == "" {
-		return nil, fmt.Errorf("remnawave user: empty uuid")
+	gotName := strings.TrimSpace(resp.Username)
+	if gotName == "" {
+		return nil, fmt.Errorf("remnawave user: empty username")
+	}
+	if gotName != username {
+		return nil, fmt.Errorf("remnawave user: username mismatch")
 	}
 
-	return &User{UUID: strings.TrimSpace(uuid), Username: username}, nil
+	return &User{
+		ID:       resp.ID,
+		UUID:     strings.TrimSpace(resp.UUID),
+		Username: gotName,
+	}, nil
 }
 
 // UserBandwidthStats — использованный трафик.
@@ -136,15 +151,32 @@ type UserBandwidthStats struct {
 	UsedBytes int64
 }
 
-// GetUserBandwidthStats выполняет GET /api/bandwidth-stats/users/{uuid} (OpenAPI 2.7.4: topNodesLimit, start/end как date YYYY-MM-DD UTC).
-func (c *Client) GetUserBandwidthStats(ctx context.Context, uuid string, start, end time.Time) (*UserBandwidthStats, error) {
+// bandwidthUserPathID выбирает path-сегмент для bandwidth:
+// UUID, если есть (2.7.4), иначе numeric ID (3.2.3).
+func bandwidthUserPathID(user User) (string, error) {
+	if uuid := strings.TrimSpace(user.UUID); uuid != "" {
+		return url.PathEscape(uuid), nil
+	}
+	if user.ID > 0 {
+		return strconv.FormatInt(user.ID, 10), nil
+	}
+	return "", fmt.Errorf("remnawave: missing user identity")
+}
+
+// GetUserBandwidthStats выполняет GET /api/bandwidth-stats/users/{uuid|id}
+// (query: topNodesLimit, start/end как date YYYY-MM-DD UTC).
+// UUID в path имеет приоритет: 2.7.4 принимает только UUID.
+func (c *Client) GetUserBandwidthStats(ctx context.Context, user User, start, end time.Time) (*UserBandwidthStats, error) {
 	if c == nil {
 		return nil, fmt.Errorf("remnawave: nil client")
 	}
 	if !end.After(start) {
 		return nil, fmt.Errorf("remnawave: invalid usage range")
 	}
-	id := url.PathEscape(strings.TrimSpace(uuid))
+	id, err := bandwidthUserPathID(user)
+	if err != nil {
+		return nil, err
+	}
 	q := url.Values{}
 	q.Set("topNodesLimit", strconv.Itoa(defaultTopNodesLimit))
 	q.Set("start", start.UTC().Format(bandwidthQueryDateLayout))
