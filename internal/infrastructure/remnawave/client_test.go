@@ -2,7 +2,6 @@ package remnawave
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -124,51 +123,5 @@ func TestGetSubscriptionByUsernameEmptyURL(t *testing.T) {
 	c := NewClient(srv.URL, "tok")
 	if _, err := c.GetSubscriptionByUsername(context.Background(), "x"); err == nil {
 		t.Fatal("expected error for empty subscriptionUrl")
-	}
-}
-
-func TestEncryptHappLink(t *testing.T) {
-	var gotBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/system/tools/happ/encrypt" {
-			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer tok" {
-			t.Fatalf("auth header %q", r.Header.Get("Authorization"))
-		}
-		if ct := r.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
-			t.Fatalf("content-type %q", ct)
-		}
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		gotBody = string(b)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"encryptedLink":"happ://crypt4/abc"}}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "tok")
-	enc, err := c.EncryptHappLink(context.Background(), "https://sub.example/x")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if enc != "happ://crypt4/abc" {
-		t.Fatalf("enc=%q", enc)
-	}
-	if !strings.Contains(gotBody, `"linkToEncrypt":"https://sub.example/x"`) {
-		t.Fatalf("body=%q", gotBody)
-	}
-}
-
-func TestEncryptHappLinkBadPrefix(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":{"encryptedLink":"https://evil"}}`))
-	}))
-	defer srv.Close()
-	c := NewClient(srv.URL, "tok")
-	if _, err := c.EncryptHappLink(context.Background(), "https://x"); err == nil {
-		t.Fatal("expected error for non-happ prefix")
 	}
 }

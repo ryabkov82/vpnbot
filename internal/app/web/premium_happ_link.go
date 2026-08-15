@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ryabkov82/vpnbot/internal/config"
+	"github.com/ryabkov82/vpnbot/internal/infrastructure/happ"
 	"github.com/ryabkov82/vpnbot/internal/infrastructure/remnawave"
 	"github.com/ryabkov82/vpnbot/internal/models"
 )
@@ -60,9 +61,9 @@ func servePremiumHappLink(cfg *config.Config, app premiumAPIApp, rw *remnawave.C
 			return
 		}
 
-		enc, err := rw.EncryptHappLink(ctx, sub.SubscriptionURL)
+		enc, err := happ.CreateCrypt4Link(sub.SubscriptionURL)
 		if err != nil {
-			log.Printf("api/premium/happ-link remnawave encrypt user=%s: %v", username, err)
+			log.Printf("api/premium/happ-link happ crypt4 user=%s: %v", username, err)
 			writeJSONError(w, http.StatusBadGateway, "failed to build happ link")
 			return
 		}

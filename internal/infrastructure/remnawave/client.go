@@ -1,7 +1,6 @@
 package remnawave
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -90,37 +89,6 @@ func (c *Client) doGET(ctx context.Context, path string) ([]byte, int, error) {
 		return body, code, fmt.Errorf("remnawave HTTP %d: %s", code, msg)
 	}
 	return body, code, nil
-}
-
-// doPOSTJSON выполняет POST с JSON-телом; err при коде вне 2xx — как у doGET.
-func (c *Client) doPOSTJSON(ctx context.Context, path string, payload any) ([]byte, int, error) {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, 0, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(raw))
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, resp.StatusCode, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		msg := truncateBody(strings.TrimSpace(string(body)), 200)
-		return body, resp.StatusCode, fmt.Errorf("remnawave HTTP %d: %s", resp.StatusCode, msg)
-	}
-	return body, resp.StatusCode, nil
 }
 
 // User — минимальные поля пользователя Remnawave.
@@ -222,40 +190,6 @@ func (c *Client) GetSubscriptionByUsername(ctx context.Context, username string)
 		return nil, fmt.Errorf("remnawave subscription: empty subscriptionUrl")
 	}
 	return &Subscription{SubscriptionURL: u}, nil
-}
-
-const happCryptLinkPrefix = "happ://crypt"
-
-// EncryptHappLink вызывает POST /api/system/tools/happ/encrypt и возвращает response.encryptedLink.
-func (c *Client) EncryptHappLink(ctx context.Context, linkToEncrypt string) (string, error) {
-	if c == nil {
-		return "", fmt.Errorf("remnawave: nil client")
-	}
-	if strings.TrimSpace(linkToEncrypt) == "" {
-		return "", fmt.Errorf("remnawave encrypt: empty linkToEncrypt")
-	}
-	body, _, err := c.doPOSTJSON(ctx, "/api/system/tools/happ/encrypt", map[string]string{
-		"linkToEncrypt": linkToEncrypt,
-	})
-	if err != nil {
-		return "", err
-	}
-	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return "", fmt.Errorf("remnawave encrypt json: %w", err)
-	}
-	respObj, ok := root["response"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("remnawave encrypt: missing response")
-	}
-	enc := strings.TrimSpace(stringField(respObj, "encryptedLink"))
-	if enc == "" {
-		return "", fmt.Errorf("remnawave encrypt: empty encryptedLink")
-	}
-	if !strings.HasPrefix(enc, happCryptLinkPrefix) {
-		return "", fmt.Errorf("remnawave encrypt: invalid happ link prefix")
-	}
-	return enc, nil
 }
 
 func stringField(m map[string]any, key string) string {
